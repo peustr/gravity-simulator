@@ -208,3 +208,16 @@ def test_save_cannot_create_temporary_file(tmp_path, monkeypatch):
     with pytest.raises(PermissionError):
         E.save(tmp_path / 'scene.gravity.json', data)
     assert not list(tmp_path.iterdir())
+
+
+def test_save_sync_failure_closes_and_removes_temporary_file(tmp_path, monkeypatch):
+    _, data = scene()
+    path = tmp_path / 'scene.gravity.json'
+    path.write_text('existing save')
+    def fail_sync(fd):
+        raise OSError('disk sync failed')
+    monkeypatch.setattr(E.os, 'fsync', fail_sync)
+    with pytest.raises(OSError, match='disk sync failed'):
+        E.save(path, data)
+    assert path.read_text() == 'existing save'
+    assert list(tmp_path.iterdir()) == [path]

@@ -105,17 +105,18 @@ def save(path, data):
     if len(payload) > MAX_FILE_BYTES:
         raise ValueError('Scene file is too large')
     path = Path(path)
-    temporary = None
+    # If creation fails there is no file to clean up. Once created, always
+    # close before unlinking (including on Windows) and clean up on every exit.
+    temporary_file = tempfile.NamedTemporaryFile(dir=path.parent, prefix='.gravity-', delete=False)
+    temporary = Path(temporary_file.name)
     try:
-        with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.gravity-', delete=False) as f:
-            temporary = Path(f.name)
+        with temporary_file as f:
             f.write(payload)
             f.flush()
             os.fsync(f.fileno())
         os.replace(temporary, path)
     finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+        temporary.unlink(missing_ok=True)
 
 
 def load(path):

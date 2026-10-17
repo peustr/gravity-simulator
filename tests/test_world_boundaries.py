@@ -256,3 +256,24 @@ def test_shattering_at_capacity_preserves_merged_mass():
     assert not w._try_shatter(w.particle('1'), record(), W.ASTEROID)
     assert w.sim.N == 1 and w.particle('1').m == .006
     assert not w.events
+
+
+def test_chained_collision_skips_survivor_swallowed_in_the_same_step():
+    w = W.World()
+    add(w, mass=.003)
+    add(w, mass=.002, pos=(1, 0, 0))
+    star = add(w, W.STAR, 1000, pos=(2, 0, 0))
+    # REBOUND can report several contacts before deferred collision handling.
+    # First the planets merge; then the star swallows that merged survivor.
+    contact = SimpleNamespace(p1=0, p2=1)
+    assert w._resolve_collision(ctypes.pointer(w.sim), contact) == 2
+    w.sim.remove(1)
+    assert w._resolve_collision(ctypes.pointer(w.sim), contact) == 1
+    w.sim.remove(0)
+    assert len(w._pending) == 2
+    w._process_collisions()
+    assert w.sim.N == 1 and set(w.meta) == {str(star)}
+    assert w.particle(str(star)).m == pytest.approx(1000.005)
+    assert not w._pending
+    # The stale planet merger must not emit an event or create phantom fragments.
+    assert [event[0] for event in w.events] == [W.EV_SWALLOW]
