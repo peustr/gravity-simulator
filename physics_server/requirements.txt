@@ -1,0 +1,2 @@
+rebound>=4.4
+numpy>=1.24

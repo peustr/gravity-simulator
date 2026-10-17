@@ -1,0 +1,65 @@
+# =============================================================================
+# Gravity Simulator - files git should never track
+# =============================================================================
+
+# --- Godot ---------------------------------------------------------------------
+# Editor cache and imported assets (rebuilt automatically when Godot opens the project)
+.godot/
+# Godot 3 leftovers and Android build template
+.import/
+/godot/android/
+# Export presets can contain signing keys and passwords; keep them local
+export_presets.cfg
+export_credentials.cfg
+# Exported builds
+/build/
+/godot/build/
+/godot/export/
+*.pck
+# Generated translations and Mono/.NET leftovers
+*.translation
+.mono/
+data_*/
+mono_crash.*.json
+
+# --- Python (physics server) -----------------------------------------------------
+# Virtual environment: recreate with setup_physics_server.bat (it's ~60 MB and machine-specific)
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# PyInstaller (README section 8)
+/physics_server/build/
+/physics_server/dist/
+*.spec
+# Runtime logs
+*.log
+physics_server/server.log
+
+# --- Project outputs ---------------------------------------------------------------
+# Screenshots from /visual-check and the --screenshot flag
+/shots/
+# Distribution zips
+*.zip
+
+# --- Claude Code (personal, per-machine) -----------------------------------------------
+# Shared settings in .claude/settings.json and .claude/skills/ ARE committed
+CLAUDE.local.md
+.claude/settings.local.json
+
+# --- Operating system & editors ---------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
