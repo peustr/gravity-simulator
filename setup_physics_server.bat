@@ -28,7 +28,7 @@ if not defined PY (
 )
 if not defined PY goto :nopython
 
-%PY% -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)" >nul 2>nul
+%PY% -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul
 if errorlevel 1 goto :badpython
 %PY% -c "import sys; sys.exit(1 if sys.version_info >= (3, 15) else 0)" >nul 2>nul
 if errorlevel 1 (
@@ -82,7 +82,7 @@ pause
 exit /b 1
 
 :badpython
-echo  Python was found but did not run, or it is older than 3.9.
+echo  Python was found but did not run, or it is older than 3.10.
 echo.
 echo  If a Microsoft Store window opened, close it and install Python from
 echo  https://www.python.org/downloads/windows/ instead (tick "Add python.exe

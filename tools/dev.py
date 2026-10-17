@@ -34,7 +34,7 @@ def selftest() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("setup", "selftest", "godot-check", "visual-check"))
+    parser.add_argument("command", choices=("setup", "selftest", "godot-check", "visual-check", "lint", "test", "docs-check", "check", "godot-test"))
     parser.add_argument("scenario", nargs="?", choices=SCENARIOS, default="solar")
     args, extra = parser.parse_known_args()
     if extra and args.command != "visual-check":
@@ -47,6 +47,15 @@ def main() -> None:
         run([str(PYTHON), "-m", "pip", "check"])
     if not PYTHON.is_file():
         raise RuntimeError("Missing physics venv. Run this helper's setup command first.")
+    if args.command in ("lint", "test", "docs-check", "check"):
+        if args.command in ("lint", "check"):
+            run([str(PYTHON), "-m", "ruff", "check", "."])
+        if args.command in ("docs-check", "check"):
+            run([str(PYTHON), "tools/sync_docs.py", "--check"])
+        if args.command in ("test", "check"):
+            run([str(PYTHON), "-m", "unittest", "discover", "-s", "tests", "-v"])
+            selftest()
+        return
     if args.command in ("setup", "selftest"):
         selftest()
         return
@@ -60,8 +69,10 @@ def main() -> None:
             Path(os.environ[key]).mkdir(parents=True, exist_ok=True)
     command = [godot, "--path", str(ROOT / "godot")]
     screenshot = None
-    if args.command == "godot-check":
-        command += ["--headless", "--quit-after", "300", "--", "--preset=solar"]
+    if args.command == "godot-test":
+        command += ["--headless", "--script", "res://tests/contracts.gd"]
+    elif args.command == "godot-check":
+        command += ["--headless", "--", "--preset=solar", "--wait=2", "--quit"]
     else:
         if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
             raise RuntimeError("Visual checks require a working display and renderer. Use godot-check for headless validation.")
@@ -76,11 +87,15 @@ def main() -> None:
     output = run(command)
     if re.search(r"SCRIPT ERROR|Parse Error|(?:^|\n)\s*ERROR:", output):
         raise RuntimeError("Godot reported an error despite a zero process exit code.")
+    if args.command == "godot-test" and "Godot contract tests PASSED." not in output:
+        raise RuntimeError("Godot contract tests did not complete.")
+    if args.command == "godot-check" and "Physics state received." not in output:
+        raise RuntimeError("Godot did not receive a physics state packet.")
     if screenshot:
         if not screenshot.is_file() or screenshot.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
             raise RuntimeError("Godot did not produce a new PNG screenshot.")
         print(f"Inspect screenshot: {screenshot}")
-    else:
+    elif args.command != "godot-test":
         print("Godot headless check PASSED (rendered appearance not checked).")
 
 

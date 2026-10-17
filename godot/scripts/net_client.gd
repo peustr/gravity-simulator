@@ -55,19 +55,26 @@ func _process(delta: float) -> void:
 	var have_state := false
 	while udp.get_available_packet_count() > 0:
 		var pkt := udp.get_packet()
+		if udp.get_packet_ip() != SERVER_HOST or udp.get_packet_port() != SERVER_PORT:
+			continue
 		if pkt.size() == 0:
 			continue
-		_last_packet = _now()
 		if pkt[0] == 123:  # '{' -> JSON message
 			var msg = JSON.parse_string(pkt.get_string_from_utf8())
 			if msg is Dictionary:
 				if msg.get("type", "") == "info":
+					if msg.get("protocol", 0) != 1:
+						continue
+					_last_packet = _now()
 					server_info = msg
 				message_received.emit(msg)
 			continue
-		var f := pkt.to_float32_array()
-		if f.size() < 1:
+		if pkt.size() % 4 != 0:
 			continue
+		var f := pkt.to_float32_array()
+		if not valid_packet(f):
+			continue
+		_last_packet = _now()
 		var kind := int(f[0])
 		if kind == 1:
 			# Every state packet may carry one-off events, so pass them all on,
@@ -147,3 +154,30 @@ func shutdown() -> void:
 	if server_pid > 0:
 		OS.kill(server_pid)
 		server_pid = -1
+
+
+static func valid_packet(f: PackedFloat32Array) -> bool:
+	if f.is_empty():
+		return false
+	for value in f:
+		if not is_finite(value):
+			return false
+	if f[0] == 1.0:
+		if f.size() < 10 or f[4] < 0 or f[4] > 1321 or f[5] < 0 or f[5] > 64:
+			return false
+		var n := int(f[4])
+		var events := int(f[5])
+		if f[4] != n or f[5] != events or f.size() != 10 + n * 12 + events * 8:
+			return false
+		for i in range(n):
+			var offset := 10 + i * 12
+			var body_type := f[offset + 1]
+			if body_type < 0 or body_type > 6 or body_type != floorf(body_type):
+				return false
+		return true
+	if f[0] == 2.0:
+		if f.size() < 8 or f[2] < 0 or f[2] > 221:
+			return false
+		var n := int(f[2])
+		return n >= 0 and n <= 221 and f[2] == n and f.size() == 8 + n * 3
+	return false

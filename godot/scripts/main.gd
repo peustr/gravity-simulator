@@ -223,6 +223,8 @@ func _max_tau() -> float:
 
 
 func _on_state(f: PackedFloat32Array) -> void:
+	if not NetClient.valid_packet(f) or f[0] != 1.0:
+		return
 	var n := int(f[4])
 	var ne := int(f[5])
 	if f.size() < HEADER + n * BODY + ne * EVENT:
@@ -250,6 +252,8 @@ func _on_state(f: PackedFloat32Array) -> void:
 	var t := float(f[2]) + float(f[3])
 	if _first_state or t < packet_time - 1.0:
 		display_time = t
+		if _first_state:
+			print("Physics state received.")
 		_first_state = false
 	packet_time = t
 	display_time = clampf(display_time, t, t + _max_tau())
@@ -392,6 +396,8 @@ func _event_text(kind: int, a: int, b: int) -> Array:
 
 
 func _on_prediction(f: PackedFloat32Array) -> void:
+	if not NetClient.valid_packet(f) or f[0] != 2.0:
+		return
 	var req := int(f[1])
 	if req < pred_applied:
 		return
@@ -918,6 +924,9 @@ func _run_auto(delta: float) -> void:
 			if views[id].body_type == int(_auto["select_type"]):
 				_select(id)
 				break
+	if _auto.has("quit") and not _auto.has("screenshot") and _auto_time > float(_auto.get("wait", "3")):
+		_auto_done = true
+		get_tree().quit()
 	if _auto.has("screenshot") and _auto_time > float(_auto.get("wait", "3")):
 		_auto_done = true
 		if _auto.has("debug"):

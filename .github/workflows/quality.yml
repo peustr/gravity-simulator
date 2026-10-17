@@ -1,0 +1,52 @@
+name: Quality
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.10', '3.12', '3.13', '3.14']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python tools/dev.py setup
+      - name: Install development checks
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            physics_server/.venv/Scripts/python -m pip install -r requirements-dev.txt
+          else
+            physics_server/.venv/bin/python -m pip install -r requirements-dev.txt
+          fi
+      - run: python tools/dev.py check
+  godot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/dev.py setup
+      - name: Install Godot 4.6.3
+        run: |
+          curl --fail --location --retry 3 -o /tmp/godot.zip https://github.com/godotengine/godot/releases/download/4.6.3-stable/Godot_v4.6.3-stable_linux.x86_64.zip
+          unzip /tmp/godot.zip -d /tmp/godot
+          chmod +x /tmp/godot/Godot_v4.6.3-stable_linux.x86_64
+          echo "GODOT=/tmp/godot/Godot_v4.6.3-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - run: python tools/dev.py docs-check
+      - run: python tools/dev.py godot-test
+      - run: python tools/dev.py godot-check

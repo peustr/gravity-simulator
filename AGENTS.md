@@ -14,6 +14,7 @@ Codex is the primary developer and maintainer. The user plays and develops on Wi
 - Complete authorized setup, fixes and validation without asking again for routine implementation choices. Ask when missing information or credentials actually block progress.
 - Keep local paths and credentials out of tracked files. Use the `GODOT` environment variable for a custom engine path; otherwise discover `godot` or `godot4` on PATH.
 - Keep simulation claims honest: REBOUND supplies gravity; stellar evolution, collisions and visuals include approximations documented in README.
+- Keep repository documentation concise, practical, and limited to the current state of the code. Update or remove obsolete information in place. Do not commit changelogs, dated review reports, progress updates, test-run histories, or retrospective prose; Git and PRs record history. Document only what helps a human understand, use, or maintain the repository.
 - Report what changed, what was tested, and any remaining limitation. A headless run does not validate rendered appearance.
 
 ## Commands (run from the repo root)
@@ -23,6 +24,8 @@ Use `python3` on Linux/macOS or `py -3.13` on Windows to run `tools/dev.py`. The
 | Task | Command (Linux/macOS) |
 |---|---|
 | Create/refresh the venv and validate physics | `python3 tools/dev.py setup` |
+| Lint, docs and Python regressions | `python3 tools/dev.py check` |
+| Godot protocol contract tests | `python3 tools/dev.py godot-test` |
 | Physics self-test | `python3 tools/dev.py selftest` |
 | Godot headless script/startup check | `python3 tools/dev.py godot-check` |
 | Render and inspect a scenario | `python3 tools/dev.py visual-check black_hole` |
@@ -59,9 +62,10 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 | New body type | also `TYPE_LABELS`, `TYPE_COLORS`, `TOOL_TYPES`, a builder in `body_view.gd`, an icon in `hud.gd`, trail strength in `trails.gd` |
 | User-visible change | README: controls table, scenarios, physics notes |
 
-## REBOUND 5 gotchas (learned the hard way)
+## REBOUND 5 invariants
 
 - Never pass `name=` to `sim.add()`: the C side keeps a pointer to a temporary Python buffer. Add first, then `sim.particles[sim.N-1].name = name`. Always go through `World.add_body` / `remove_body`.
+- Reacquire particle views by name after adding particles: REBOUND can reallocate its particle array. `_swap` depends on the pinned REBOUND ABI; validate collision and partition behavior when upgrading.
 - Never add particles inside the collision callback. `_resolve_collision` merges and records; `_handle_collision` runs after `sim.steps(1)` and may shatter.
 - Collision callback return: 1 removes p1, 2 removes p2. REBOUND reports only *approaching* overlaps, so fragments may start overlapping the remnant.
 - Light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
@@ -85,3 +89,5 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 
 5. For tooling or instruction changes, exercise the affected commands and check links/paths. Do not add tests that merely restate documentation.
 6. Fix failures caused by the change; distinguish existing application defects from environment limitations. Do not weaken checks to make them pass.
+
+Development checks require `physics_server/.venv/bin/python -m pip install -r requirements-dev.txt` (use `Scripts/python.exe` on Windows). After contract changes run `tools/sync_docs.py` with the venv interpreter and run both `docs-check` and `godot-test`.

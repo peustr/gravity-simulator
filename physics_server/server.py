@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import select
 import socket
 import sys
@@ -60,8 +61,8 @@ def pack_state(world: W.World) -> bytes:
     header = np.array([
         1.0, float(world.version % 16_000_000), t_hi, t - t_hi, n, len(events),
         1.0 if world.paused else 0.0, world.speed, world.perf, world.max_bodies,
-    ], dtype=np.float32)
-    bodies = np.zeros((n, BODY_FLOATS), dtype=np.float32)
+    ], dtype="<f4")
+    bodies = np.zeros((n, BODY_FLOATS), dtype="<f4")
     if n:
         names = snap["names"]
         meta = world.meta
@@ -84,7 +85,7 @@ def pack_state(world: W.World) -> bytes:
         bodies[:, 9] = snap["r"]
         bodies[:, 10] = heat
         bodies[:, 11] = age
-    ev = np.array(events, dtype=np.float32).reshape(len(events), EVENT_FLOATS)
+    ev = np.array(events, dtype="<f4").reshape(len(events), EVENT_FLOATS)
     return header.tobytes() + bodies.tobytes() + ev.tobytes()
 
 
@@ -92,9 +93,50 @@ def pack_prediction(req_id: int, result: dict) -> bytes:
     pts = result["points"]
     vel = result["vel"]
     head = np.array([2.0, req_id, len(pts), 1.0 if result["hit"] else 0.0,
-                     result["attractor"], vel[0], vel[1], vel[2]], dtype=np.float32)
-    body = np.array(pts, dtype=np.float32).reshape(len(pts), 3)
+                     result["attractor"], vel[0], vel[1], vel[2]], dtype="<f4")
+    body = np.array(pts, dtype="<f4").reshape(len(pts), 3)
     return head.tobytes() + body.tobytes()
+
+
+def validate_command(msg: dict) -> None:
+    """Reject malformed input before any simulation state can be changed."""
+    cmd = msg.get("cmd")
+    if not isinstance(cmd, str):
+        raise ValueError("cmd must be a string")
+
+    def number(key, default, low, high, integer=False):
+        value = msg.get(key, default)
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not low <= value <= high or not math.isfinite(value)
+                or (integer and int(value) != value)):
+            raise ValueError(f"Invalid {key}")
+
+    if cmd in ("add", "predict", "belt"):
+        for key in (("pos", "drag") if cmd != "belt" else ("pos",)):
+            value = msg.get(key, (0, 0, 0) if key == "drag" else None)
+            if not isinstance(value, (list, tuple)) or len(value) != 3:
+                raise ValueError(f"{key} must have three coordinates")
+            if any(isinstance(v, bool) or not isinstance(v, (int, float))
+                   or not -1e6 <= v <= 1e6 for v in value):
+                raise ValueError(f"Invalid {key}")
+        number("mass_mult", 1.0, 0.01, 100.0)
+    if cmd in ("add", "predict"):
+        if msg.get("type") not in tuple(W.TYPE_KEYS):
+            raise ValueError("Unknown body type")
+        if msg.get("mode", "orbit") not in ("orbit", "launch"):
+            raise ValueError("Unknown placement mode")
+    if cmd == "predict":
+        number("req", 0, 0, 16_777_216, integer=True)
+    elif cmd == "belt":
+        number("count", 60, 1, W.MAX_BODIES, integer=True)
+    elif cmd in ("remove", "supernova"):
+        number("id", None, 1, 16_777_216, integer=True)
+    elif cmd == "speed":
+        number("value", 10.0, 0.05, 2000.0)
+    elif cmd == "pause" and "value" in msg and type(msg["value"]) is not bool:
+        raise ValueError("pause value must be a boolean")
+    elif cmd == "preset" and msg.get("name", "empty") not in W.PRESETS:
+        raise ValueError("Unknown preset")
 
 
 class Server:
@@ -152,17 +194,21 @@ class Server:
                 return
             try:
                 msg = json.loads(data.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError):
+            except (UnicodeDecodeError, ValueError, RecursionError):
                 continue
             if isinstance(msg, dict):
                 self.last_heard = time.monotonic()
                 try:
                     self.handle(msg, addr)
+                except (ValueError, TypeError, KeyError, OverflowError):
+                    if self.verbose:
+                        log("Rejected malformed command")
                 except Exception:
                     traceback.print_exc()
 
     # -------------------------------------------------------------- commands
     def handle(self, msg: dict, addr):
+        validate_command(msg)
         cmd = msg.get("cmd")
         w = self.world
         if self.verbose and cmd not in ("hello", "predict"):
@@ -282,8 +328,8 @@ def selftest() -> int:
 
     # Gentle merger
     w = W.World(seed=2)
-    a = w.add_body(W.ROCKY, 0.003, (0, 0, 0), (0, 0, 0))
-    b = w.add_body(W.ROCKY, 0.001, (3, 0, 0), (-0.05, 0, 0))
+    w.add_body(W.ROCKY, 0.003, (0, 0, 0), (0, 0, 0))
+    w.add_body(W.ROCKY, 0.001, (3, 0, 0), (-0.05, 0, 0))
     run(w, 80)
     kinds = [e[0] for e in w.events]
     check("slow impact merges two planets", w.sim.N == 1 and W.EV_MERGE in kinds,
@@ -371,6 +417,12 @@ def main():
     ap.add_argument("--verbose", action="store_true", help="log every command")
     ap.add_argument("--log", metavar="FILE", help="also write all messages to this file")
     args = ap.parse_args()
+    if not 1 <= args.max_bodies <= W.MAX_BODIES:
+        ap.error(f"--max-bodies must be in 1..{W.MAX_BODIES}")
+    if not 0 <= args.port <= 65535:
+        ap.error("--port must be in 0..65535")
+    if not math.isfinite(args.exit_when_idle) or args.exit_when_idle < 0:
+        ap.error("--exit-when-idle must be finite and nonnegative")
     if args.log:
         # When Godot starts the server there is no console window, so keep a
         # log file around for troubleshooting.

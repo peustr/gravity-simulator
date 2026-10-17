@@ -105,7 +105,7 @@ gravity-simulator\
 
 ### 3.2 Install Python 3.13
 
-**Why 3.13 and not the very newest?** REBOUND publishes ready-made Windows packages ("wheels") for Python 3.9 to 3.14. Python 3.15 came out in October 2026 and REBOUND doesn't have 3.15 wheels yet. Without them, `pip` would try to compile REBOUND from source, which needs Microsoft's C++ build tools. Python 3.13 is the safe choice and can sit alongside any other Python you already have.
+**Supported Python:** 3.10–3.14; use 3.13 on Windows. REBOUND needs a compatible prebuilt wheel to install without Microsoft C++ build tools. Python 3.13 can coexist with other Python versions.
 
 **Why install Python at all, if the project uses a virtual environment?** A virtual environment (`.venv`) is not a separate copy of Python. It is built on top of an installed Python and points back to it. It holds the project's packages, not Python itself. So Python 3.13 has to exist on your computer, but it does **not** have to become your default Python: it sits quietly next to any other versions, and this project reaches it with `py -3.13`.
 
@@ -330,6 +330,11 @@ None of these affect the physics:
 - Rotation and tidal locking.
 - Stellar evolution over time.
 
+Multi-contact collisions retain merged mass when a pairwise record cannot safely
+be used for fragmentation. Tidal and kilonova ejecta are approximate and do not
+always conserve momentum exactly. Integration time budgets are checked between
+native REBOUND calls; a single call can exceed the budget.
+
 The forecast line uses the 20 most influential bodies, so in crowded scenes it is a very good approximation rather than exact.
 
 ## 6. How the project is built
@@ -377,6 +382,26 @@ The forecast line uses the 20 most influential bodies, so in crowded scenes it i
 **Forecast replies** start with `2`: `[2, req, n_points, hit, attractor_id, vx, vy, vz]`, followed by the points.
 
 The server also sends occasional JSON messages: `info`, `preset` (camera hints) and `notice` (text).
+
+Input limits:
+
+| Field | Accepted values |
+|---|---|
+| Position / drag components | Finite numbers within ±1,000,000 |
+| Mass multiplier | 0.01–100 |
+| Speed | 0.05–2000 |
+| Belt count | Integer, 1–1321 |
+| Body type / preset | Known keys only |
+| `--max-bodies` | Integer, 1–1321; default 600 |
+
+Malformed commands and unknown presets leave the scene unchanged. The body limit
+reserves room for 64 events within one IPv4 UDP datagram. Body and event codes
+are listed in the [protocol reference](docs/protocol-reference.md).
+
+Protocol limitations: UDP commands and events have no acknowledgement or retry;
+packets can be lost or reordered. Float32 IDs lose integer precision above 2^24.
+Server restarts can reuse IDs and versions; reconnecting does not guarantee a
+complete client-state reset.
 
 ## 7. Customising and extending
 
@@ -454,19 +479,47 @@ py -3.13 tools/dev.py setup
 py -3.13 tools/dev.py godot-check
 ```
 
-On Linux/macOS, replace `py -3.13` with `python3`. Cloud onboarding has validated Python 3.12 and Godot 4.6.3. The helper uses `physics_server/.venv` without requiring activation and can be called by its absolute path from another directory.
+On Linux/macOS, replace `py -3.13` with `python3`. Use Python 3.12 for Linux cloud development. The helper uses `physics_server/.venv` without requiring activation and can be called by its absolute path from another directory.
 
-**Development checks:**
+**Development checks:** install the development dependencies in the project venv.
+On Windows, use `physics_server/.venv/Scripts/python.exe` for the venv interpreter
+and `py -3.13` instead of `python3`.
 
 ```sh
-python3 tools/dev.py selftest
+physics_server/.venv/bin/python -m pip install -r requirements-dev.txt
+python3 tools/dev.py check
+python3 tools/dev.py godot-test
 python3 tools/dev.py godot-check
 python3 tools/dev.py visual-check black_hole --pause_at=2 --grid
 ```
 
+| Command | Checks |
+|---|---|
+| `check` | Python correctness lint, generated documentation, regression tests including UDP, physics self-test |
+| `godot-test` | Packet validation and Python/GDScript constants, scenarios and radius formulas |
+| `godot-check` | Headless startup and physics state reception; fails on engine/script errors or timeout |
+| `visual-check` | Scenario screenshot for visual inspection |
+
+Integration checks use the game's UDP port; close the game before running them.
+GitHub Actions runs Python checks on Linux and Windows with Python 3.10, 3.12,
+3.13 and 3.14, and Godot 4.6.3 checks on Linux. Required Quality checks must be
+configured in GitHub branch protection. Dependabot proposes weekly dependency
+updates for review.
+
+**Documentation maintenance:** the [protocol reference](docs/protocol-reference.md)
+and [contract fixture](docs/contract.json) derive from the Python implementation.
+Regenerate them after contract changes:
+
+```sh
+physics_server/.venv/bin/python tools/sync_docs.py
+```
+
+CI rejects stale generated files and mismatches with Godot. Keep README
+instructions, controls and physics descriptions aligned with the code.
+
 Ask Codex to “use $selftest” or “use $visual-check for black_hole” to apply the corresponding skill. Screenshots get unique names in ignored `shots/`; Codex must open the image to assess the result. Visual checks require a display and working graphics renderer. A headless check validates scripts and startup, not image quality.
 
-Codex reads `AGENTS.md` and discovers skills under `.agents/skills/`. Tool permissions are managed by your Codex app or environment settings. Machine-specific paths belong in environment variables, not committed files. Existing Windows setup and server launch scripts remain available.
+Codex reads `AGENTS.md` and discovers skills under `.agents/skills/`. Tool permissions are managed by your Codex app or environment settings. Machine-specific paths belong in environment variables, not committed files. `setup_physics_server.bat` installs the server; `start_physics_server.bat` runs it manually.
 
 ## 10. Troubleshooting
 
