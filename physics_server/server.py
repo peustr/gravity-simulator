@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import select
 import socket
 import sys
@@ -35,6 +34,7 @@ except ImportError as exc:  # friendly message instead of a stack trace
     sys.exit(1)
 
 import world as W
+from commands import validate
 
 PROTOCOL_VERSION = 1
 DEFAULT_PORT = 47810
@@ -98,47 +98,6 @@ def pack_prediction(req_id: int, result: dict) -> bytes:
     return head.tobytes() + body.tobytes()
 
 
-def validate_command(msg: dict) -> None:
-    """Reject malformed input before any simulation state can be changed."""
-    cmd = msg.get("cmd")
-    if not isinstance(cmd, str):
-        raise ValueError("cmd must be a string")
-
-    def number(key, default, low, high, integer=False):
-        value = msg.get(key, default)
-        if (isinstance(value, bool) or not isinstance(value, (int, float))
-                or not low <= value <= high or not math.isfinite(value)
-                or (integer and int(value) != value)):
-            raise ValueError(f"Invalid {key}")
-
-    if cmd in ("add", "predict", "belt"):
-        for key in (("pos", "drag") if cmd != "belt" else ("pos",)):
-            value = msg.get(key, (0, 0, 0) if key == "drag" else None)
-            if not isinstance(value, (list, tuple)) or len(value) != 3:
-                raise ValueError(f"{key} must have three coordinates")
-            if any(isinstance(v, bool) or not isinstance(v, (int, float))
-                   or not -1e6 <= v <= 1e6 for v in value):
-                raise ValueError(f"Invalid {key}")
-        number("mass_mult", 1.0, 0.01, 100.0)
-    if cmd in ("add", "predict"):
-        if msg.get("type") not in tuple(W.TYPE_KEYS):
-            raise ValueError("Unknown body type")
-        if msg.get("mode", "orbit") not in ("orbit", "launch"):
-            raise ValueError("Unknown placement mode")
-    if cmd == "predict":
-        number("req", 0, 0, 16_777_216, integer=True)
-    elif cmd == "belt":
-        number("count", 60, 1, W.MAX_BODIES, integer=True)
-    elif cmd in ("remove", "supernova"):
-        number("id", None, 1, 16_777_216, integer=True)
-    elif cmd == "speed":
-        number("value", 10.0, 0.05, 2000.0)
-    elif cmd == "pause" and "value" in msg and type(msg["value"]) is not bool:
-        raise ValueError("pause value must be a boolean")
-    elif cmd == "preset" and msg.get("name", "empty") not in W.PRESETS:
-        raise ValueError("Unknown preset")
-
-
 class Server:
     def __init__(self, host: str, port: int, world: W.World, verbose=False, exit_when_idle=0.0):
         self.world = world
@@ -197,18 +156,19 @@ class Server:
             except (UnicodeDecodeError, ValueError, RecursionError):
                 continue
             if isinstance(msg, dict):
-                self.last_heard = time.monotonic()
                 try:
                     self.handle(msg, addr)
-                except (ValueError, TypeError, KeyError, OverflowError):
+                    if addr == self.client:
+                        self.last_heard = time.monotonic()
+                except (ValueError, TypeError, OverflowError):
                     if self.verbose:
-                        log("Rejected malformed command")
+                        log("Rejected invalid command")
                 except Exception:
                     traceback.print_exc()
 
     # -------------------------------------------------------------- commands
     def handle(self, msg: dict, addr):
-        validate_command(msg)
+        validate(msg)
         cmd = msg.get("cmd")
         w = self.world
         if self.verbose and cmd not in ("hello", "predict"):
@@ -313,16 +273,21 @@ def selftest() -> int:
             world.speed = 1e9
             world._target_t = t_end
             world.advance(0.0, time.perf_counter() + 0.05)
+        check("integration reaches requested time", world.sim.t >= t_end,
+              f"{world.sim.t:.3f} / {t_end:.3f}")
+        snap = world.snapshot()
+        check("simulation remains finite", all(np.isfinite(snap[key]).all()
+              for key in ("m", "r", "xyz", "v")))
         return world
 
     w = W.World(seed=1)
-    for name in ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty"):
+    for name in W.SCENARIOS:
         t0 = time.perf_counter()
         w.load_preset(name)
         n0 = w.sim.N
         run(w, 5.0)
         dt = (time.perf_counter() - t0) * 1000
-        check(f"scenario '{name}' loads and runs", w.sim.N >= 0, f"{n0} bodies, {dt:.0f} ms")
+        check(f"scenario '{name}' loads and runs", w.sim.N <= w.max_bodies and len(w.meta) == w.sim.N, f"{n0} bodies, {dt:.0f} ms")
         pack = pack_state(w)
         check(f"scenario '{name}' state packet fits in one UDP datagram", len(pack) < 65000, f"{len(pack)} bytes")
 
@@ -417,12 +382,6 @@ def main():
     ap.add_argument("--verbose", action="store_true", help="log every command")
     ap.add_argument("--log", metavar="FILE", help="also write all messages to this file")
     args = ap.parse_args()
-    if not 1 <= args.max_bodies <= W.MAX_BODIES:
-        ap.error(f"--max-bodies must be in 1..{W.MAX_BODIES}")
-    if not 0 <= args.port <= 65535:
-        ap.error("--port must be in 0..65535")
-    if not math.isfinite(args.exit_when_idle) or args.exit_when_idle < 0:
-        ap.error("--exit-when-idle must be finite and nonnegative")
     if args.log:
         # When Godot starts the server there is no console window, so keep a
         # log file around for troubleshooting.
@@ -431,6 +390,12 @@ def main():
         sys.stderr = logf
     if args.selftest:
         sys.exit(selftest())
+    if not 1 <= args.max_bodies <= W.MAX_BODIES:
+        ap.error(f"--max-bodies must be between 1 and {W.MAX_BODIES}")
+    if not 0 <= args.port <= 65535:
+        ap.error("--port must be between 0 and 65535")
+    if not np.isfinite(args.exit_when_idle) or args.exit_when_idle < 0:
+        ap.error("--exit-when-idle must be finite and nonnegative")
     Server(args.host, args.port, W.World(max_bodies=args.max_bodies), args.verbose, args.exit_when_idle).run()
 
 

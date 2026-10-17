@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -34,30 +35,35 @@ def selftest() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("setup", "selftest", "godot-check", "visual-check", "lint", "test", "docs-check", "check", "godot-test"))
+    parser.add_argument("command", choices=("setup", "setup-dev", "selftest", "test", "lint", "docs", "docs-check", "check", "godot-test", "godot-check", "visual-check"))
     parser.add_argument("scenario", nargs="?", choices=SCENARIOS, default="solar")
     args, extra = parser.parse_known_args()
     if extra and args.command != "visual-check":
         parser.error("Extra automation flags are only supported for visual-check.")
-    if args.command == "setup":
+    if args.command in ("setup", "setup-dev"):
         if not (3, 10) <= sys.version_info[:2] < (3, 15):
             raise RuntimeError("Use Python 3.10–3.14; prefer 3.13 on Windows or 3.12 in cloud.")
         run([sys.executable, "-m", "venv", str(VENV)])
-        run([str(PYTHON), "-m", "pip", "install", "-r", "physics_server/requirements.txt"], 300)
+        run([str(PYTHON), "-m", "pip", "install", "-r", "requirements-dev.txt" if args.command == "setup-dev" else "physics_server/requirements.txt"], 300)
         run([str(PYTHON), "-m", "pip", "check"])
     if not PYTHON.is_file():
         raise RuntimeError("Missing physics venv. Run this helper's setup command first.")
-    if args.command in ("lint", "test", "docs-check", "check"):
-        if args.command in ("lint", "check"):
-            run([str(PYTHON), "-m", "ruff", "check", "."])
-        if args.command in ("docs-check", "check"):
-            run([str(PYTHON), "tools/sync_docs.py", "--check"])
-        if args.command in ("test", "check"):
-            run([str(PYTHON), "-m", "unittest", "discover", "-s", "tests", "-v"])
-            selftest()
-        return
-    if args.command in ("setup", "selftest"):
+    if args.command in ("setup", "setup-dev", "selftest"):
         selftest()
+        return
+
+    checks = {
+        "lint": [str(PYTHON), "-m", "ruff", "check", "."],
+        "test": [str(PYTHON), "-m", "pytest", "--cov=physics_server", "--cov-report=term-missing", "--cov-report=xml"],
+        "docs": [str(PYTHON), "tools/docs.py"],
+        "docs-check": [str(PYTHON), "tools/docs.py", "--check"],
+    }
+    if args.command in checks:
+        run(checks[args.command], timeout=300)
+        return
+    if args.command == "check":
+        for name in ("lint", "test", "docs-check", "godot-check"):
+            run([sys.executable, str(Path(__file__).resolve()), name], timeout=300)
         return
 
     godot = os.environ.get("GODOT") or shutil.which("godot") or shutil.which("godot4")
@@ -69,10 +75,21 @@ def main() -> None:
             Path(os.environ[key]).mkdir(parents=True, exist_ok=True)
     command = [godot, "--path", str(ROOT / "godot")]
     screenshot = None
-    if args.command == "godot-test":
-        command += ["--headless", "--script", "res://tests/contracts.gd"]
-    elif args.command == "godot-check":
-        command += ["--headless", "--", "--preset=solar", "--wait=2", "--quit"]
+    if args.command in ("godot-test", "godot-check"):
+        contract_output = run(command + ["--headless", "--script", "res://tests/contracts.gd"])
+        if re.search(r"SCRIPT ERROR|Parse Error|(?:^|\n)\s*ERROR:", contract_output):
+            raise RuntimeError("Godot contract tests reported errors.")
+        contract = next((line.removeprefix("CONTRACT_JSON:") for line in contract_output.splitlines()
+                         if line.startswith("CONTRACT_JSON:")), None)
+        if contract is None:
+            raise RuntimeError("Godot contract tests did not complete.")
+        # Run the comparison using the venv, which owns NumPy and REBOUND.
+        run([str(PYTHON), "-c",
+             "import sys; sys.path[:0] = ['physics_server', 'tools']; "
+             "import json, contracts; contracts.check(json.loads(sys.argv[1]))", json.dumps(json.loads(contract))])
+        if args.command == "godot-test":
+            return
+        command += ["--headless", "--", "--preset=solar", "--smoke"]
     else:
         if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
             raise RuntimeError("Visual checks require a working display and renderer. Use godot-check for headless validation.")
@@ -87,15 +104,13 @@ def main() -> None:
     output = run(command)
     if re.search(r"SCRIPT ERROR|Parse Error|(?:^|\n)\s*ERROR:", output):
         raise RuntimeError("Godot reported an error despite a zero process exit code.")
-    if args.command == "godot-test" and "Godot contract tests PASSED." not in output:
-        raise RuntimeError("Godot contract tests did not complete.")
-    if args.command == "godot-check" and "Physics state received." not in output:
-        raise RuntimeError("Godot did not receive a physics state packet.")
     if screenshot:
         if not screenshot.is_file() or screenshot.read_bytes()[:8] != b"\x89PNG\r\n\x1a\n":
             raise RuntimeError("Godot did not produce a new PNG screenshot.")
         print(f"Inspect screenshot: {screenshot}")
-    elif args.command != "godot-test":
+    else:
+        if "Godot live state check PASSED" not in output:
+            raise RuntimeError("Godot did not confirm live physics state.")
         print("Godot headless check PASSED (rendered appearance not checked).")
 
 

@@ -1,2 +1,4 @@
 -r physics_server/requirements.txt
 ruff==0.14.1
+pytest==8.4.2
+pytest-cov==7.0.0

@@ -63,10 +63,10 @@ func _process(delta: float) -> void:
 			var msg = JSON.parse_string(pkt.get_string_from_utf8())
 			if msg is Dictionary:
 				if msg.get("type", "") == "info":
-					if msg.get("protocol", 0) != 1:
+					if msg.get("protocol", -1) != 1:
 						continue
-					_last_packet = _now()
 					server_info = msg
+					_last_packet = _now()
 				message_received.emit(msg)
 			continue
 		if pkt.size() % 4 != 0:
@@ -157,6 +157,7 @@ func shutdown() -> void:
 
 
 static func valid_packet(f: PackedFloat32Array) -> bool:
+	# Validate before converting counts or indexing either header.
 	if f.is_empty():
 		return false
 	for value in f:
@@ -167,17 +168,19 @@ static func valid_packet(f: PackedFloat32Array) -> bool:
 			return false
 		var n := int(f[4])
 		var events := int(f[5])
-		if f[4] != n or f[5] != events or f.size() != 10 + n * 12 + events * 8:
+		if n < 0 or n > 1321 or events < 0 or events > 64 or f[4] != n or f[5] != events:
+			return false
+		if f.size() != 10 + n * 12 + events * 8:
 			return false
 		for i in range(n):
 			var offset := 10 + i * 12
-			var body_type := f[offset + 1]
-			if body_type < 0 or body_type > 6 or body_type != floorf(body_type):
+			if f[offset + 1] < 0 or f[offset + 1] > 6 or f[offset + 1] != int(f[offset + 1]):
+				return false
+			if f[offset + 8] <= 0 or f[offset + 9] <= 0:
 				return false
 		return true
 	if f[0] == 2.0:
-		if f.size() < 8 or f[2] < 0 or f[2] > 221:
+		if f.size() < 8 or f[2] < 0 or f[2] > 221 or f[2] != int(f[2]):
 			return false
-		var n := int(f[2])
-		return n >= 0 and n <= 221 and f[2] == n and f.size() == 8 + n * 3
+		return f.size() == 8 + int(f[2]) * 3
 	return false

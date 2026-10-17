@@ -5,7 +5,7 @@ Interactive N-body space sandbox for Windows. Two programs talk over UDP on `127
 - `physics_server/` — Python 3.10–3.14 + REBOUND 5 (IAS15 integrator) + NumPy. **All physics lives here.**
 - `godot/` — Godot 4.6+ project (GDScript, Forward+ renderer). Rendering, input and UI only. Never put physics in GDScript.
 
-Codex is the primary developer and maintainer. The user plays and develops on Windows 11; cloud development runs on Linux. The physics venv is `physics_server/.venv` (Python 3.13 on Windows; Python 3.12 is validated in the cloud). The user is learning: explain changes in plain language, and keep physics claims honest (see README "What is *not* simulated").
+Codex is the primary developer and maintainer. The user plays and develops on Windows 11; cloud development runs on Linux. The physics venv is `physics_server/.venv` (Python 3.13 on Windows; Python 3.12 for cloud development). The user is learning: explain changes in plain language, and keep physics claims honest (see README "What is *not* simulated").
 
 ## Working practices
 
@@ -14,8 +14,14 @@ Codex is the primary developer and maintainer. The user plays and develops on Wi
 - Complete authorized setup, fixes and validation without asking again for routine implementation choices. Ask when missing information or credentials actually block progress.
 - Keep local paths and credentials out of tracked files. Use the `GODOT` environment variable for a custom engine path; otherwise discover `godot` or `godot4` on PATH.
 - Keep simulation claims honest: REBOUND supplies gravity; stellar evolution, collisions and visuals include approximations documented in README.
-- Keep repository documentation concise, practical, and limited to the current state of the code. Update or remove obsolete information in place. Do not commit changelogs, dated review reports, progress updates, test-run histories, or retrospective prose; Git and PRs record history. Document only what helps a human understand, use, or maintain the repository.
 - Report what changed, what was tested, and any remaining limitation. A headless run does not validate rendered appearance.
+
+## Documentation
+
+- Document only the current repository: setup, commands, architecture, behavior, contracts and relevant limitations.
+- Keep documentation concise, factual and useful to a human reader. Avoid narrative prose, change summaries, dated review reports, session notes and historical test results.
+- Update or remove outdated information in place. Use Git history and PR descriptions for change history; do not keep changelogs or completed-work reports in repository documentation.
+- Keep generated references synchronized with their source. Report validation results in the chat or PR, not in permanent documentation.
 
 ## Commands (run from the repo root)
 
@@ -24,9 +30,11 @@ Use `python3` on Linux/macOS or `py -3.13` on Windows to run `tools/dev.py`. The
 | Task | Command (Linux/macOS) |
 |---|---|
 | Create/refresh the venv and validate physics | `python3 tools/dev.py setup` |
-| Lint, docs and Python regressions | `python3 tools/dev.py check` |
-| Godot protocol contract tests | `python3 tools/dev.py godot-test` |
+| Install developer tools | `python3 tools/dev.py setup-dev` |
+| All quality checks | `python3 tools/dev.py check` |
+| Refresh generated runtime reference | `python3 tools/dev.py docs` |
 | Physics self-test | `python3 tools/dev.py selftest` |
+| Godot protocol contract tests | `python3 tools/dev.py godot-test` |
 | Godot headless script/startup check | `python3 tools/dev.py godot-check` |
 | Render and inspect a scenario | `python3 tools/dev.py visual-check black_hole` |
 | Server with a live log | `physics_server/.venv/bin/python physics_server/server.py --verbose` |
@@ -65,16 +73,16 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 ## REBOUND 5 invariants
 
 - Never pass `name=` to `sim.add()`: the C side keeps a pointer to a temporary Python buffer. Add first, then `sim.particles[sim.N-1].name = name`. Always go through `World.add_body` / `remove_body`.
-- Reacquire particle views by name after adding particles: REBOUND can reallocate its particle array. `_swap` depends on the pinned REBOUND ABI; validate collision and partition behavior when upgrading.
+- Reacquire particle references by ID after adding particles: array growth can invalidate references to C storage.
 - Never add particles inside the collision callback. `_resolve_collision` merges and records; `_handle_collision` runs after `sim.steps(1)` and may shatter.
 - Collision callback return: 1 removes p1, 2 removes p2. REBOUND reports only *approaching* overlaps, so fragments may start overlapping the remnant.
 - Light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
 - IAS15 has one global timestep, so a single close encounter slows everything. `min_dt` is 1e-4. Keep debris counts in check (`SHATTER_MIN_MASS`, fragment caps).
-- Prefer Python 3.13 on Windows (3.12 is validated in the cloud). Check wheel availability before moving to a newer Python; do not silently introduce a compiler requirement.
+- Prefer Python 3.13 on Windows (3.12 for cloud development). Check wheel availability before moving to a newer Python; do not silently introduce a compiler requirement.
 
 ## Godot conventions
 
-- Only use APIs available in Godot 4.6 (tested on 4.6.3 and 4.7.2). GDScript with tabs, typed where practical.
+- Only use APIs available in Godot 4.6. GDScript with tabs, typed where practical.
 - Scripts are referenced with `preload` constants, not `class_name`. `main.tscn` is only a root node; everything else is created in `main.gd`.
 - HDR colour values above 1 drive the bloom. Billboards use `billboard_modelview()` from `noise.gdshaderinc`.
 - The black-hole look depends on the accretion disk being **opaque** (alpha scissor), so the lens shader (`hint_screen_texture`) can bend it.
@@ -89,5 +97,3 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 
 5. For tooling or instruction changes, exercise the affected commands and check links/paths. Do not add tests that merely restate documentation.
 6. Fix failures caused by the change; distinguish existing application defects from environment limitations. Do not weaken checks to make them pass.
-
-Development checks require `physics_server/.venv/bin/python -m pip install -r requirements-dev.txt` (use `Scripts/python.exe` on Windows). After contract changes run `tools/sync_docs.py` with the venv interpreter and run both `docs-check` and `godot-test`.

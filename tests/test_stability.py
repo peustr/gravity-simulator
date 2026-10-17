@@ -83,8 +83,9 @@ class WorldTests(unittest.TestCase):
     def test_simultaneous_contact_cannot_discard_later_mass(self):
         w = W.World()
         bid = w.add_body(W.ROCKY, 0.009, (0, 0, 0), (0, 0, 0))
-        rec = {'ms': 0.003, 'mr': 0.003}
-        self.assertFalse(w._try_shatter(w.particle(str(bid)), rec, W.ASTEROID))
+        rec = dict(s=str(bid), r='999', ts=W.ROCKY, tr=W.ROCKY, ms=.003, mr=.003,
+                   rs=1, rr=1, vrel=(10, 0, 0), normal=(1, 0, 0), heat_r=0)
+        w._handle_collision(rec)
         self.assertAlmostEqual(w.snapshot()['m'].sum(), 0.009)
 
     def test_kilonova_survivor_after_particle_array_growth(self):
@@ -111,7 +112,7 @@ class WorldTests(unittest.TestCase):
 
     def test_repeated_scenarios_keep_finite_and_consistent_state(self):
         w = W.World(seed=42)
-        for preset in W.PRESETS:
+        for preset in W.SCENARIOS:
             with self.subTest(preset=preset):
                 w.load_preset(preset)
                 for _ in range(20):

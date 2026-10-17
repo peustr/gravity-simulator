@@ -38,8 +38,8 @@ import rebound
 warnings.filterwarnings("ignore", message=".*hash table.*")
 
 G = 1.0
-MAX_BODIES = 1321  # IPv4 UDP: 40-byte header + bodies + 64 32-byte events
-PRESETS = ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty")
+MAX_BODIES = 1321  # 10 + 12*N + 8*64 float32 values must fit IPv4 UDP (65507 bytes).
+SCENARIOS = ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty")
 
 # --- Body types (must match godot/scripts/palette.gd) -------------------------
 ROCKY, GAS_GIANT, STAR, NEUTRON_STAR, BLACK_HOLE, ASTEROID, PLASMA = range(7)
@@ -161,7 +161,7 @@ class World:
 
     def __init__(self, max_bodies: int = 600, seed: int | None = None):
         if type(max_bodies) is not int or not 1 <= max_bodies <= MAX_BODIES:
-            raise ValueError(f"max_bodies must be an integer in 1..{MAX_BODIES}")
+            raise ValueError(f"max_bodies must be an integer from 1 to {MAX_BODIES}")
         self.max_bodies = max_bodies
         self.rng = random.Random(seed)
         self.speed = 10.0          # simulation time units per real second
@@ -194,14 +194,16 @@ class World:
         sim.collision = "direct"
         sim.collision_resolve = self._resolve_collision
         self.sim = sim
+        self.events.clear()
+        self.notices.clear()
+        self._partition_dirty = True
+        self._ema_req = self._ema_got = 0.0
+        self.perf = 1.0
         self.meta = {}
         self._pending = []
         self._supernova_queue = []
         self._names_dirty = True
         self._target_t = 0.0
-        self._partition_dirty = True
-        self.events.clear()
-        self.notices.clear()
         self.version += 1
 
     def clear(self):
@@ -268,6 +270,7 @@ class World:
         sim = self.sim
         n = sim.N
         if n == 0:
+            sim.N_active = 0
             return
         self._refresh_names()
         m = np.zeros(n)
@@ -523,7 +526,7 @@ class World:
                          * min(1.0, 3.0 * mr / max(ms, 1e-12)))
         self._event(EV_MERGE, pos, min(1.5, 0.15 + 0.5 * ratio * min(1.0, 3 * mr / ms)),
                     max(r_sum, 0.3), sid, rid)
-        self._promote(rec["s"], p)
+        self._promote(rec["s"], self.particle(rec["s"]))
 
     def _try_shatter(self, p, rec, frag_type) -> bool:
         """Simplified Leinhardt & Stewart (2012) catastrophic disruption.
@@ -535,10 +538,6 @@ class World:
         """
         ms, mr = rec["ms"], rec["mr"]
         M = ms + mr
-        # Multiple contacts can merge into one survivor in a single C step.
-        # A pairwise record must never overwrite the mass from later contacts.
-        if not math.isclose(p.m, M, rel_tol=1e-12):
-            return False
         if mr <= 0 or M <= 0:
             return False
         mu = ms * mr / M
@@ -554,6 +553,8 @@ class World:
         lr_frac = min(1.0, max(0.04, 1.0 - 0.5 * ratio))
         if vimp < 1.25 * vesc or lr_frac > 0.93 or M < SHATTER_MIN_MASS:
             return False
+        # Earlier callbacks in the same step may have merged more mass.
+        M = p.m
         m_ej = M * (1.0 - lr_frac)
         n = int(round(4 + 12 * (1.0 - lr_frac)))
         # Fewer fragments in crowded scenes keeps the simulation real-time.
@@ -597,7 +598,7 @@ class World:
         sm = self.meta.get(rec["s"])
         if sm is not None:
             sm["heat"] = 1.0
-        for mf, off, u, rf in frags:
+        for mf, off, u, _rf in frags:
             pos = _add(x_cm, off)
             vel = _add(v_cm, _sub(u, u_mean))
             self.add_body(self._promoted_type(frag_type, mf), mf, pos, vel, heat=heat_new)
@@ -621,11 +622,11 @@ class World:
                 rf = radius_for(PLASMA, mf)
                 self.add_body(PLASMA, mf, _add(pos, _mul(d, 2.0 + rf * 2)),
                               _add(vel0, _mul(d, 0.6 * vesc * self.rng.uniform(0.8, 1.2))), heat=1.0)
-        # sim.add may reallocate REBOUND's particle array; reacquire the view.
+        # Adding ejecta can reallocate REBOUND's particle array.
         p = self.particle(rec["s"])
         p.r = radius_for(NEUTRON_STAR, p.m)
         self._event(EV_KILONOVA, pos, 2.5, 20.0, int(rec["s"]), int(rec["r"]))
-        self._promote(rec["s"], p)
+        self._promote(rec["s"], self.particle(rec["s"]))
 
     # -------------------------------------------------------------- promotion
     @staticmethod
@@ -685,7 +686,7 @@ class World:
         w = [self.rng.uniform(0.75, 1.25) for _ in range(n)]
         sw = sum(w)
         ej = []
-        for d, wi in zip(dirs, w):
+        for d, wi in zip(dirs, w, strict=True):
             mf = m_ej * wi / sw
             ej.append((mf, d, v_base * self.rng.uniform(0.75, 1.25)))
         pf = (0.0, 0.0, 0.0)
@@ -819,12 +820,12 @@ class World:
         return _add(va, _mul(t, v_circ)), a, (0.0, 0.0, 0.0)
 
     def spawn(self, btype, pos, mode="orbit", drag=(0, 0, 0), mass_mult=1.0):
-        mass = DEFAULT_MASS[btype] * mass_mult
-        if mass <= 0 or not math.isfinite(mass):
-            raise ValueError("mass must be positive and finite")
         if self.sim.N >= self.max_bodies:
             self.notice(f"Body limit reached ({self.max_bodies}). Delete some debris or clear the scene.")
             return None
+        mass = DEFAULT_MASS[btype] * mass_mult
+        if mass <= 0 or not math.isfinite(mass):
+            raise ValueError("mass must be positive and finite")
         snap = self.snapshot()
         vel, a, kick = self.initial_velocity(pos, mass, mode, drag, snap)
         if a is not None and _norm(kick) > 0:
@@ -989,8 +990,8 @@ class World:
 
     def load_preset(self, name: str) -> dict:
         """Load a named scenario. Returns a camera hint for the client."""
-        if name not in PRESETS:
-            raise ValueError(f"Unknown preset: {name}")
+        if name not in SCENARIOS:
+            raise ValueError(f"Unknown scenario: {name!r}")
         self.clear()
         rng = self.rng
         cam = {"focus": [0, 0, 0], "distance": 400.0, "pitch": 0.6}
