@@ -5,18 +5,34 @@ Interactive N-body space sandbox for Windows. Two programs talk over UDP on `127
 - `physics_server/` — Python 3.10–3.14 + REBOUND 5 (IAS15 integrator) + NumPy. **All physics lives here.**
 - `godot/` — Godot 4.6+ project (GDScript, Forward+ renderer). Rendering, input and UI only. Never put physics in GDScript.
 
-The user develops on Windows 11. The physics venv is `physics_server/.venv` (Python 3.13). The user is learning: explain changes in plain language, and keep physics claims honest (see README "What is *not* simulated").
+Codex is the primary developer and maintainer. The user plays and develops on Windows 11; cloud development runs on Linux. The physics venv is `physics_server/.venv` (Python 3.13 on Windows; Python 3.12 is validated in the cloud). The user is learning: explain changes in plain language, and keep physics claims honest (see README "What is *not* simulated").
+
+## Working practices
+
+- Read the relevant code and check `git status` before editing. Preserve user changes and keep patches focused on the requested outcome.
+- Use the existing checkout. Cloud tasks are already isolated; create a Git worktree only when explicitly requested.
+- Complete authorized setup, fixes and validation without asking again for routine implementation choices. Ask when missing information or credentials actually block progress.
+- Keep local paths and credentials out of tracked files. Use the `GODOT` environment variable for a custom engine path; otherwise discover `godot` or `godot4` on PATH.
+- Keep simulation claims honest: REBOUND supplies gravity; stellar evolution, collisions and visuals include approximations documented in README.
+- Report what changed, what was tested, and any remaining limitation. A headless run does not validate rendered appearance.
 
 ## Commands (run from the repo root)
 
-- Physics self-test — run after **any** change in `physics_server/`:
-  `physics_server/.venv/Scripts/python.exe physics_server/server.py --selftest`
-  (on macOS/Linux the interpreter is `physics_server/.venv/bin/python`)
-- Server with a live log: `physics_server/.venv/Scripts/python.exe physics_server/server.py --verbose`
-- Godot executable: `GODOT` in `CLAUDE.local.md` (the `_console.exe` build, so errors reach the terminal). If it's missing, ask the user for the path and save it there.
-- Script/parse check without a window: `"$GODOT" --headless --path godot --quit-after 300`
-- Visual check (renders a PNG you can look at): use the `/visual-check` skill.
-- Don't launch the Godot editor or play the game interactively; the user does that.
+Use `python3` on Linux/macOS or `py -3.13` on Windows to run `tools/dev.py`. The helper finds the repository and its venv independently of the current directory.
+
+| Task | Command (Linux/macOS) |
+|---|---|
+| Create/refresh the venv and validate physics | `python3 tools/dev.py setup` |
+| Physics self-test | `python3 tools/dev.py selftest` |
+| Godot headless script/startup check | `python3 tools/dev.py godot-check` |
+| Render and inspect a scenario | `python3 tools/dev.py visual-check black_hole` |
+| Server with a live log | `physics_server/.venv/bin/python physics_server/server.py --verbose` |
+
+On Windows the standalone server interpreter is `physics_server/.venv/Scripts/python.exe`. Use the standard Godot 4.6+ build; choose its console executable on Windows. Godot starts the venv server automatically and stops its child on exit. Do not start a duplicate server on UDP port 47810.
+
+Codex skills: `$selftest` in `.agents/skills/selftest/` and `$visual-check` in `.agents/skills/visual-check/`. These contain diagnosis and validation guidance. Do not launch the editor or play interactively unless requested.
+
+Cloud headless checks use writable XDG cache/data directories when needed. Visual checks require a working display and graphics renderer; report unavailable rendering separately from successful physics or script checks. Never treat a stale screenshot as evidence for the current run.
 
 ## Layout
 
@@ -50,7 +66,7 @@ The user develops on Windows 11. The physics venv is `physics_server/.venv` (Pyt
 - Collision callback return: 1 removes p1, 2 removes p2. REBOUND reports only *approaching* overlaps, so fragments may start overlapping the remnant.
 - Light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
 - IAS15 has one global timestep, so a single close encounter slows everything. `min_dt` is 1e-4. Keep debris counts in check (`SHATTER_MIN_MASS`, fragment caps).
-- Python 3.15 has no REBOUND wheels yet; keep the venv on 3.13.
+- Prefer Python 3.13 on Windows (3.12 is validated in the cloud). Check wheel availability before moving to a newer Python; do not silently introduce a compiler requirement.
 
 ## Godot conventions
 
@@ -64,5 +80,8 @@ The user develops on Windows 11. The physics venv is `physics_server/.venv` (Pyt
 
 1. The self-test passes (for physics changes).
 2. The headless Godot run prints no `SCRIPT ERROR` or `Parse Error` (for Godot changes).
-3. For visual changes, run `/visual-check` and actually look at the PNG.
+3. For visual changes, run `$visual-check` and actually look at the PNG.
 4. The README is updated if anything user-visible changed.
+
+5. For tooling or instruction changes, exercise the affected commands and check links/paths. Do not add tests that merely restate documentation.
+6. Fix failures caused by the change; distinguish existing application defects from environment limitations. Do not weaken checks to make them pass.

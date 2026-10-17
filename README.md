@@ -26,7 +26,7 @@ The physics runs on **[REBOUND](https://rebound.hanno-rein.de/)**, an open-sourc
 6. [How the project is built](#6-how-the-project-is-built)
 7. [Customising and extending](#7-customising-and-extending)
 8. [Making a stand-alone .exe (optional)](#8-making-a-stand-alone-exe-optional)
-9. [Working on it with Claude Code](#9-working-on-it-with-claude-code)
+9. [Developing with Codex](#9-developing-with-codex)
 10. [Troubleshooting](#10-troubleshooting)
 11. [Credits and licences](#11-credits-and-licences)
 
@@ -188,7 +188,7 @@ There is no need to "activate" the environment, and no PowerShell execution-poli
    - Any **4.6 or newer** release works. The project was tested with Godot 4.7.2.
    - Godot is also on Steam and itch.io if you prefer those.
 2. You get a zip such as `Godot_v4.7.2-stable_win64.exe.zip`. Extract it anywhere, for example `C:\Tools\Godot\`.
-3. Double-click `Godot_v4.x-stable_win64.exe`. There is no installer. (The other file, `..._console.exe`, is the same program with a console window. You don't need it to play, but it is the one to give Claude Code, see [section 9](#9-working-on-it-with-claude-code), because it prints errors to the terminal.)
+3. Double-click `Godot_v4.x-stable_win64.exe`. There is no installer. (The other file, `..._console.exe`, is the same program with a console window. You don't need it to play, but it is the one to give Codex, see [section 9](#9-developing-with-codex), because it prints errors to the terminal.)
 
 ### 3.5 Open the project in Godot
 
@@ -435,39 +435,38 @@ Two caveats:
 - Some antivirus tools flag one-file PyInstaller builds by mistake.
 - Shipping REBOUND means following its licence; see [section 11](#11-credits-and-licences).
 
-## 9. Working on it with Claude Code
+## 9. Developing with Codex
 
-The project is set up for [Claude Code](https://code.claude.com/docs/en/overview), Anthropic's coding assistant, so you can keep extending it with Claude's help:
+[Codex](https://developers.openai.com/codex/) is the primary coding assistant for this project. Open the repository in Codex, or run the Codex CLI from this folder. The same instructions work for Windows development and Linux cloud tasks.
 
 | File | Purpose |
 |---|---|
-| `CLAUDE.md` | Project briefing Claude reads at the start of every session: architecture, commands, the places that must stay in sync, hard-won REBOUND gotchas |
-| `.claude/settings.json` | Lets Claude run the self-test and read-only git commands without asking each time |
-| `.claude/skills/selftest/` | `/selftest`: run the physics self-test and summarise the results |
-| `.claude/skills/visual-check/` | `/visual-check black_hole`: render a scenario to a PNG and have Claude look at it |
-| `CLAUDE.local.md` | *Your* private notes, such as where Godot lives on your machine. Not committed to git |
+| `AGENTS.md` | Repository guidance: architecture, commands, physics invariants, conventions and validation requirements |
+| `.agents/skills/selftest/SKILL.md` | `$selftest`: run and diagnose the physics self-test |
+| `.agents/skills/visual-check/SKILL.md` | `$visual-check`: render a scenario and inspect its screenshot |
+| `tools/dev.py` | Cross-platform setup, physics tests, headless Godot checks and screenshot capture |
 
-**Setup:**
+**Local setup:** install Python 3.13 and standard Godot 4.6+ as described above. If Godot is not on PATH, set `GODOT` to its executable. On Windows, use the console build so Codex can read errors. For example, in PowerShell:
 
-1. Install [Git for Windows](https://git-scm.com/downloads/win), keeping the default options. Claude Code uses its Git Bash to run commands, and you'll want version control anyway.
-2. Install Claude Code. In PowerShell run `irm https://claude.ai/install.ps1 | iex`, then open a new terminal and check that `claude --version` prints a version number. It needs a Claude Pro, Max, Team, Enterprise or Console account.
-3. Open a terminal in the `gravity-simulator` folder and put the project under version control:
+```powershell
+$env:GODOT = "C:/Tools/Godot/Godot_v4.6.3-stable_win64_console.exe"
+py -3.13 tools/dev.py setup
+py -3.13 tools/dev.py godot-check
+```
 
-   ```powershell
-   git init
-   git add .
-   git commit -m "Gravity Simulator: first version"
-   ```
+On Linux/macOS, replace `py -3.13` with `python3`. Cloud onboarding has validated Python 3.12 and Godot 4.6.3. The helper uses `physics_server/.venv` without requiring activation and can be called by its absolute path from another directory.
 
-4. Create `CLAUDE.local.md` in the same folder, with the path to Godot's **console** build, for example:
+**Development checks:**
 
-   ```markdown
-   GODOT="C:/Tools/Godot/Godot_v4.7.2-stable_win64_console.exe"
-   ```
+```sh
+python3 tools/dev.py selftest
+python3 tools/dev.py godot-check
+python3 tools/dev.py visual-check black_hole --pause_at=2 --grid
+```
 
-5. Run `claude` in that folder, approve the folder when asked, and try `/selftest`.
+Ask Codex to “use $selftest” or “use $visual-check for black_hole” to apply the corresponding skill. Screenshots get unique names in ignored `shots/`; Codex must open the image to assess the result. Visual checks require a display and working graphics renderer. A headless check validates scripts and startup, not image quality.
 
-Commit your work regularly (or ask Claude to): git makes every experiment safe to undo.
+Codex reads `AGENTS.md` and discovers skills under `.agents/skills/`. Tool permissions are managed by your Codex app or environment settings. Machine-specific paths belong in environment variables, not committed files. Existing Windows setup and server launch scripts remain available.
 
 ## 10. Troubleshooting
 

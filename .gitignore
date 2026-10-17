@@ -42,15 +42,14 @@ __pycache__/
 physics_server/server.log
 
 # --- Project outputs ---------------------------------------------------------------
-# Screenshots from /visual-check and the --screenshot flag
+# Screenshots from $visual-check and the --screenshot flag
 /shots/
 # Distribution zips
 *.zip
 
-# --- Claude Code (personal, per-machine) -----------------------------------------------
-# Shared settings in .claude/settings.json and .claude/skills/ ARE committed
-CLAUDE.local.md
-.claude/settings.local.json
+# --- Codex ---------------------------------------------------------------------
+# AGENTS.md and .agents/skills/ are shared and committed.
+# Machine-specific engine paths use the GODOT environment variable.
 
 # --- Operating system & editors ---------------------------------------------------------
 Thumbs.db
