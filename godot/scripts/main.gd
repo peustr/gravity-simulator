@@ -223,6 +223,8 @@ func _max_tau() -> float:
 
 
 func _on_state(f: PackedFloat32Array) -> void:
+	if not NetClient.valid_packet(f) or f[0] != 1.0:
+		return
 	var n := int(f[4])
 	var ne := int(f[5])
 	if f.size() < HEADER + n * BODY + ne * EVENT:
@@ -392,6 +394,8 @@ func _event_text(kind: int, a: int, b: int) -> Array:
 
 
 func _on_prediction(f: PackedFloat32Array) -> void:
+	if not NetClient.valid_packet(f) or f[0] != 2.0:
+		return
 	var req := int(f[1])
 	if req < pred_applied:
 		return
@@ -865,6 +869,10 @@ func _run_auto(delta: float) -> void:
 	if _auto.is_empty() or _auto_done or (not net.connected and not _auto.has("offline_ok")):
 		return
 	_auto_time += delta
+	if _auto.has("smoke") and views.size() > 0 and _auto_time > 2.0:
+		print("Godot live state check PASSED")
+		get_tree().quit()
+		return
 	if _auto.has("follow_type") and follow_id < 0 and _auto_time > 0.3:
 		for id in views:
 			if views[id].body_type == int(_auto["follow_type"]):

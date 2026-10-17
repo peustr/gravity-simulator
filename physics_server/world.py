@@ -38,6 +38,8 @@ import rebound
 warnings.filterwarnings("ignore", message=".*hash table.*")
 
 G = 1.0
+MAX_BODIES = 1321  # 10 + 12*N + 8*64 float32 values must fit IPv4 UDP (65507 bytes).
+SCENARIOS = ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty")
 
 # --- Body types (must match godot/scripts/palette.gd) -------------------------
 ROCKY, GAS_GIANT, STAR, NEUTRON_STAR, BLACK_HOLE, ASTEROID, PLASMA = range(7)
@@ -158,6 +160,8 @@ class World:
     """Owns the REBOUND simulation plus the game-level bookkeeping around it."""
 
     def __init__(self, max_bodies: int = 600, seed: int | None = None):
+        if type(max_bodies) is not int or not 1 <= max_bodies <= MAX_BODIES:
+            raise ValueError(f"max_bodies must be an integer from 1 to {MAX_BODIES}")
         self.max_bodies = max_bodies
         self.rng = random.Random(seed)
         self.speed = 10.0          # simulation time units per real second
@@ -190,6 +194,11 @@ class World:
         sim.collision = "direct"
         sim.collision_resolve = self._resolve_collision
         self.sim = sim
+        self.events.clear()
+        self.notices.clear()
+        self._partition_dirty = True
+        self._ema_req = self._ema_got = 0.0
+        self.perf = 1.0
         self.meta = {}
         self._pending = []
         self._supernova_queue = []
@@ -261,6 +270,7 @@ class World:
         sim = self.sim
         n = sim.N
         if n == 0:
+            sim.N_active = 0
             return
         self._refresh_names()
         m = np.zeros(n)
@@ -288,6 +298,7 @@ class World:
         if idx is None:
             return False
         self.sim.remove(idx)
+        self._partition_dirty = True
         self.meta.pop(name, None)
         self._names_dirty = True
         self.version += 1
@@ -354,6 +365,7 @@ class World:
                     self._repartition()
                 # Tides are checked every step so fast fly-bys are never missed.
                 self._tidal_check()
+                self._repartition()
             if stepped:
                 self.version += 1
         dt_sim = sim.t - t_start
@@ -497,12 +509,12 @@ class World:
                             max(rec["rr"] * 3, 2.0), sid, rid)
                 if tr in (ROCKY, GAS_GIANT, ASTEROID):
                     sm["heat"] = min(1.0, sm["heat"] + 0.2)
-            self._promote(rec["s"], p)
+            self._promote(rec["s"], self.particle(rec["s"]))
             return
 
         # Gas clouds simply coalesce; solid bodies can shatter.
         if PLASMA not in (ts, tr) and self._try_shatter(p, rec, frag_type):
-            self._promote(rec["s"], p)
+            self._promote(rec["s"], self.particle(rec["s"]))
             return
 
         # Plain merger: a hot, molten survivor.
@@ -514,7 +526,7 @@ class World:
                          * min(1.0, 3.0 * mr / max(ms, 1e-12)))
         self._event(EV_MERGE, pos, min(1.5, 0.15 + 0.5 * ratio * min(1.0, 3 * mr / ms)),
                     max(r_sum, 0.3), sid, rid)
-        self._promote(rec["s"], p)
+        self._promote(rec["s"], self.particle(rec["s"]))
 
     def _try_shatter(self, p, rec, frag_type) -> bool:
         """Simplified Leinhardt & Stewart (2012) catastrophic disruption.
@@ -541,6 +553,8 @@ class World:
         lr_frac = min(1.0, max(0.04, 1.0 - 0.5 * ratio))
         if vimp < 1.25 * vesc or lr_frac > 0.93 or M < SHATTER_MIN_MASS:
             return False
+        # Earlier callbacks in the same step may have merged more mass.
+        M = p.m
         m_ej = M * (1.0 - lr_frac)
         n = int(round(4 + 12 * (1.0 - lr_frac)))
         # Fewer fragments in crowded scenes keeps the simulation real-time.
@@ -584,7 +598,7 @@ class World:
         sm = self.meta.get(rec["s"])
         if sm is not None:
             sm["heat"] = 1.0
-        for mf, off, u, rf in frags:
+        for mf, off, u, _rf in frags:
             pos = _add(x_cm, off)
             vel = _add(v_cm, _sub(u, u_mean))
             self.add_body(self._promoted_type(frag_type, mf), mf, pos, vel, heat=heat_new)
@@ -608,9 +622,11 @@ class World:
                 rf = radius_for(PLASMA, mf)
                 self.add_body(PLASMA, mf, _add(pos, _mul(d, 2.0 + rf * 2)),
                               _add(vel0, _mul(d, 0.6 * vesc * self.rng.uniform(0.8, 1.2))), heat=1.0)
+        # Adding ejecta can reallocate REBOUND's particle array.
+        p = self.particle(rec["s"])
         p.r = radius_for(NEUTRON_STAR, p.m)
         self._event(EV_KILONOVA, pos, 2.5, 20.0, int(rec["s"]), int(rec["r"]))
-        self._promote(rec["s"], p)
+        self._promote(rec["s"], self.particle(rec["s"]))
 
     # -------------------------------------------------------------- promotion
     @staticmethod
@@ -670,7 +686,7 @@ class World:
         w = [self.rng.uniform(0.75, 1.25) for _ in range(n)]
         sw = sum(w)
         ej = []
-        for d, wi in zip(dirs, w):
+        for d, wi in zip(dirs, w, strict=True):
             mf = m_ej * wi / sw
             ej.append((mf, d, v_base * self.rng.uniform(0.75, 1.25)))
         pf = (0.0, 0.0, 0.0)
@@ -804,6 +820,9 @@ class World:
         return _add(va, _mul(t, v_circ)), a, (0.0, 0.0, 0.0)
 
     def spawn(self, btype, pos, mode="orbit", drag=(0, 0, 0), mass_mult=1.0):
+        if self.sim.N >= self.max_bodies:
+            self.notice(f"Body limit reached ({self.max_bodies}). Delete some debris or clear the scene.")
+            return None
         mass = DEFAULT_MASS[btype] * mass_mult
         snap = self.snapshot()
         vel, a, kick = self.initial_velocity(pos, mass, mode, drag, snap)
@@ -812,9 +831,6 @@ class World:
             pa.vx += kick[0]
             pa.vy += kick[1]
             pa.vz += kick[2]
-        if self.sim.N >= self.max_bodies:
-            self.notice(f"Body limit reached ({self.max_bodies}). Delete some debris or clear the scene.")
-            return None
         return self.add_body(btype, mass, pos, vel)
 
     def belt(self, pos, count=60, mass_mult=1.0):
@@ -972,35 +988,37 @@ class World:
 
     def load_preset(self, name: str) -> dict:
         """Load a named scenario. Returns a camera hint for the client."""
+        if name not in SCENARIOS:
+            raise ValueError(f"Unknown scenario: {name!r}")
         self.clear()
         rng = self.rng
         cam = {"focus": [0, 0, 0], "distance": 400.0, "pitch": 0.6}
-        O = (0.0, 0.0, 0.0)
+        origin = (0.0, 0.0, 0.0)
 
         if name == "solar":
             sun = 1000.0
-            self.add_body(STAR, sun, O, O)
+            self.add_body(STAR, sun, origin, origin)
             for r_orb, m, ph in ((30, 0.0005, 0.3), (44, 0.0025, 2.0), (82, 0.0003, 4.1)):
-                p, v = self.orbit(O, O, sun, r_orb, ph)
+                p, v = self.orbit(origin, origin, sun, r_orb, ph)
                 self.add_body(ROCKY, m, p, v)
-            ep, ev = self.orbit(O, O, sun, 60, 5.2)
+            ep, ev = self.orbit(origin, origin, sun, 60, 5.2)
             self.add_body(ROCKY, 0.003, ep, ev)
             mp, mv = self.orbit(ep, ev, 0.003, 3.0, 1.0)
             self.add_body(ROCKY, 3.7e-5, mp, mv)
             for _ in range(60):
-                p, v = self.orbit(O, O, sun, rng.uniform(110, 132), rng.uniform(0, 6.283), rng.gauss(0, 0.02))
+                p, v = self.orbit(origin, origin, sun, rng.uniform(110, 132), rng.uniform(0, 6.283), rng.gauss(0, 0.02))
                 self.add_body(ASTEROID, DEFAULT_MASS[ASTEROID] * rng.uniform(0.5, 2), p, v)
-            jp, jv = self.orbit(O, O, sun, 180, 0.9)
+            jp, jv = self.orbit(origin, origin, sun, 180, 0.9)
             self.add_body(GAS_GIANT, 1.0, jp, jv)
             for r_m, ph in ((4.2, 0.0), (5.3, 2.1), (6.4, 4.2)):
                 p, v = self.orbit(jp, jv, 1.0, r_m, ph)
                 self.add_body(ROCKY, 1.5e-5, p, v)
-            sp, sv = self.orbit(O, O, sun, 270, 3.3)
+            sp, sv = self.orbit(origin, origin, sun, 270, 3.3)
             self.add_body(GAS_GIANT, 0.3, sp, sv)
             for _ in range(40):
                 p, v = self.orbit(sp, sv, 0.3, rng.uniform(4.3, 6.3), rng.uniform(0, 6.283))
                 self.add_body(ASTEROID, 1e-6, p, v)
-            np_, nv = self.orbit(O, O, sun, 360, 5.5)
+            np_, nv = self.orbit(origin, origin, sun, 360, 5.5)
             self.add_body(GAS_GIANT, 0.05, np_, nv)
             cam = {"focus": [0, 0, 0], "distance": 420.0, "pitch": 0.62}
 
@@ -1013,20 +1031,20 @@ class World:
             p, v = self.orbit((xa, 0, 0), (0, 0, vrel * mb / (ma + mb)), ma, 9.0, 1.0)
             self.add_body(ROCKY, 0.003, p, v)
             for r_orb, btype, m, ph in ((150, GAS_GIANT, 1.0, 0.5), (230, ROCKY, 0.004, 3.0), (300, GAS_GIANT, 0.2, 5.0)):
-                p, v = self.orbit(O, O, ma + mb, r_orb, ph)
+                p, v = self.orbit(origin, origin, ma + mb, r_orb, ph)
                 self.add_body(btype, m, p, v)
             cam = {"focus": [0, 0, 0], "distance": 420.0, "pitch": 0.7}
 
         elif name == "black_hole":
             bh = 20000.0
-            self.add_body(BLACK_HOLE, bh, O, O)
+            self.add_body(BLACK_HOLE, bh, origin, origin)
             # A star on a plunging orbit: it will be torn apart near periapsis.
             apo, peri = 220.0, 24.0
             sma = (apo + peri) / 2
             mu = G * (bh + 1000)
             v_apo = math.sqrt(mu * (2 / apo - 1 / sma))
             self.add_body(STAR, 1000.0, (-apo, 0, 0), (0, 0, -v_apo))
-            bp, bv = self.orbit(O, O, bh, 110, 1.2)
+            bp, bv = self.orbit(origin, origin, bh, 110, 1.2)
             self.add_body(STAR, 1500.0, bp, bv)
             pp, pv = self.orbit(bp, bv, 1500, 9.0, 0.0)
             self.add_body(ROCKY, 0.003, pp, pv)
@@ -1035,7 +1053,7 @@ class World:
             v2 = math.sqrt(G * (bh + 600) * (2 / apo2 - 1 / sma2))
             self.add_body(STAR, 600.0, (0, 0, apo2), (v2, 0, 0))
             for _ in range(45):
-                p, v = self.orbit(O, O, bh, rng.uniform(55, 75), rng.uniform(0, 6.283), rng.gauss(0, 0.03))
+                p, v = self.orbit(origin, origin, bh, rng.uniform(55, 75), rng.uniform(0, 6.283), rng.gauss(0, 0.03))
                 self.add_body(ASTEROID, DEFAULT_MASS[ASTEROID], p, v)
             cam = {"focus": [0, 0, 0], "distance": 300.0, "pitch": 0.35}
 
@@ -1047,10 +1065,10 @@ class World:
 
         elif name == "formation":
             sun = 1000.0
-            self.add_body(STAR, sun, O, O)
+            self.add_body(STAR, sun, origin, origin)
             for _ in range(200):
                 r_orb = rng.uniform(40, 150)
-                p, v = self.orbit(O, O, sun, r_orb, rng.uniform(0, 6.283), rng.gauss(0, 0.01))
+                p, v = self.orbit(origin, origin, sun, r_orb, rng.uniform(0, 6.283), rng.gauss(0, 0.01))
                 v = _add(v, _mul(self._rand_unit(), 0.006 * math.sqrt(sun / r_orb)))
                 self.add_body(ASTEROID, 2e-4 * rng.uniform(0.6, 1.4), p, v)
             self.speed = 25.0

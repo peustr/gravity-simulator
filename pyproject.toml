@@ -1,0 +1,20 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["physics_server", "."]
+addopts = "-ra --strict-markers"
+filterwarnings = ["error", "ignore:.*hash table.*:RuntimeWarning"]
+
+[tool.coverage.run]
+branch = true
+source = ["physics_server"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

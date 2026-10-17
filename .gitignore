@@ -62,3 +62,8 @@ $RECYCLE.BIN/
 .idea/
 *.swp
 *~
+
+# Validation outputs
+.coverage
+coverage.xml
+htmlcov/

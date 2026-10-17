@@ -34,6 +34,7 @@ except ImportError as exc:  # friendly message instead of a stack trace
     sys.exit(1)
 
 import world as W
+from commands import validate
 
 PROTOCOL_VERSION = 1
 DEFAULT_PORT = 47810
@@ -60,8 +61,8 @@ def pack_state(world: W.World) -> bytes:
     header = np.array([
         1.0, float(world.version % 16_000_000), t_hi, t - t_hi, n, len(events),
         1.0 if world.paused else 0.0, world.speed, world.perf, world.max_bodies,
-    ], dtype=np.float32)
-    bodies = np.zeros((n, BODY_FLOATS), dtype=np.float32)
+    ], dtype="<f4")
+    bodies = np.zeros((n, BODY_FLOATS), dtype="<f4")
     if n:
         names = snap["names"]
         meta = world.meta
@@ -84,7 +85,7 @@ def pack_state(world: W.World) -> bytes:
         bodies[:, 9] = snap["r"]
         bodies[:, 10] = heat
         bodies[:, 11] = age
-    ev = np.array(events, dtype=np.float32).reshape(len(events), EVENT_FLOATS)
+    ev = np.array(events, dtype="<f4").reshape(len(events), EVENT_FLOATS)
     return header.tobytes() + bodies.tobytes() + ev.tobytes()
 
 
@@ -92,8 +93,8 @@ def pack_prediction(req_id: int, result: dict) -> bytes:
     pts = result["points"]
     vel = result["vel"]
     head = np.array([2.0, req_id, len(pts), 1.0 if result["hit"] else 0.0,
-                     result["attractor"], vel[0], vel[1], vel[2]], dtype=np.float32)
-    body = np.array(pts, dtype=np.float32).reshape(len(pts), 3)
+                     result["attractor"], vel[0], vel[1], vel[2]], dtype="<f4")
+    body = np.array(pts, dtype="<f4").reshape(len(pts), 3)
     return head.tobytes() + body.tobytes()
 
 
@@ -152,17 +153,22 @@ class Server:
                 return
             try:
                 msg = json.loads(data.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError):
+            except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
                 continue
             if isinstance(msg, dict):
-                self.last_heard = time.monotonic()
                 try:
                     self.handle(msg, addr)
+                    if addr == self.client:
+                        self.last_heard = time.monotonic()
+                except (ValueError, TypeError, OverflowError):
+                    if self.verbose:
+                        log("Rejected invalid command")
                 except Exception:
                     traceback.print_exc()
 
     # -------------------------------------------------------------- commands
     def handle(self, msg: dict, addr):
+        validate(msg)
         cmd = msg.get("cmd")
         w = self.world
         if self.verbose and cmd not in ("hello", "predict"):
@@ -267,23 +273,28 @@ def selftest() -> int:
             world.speed = 1e9
             world._target_t = t_end
             world.advance(0.0, time.perf_counter() + 0.05)
+        check("integration reaches requested time", world.sim.t >= t_end,
+              f"{world.sim.t:.3f} / {t_end:.3f}")
+        snap = world.snapshot()
+        check("simulation remains finite", all(np.isfinite(snap[key]).all()
+              for key in ("m", "r", "xyz", "v")))
         return world
 
     w = W.World(seed=1)
-    for name in ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty"):
+    for name in W.SCENARIOS:
         t0 = time.perf_counter()
         w.load_preset(name)
         n0 = w.sim.N
         run(w, 5.0)
         dt = (time.perf_counter() - t0) * 1000
-        check(f"scenario '{name}' loads and runs", w.sim.N >= 0, f"{n0} bodies, {dt:.0f} ms")
+        check(f"scenario '{name}' loads and runs", w.sim.N <= w.max_bodies and len(w.meta) == w.sim.N, f"{n0} bodies, {dt:.0f} ms")
         pack = pack_state(w)
         check(f"scenario '{name}' state packet fits in one UDP datagram", len(pack) < 65000, f"{len(pack)} bytes")
 
     # Gentle merger
     w = W.World(seed=2)
-    a = w.add_body(W.ROCKY, 0.003, (0, 0, 0), (0, 0, 0))
-    b = w.add_body(W.ROCKY, 0.001, (3, 0, 0), (-0.05, 0, 0))
+    w.add_body(W.ROCKY, 0.003, (0, 0, 0), (0, 0, 0))
+    w.add_body(W.ROCKY, 0.001, (3, 0, 0), (-0.05, 0, 0))
     run(w, 80)
     kinds = [e[0] for e in w.events]
     check("slow impact merges two planets", w.sim.N == 1 and W.EV_MERGE in kinds,
@@ -379,6 +390,12 @@ def main():
         sys.stderr = logf
     if args.selftest:
         sys.exit(selftest())
+    if not 1 <= args.max_bodies <= W.MAX_BODIES:
+        ap.error(f"--max-bodies must be between 1 and {W.MAX_BODIES}")
+    if not 0 <= args.port <= 65535:
+        ap.error("--port must be between 0 and 65535")
+    if not np.isfinite(args.exit_when_idle) or args.exit_when_idle < 0:
+        ap.error("--exit-when-idle must be finite and nonnegative")
     Server(args.host, args.port, W.World(max_bodies=args.max_bodies), args.verbose, args.exit_when_idle).run()
 
 

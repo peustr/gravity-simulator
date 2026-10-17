@@ -100,14 +100,12 @@ gravity-simulator\
 ├── start_physics_server.bat     <- optional: start the physics by hand
 ├── physics_server\              <- Python + REBOUND physics
 ├── godot\                       <- the Godot project (graphics and controls)
-└── docs\                        <- screenshots
+└── docs\                        <- screenshots and runtime reference
 ```
 
 ### 3.2 Install Python 3.13
 
-**Why 3.13 and not the very newest?** REBOUND publishes ready-made Windows packages ("wheels") for Python 3.9 to 3.14. Python 3.15 came out in October 2026 and REBOUND doesn't have 3.15 wheels yet. Without them, `pip` would try to compile REBOUND from source, which needs Microsoft's C++ build tools. Python 3.13 is the safe choice and can sit alongside any other Python you already have.
-
-**Why install Python at all, if the project uses a virtual environment?** A virtual environment (`.venv`) is not a separate copy of Python. It is built on top of an installed Python and points back to it. It holds the project's packages, not Python itself. So Python 3.13 has to exist on your computer, but it does **not** have to become your default Python: it sits quietly next to any other versions, and this project reaches it with `py -3.13`.
+Use Python 3.13 on Windows. The supported range is Python 3.10–3.14. The project uses a private `.venv`; Python 3.13 must be installed but does not need to be your default interpreter.
 
 **First check whether you already have it.** Open PowerShell (Start menu, type `powershell`, press Enter) and run:
 
@@ -185,7 +183,7 @@ There is no need to "activate" the environment, and no PowerShell execution-poli
 ### 3.4 Install Godot
 
 1. Go to <https://godotengine.org/download/windows/> and download **Godot Engine**, the standard build. **Do not** pick the ".NET" build; this project uses GDScript, which the standard build includes.
-   - Any **4.6 or newer** release works. The project was tested with Godot 4.7.2.
+   - Use **Godot 4.6+**. CI uses Godot 4.6.3.
    - Godot is also on Steam and itch.io if you prefer those.
 2. You get a zip such as `Godot_v4.7.2-stable_win64.exe.zip`. Extract it anywhere, for example `C:\Tools\Godot\`.
 3. Double-click `Godot_v4.x-stable_win64.exe`. There is no installer. (The other file, `..._console.exe`, is the same program with a console window. You don't need it to play, but it is the one to give Codex, see [section 9](#9-developing-with-codex), because it prints errors to the terminal.)
@@ -356,6 +354,10 @@ The forecast line uses the 20 most influential bodies, so in crowded scenes it i
 
 ### Protocol (if you want to build your own front end)
 
+The [generated runtime reference](docs/runtime-reference.md) lists checked constants, body IDs, events and scenarios. CI rejects stale generated documentation and compares Python with executed Godot values.
+
+Commands are validated before changing the simulation. Vectors must contain exactly three finite numbers in ±1,000,000; mass multipliers must be between 0.000001 and 1,000,000. IDs and request numbers must be integers up to 16,000,000; belt counts must be 1–1321. Invalid commands are ignored (logged with `--verbose`), including unknown presets. `--max-bodies` is limited to 1–1321 so state packets fit in a UDP datagram.
+
 **Commands** are UTF-8 JSON, one per UDP packet, sent to port 47810:
 - `hello` — heartbeat; send it about twice a second.
 - `add` — `{type, pos, mode: "orbit"|"launch", drag, mass_mult}`
@@ -377,6 +379,8 @@ The forecast line uses the 20 most influential bodies, so in crowded scenes it i
 **Forecast replies** start with `2`: `[2, req, n_points, hit, attractor_id, vx, vy, vz]`, followed by the points.
 
 The server also sends occasional JSON messages: `info`, `preset` (camera hints) and `notice` (text).
+
+UDP commands and events have no acknowledgements or retries. Delivery and ordering are not guaranteed. The default endpoint is localhost; the protocol has no authentication.
 
 ## 7. Customising and extending
 
@@ -454,7 +458,7 @@ py -3.13 tools/dev.py setup
 py -3.13 tools/dev.py godot-check
 ```
 
-On Linux/macOS, replace `py -3.13` with `python3`. Cloud onboarding has validated Python 3.12 and Godot 4.6.3. The helper uses `physics_server/.venv` without requiring activation and can be called by its absolute path from another directory.
+On Linux/macOS, replace `py -3.13` with `python3`. The helper uses `physics_server/.venv` without requiring activation and can be called by its absolute path from another directory.
 
 **Development checks:**
 
@@ -464,9 +468,17 @@ python3 tools/dev.py godot-check
 python3 tools/dev.py visual-check black_hole --pause_at=2 --grid
 ```
 
+**Automated quality checks:** run `py -3.13 tools/dev.py setup-dev` once, then `py -3.13 tools/dev.py check` (use `python3` on Linux/macOS). This runs Ruff, regression tests with branch coverage, generated-documentation checks, Python/Godot contract comparisons, and a headless startup that must receive live physics bodies. Individual commands are `lint`, `test`, `docs-check`, and `godot-check`. Run `docs` to regenerate [the runtime reference](docs/runtime-reference.md).
+
+GitHub Actions runs Python checks on Windows and Linux for Python 3.10–3.14, plus Godot 4.6.3 on Linux. Runtime dependencies are pinned; Dependabot proposes reviewed updates weekly. CI never automatically merges dependency changes. Configure repository branch protection to require the Quality jobs before merging; committing a workflow alone does not enforce this.
+
+Headless tests do not cover rendered appearance, Windows installers, exported builds or long-duration numerical accuracy.
+
+Generated checks cover runtime facts, not all prose. Review README controls, setup instructions and physics explanations when behavior changes; the PR checklist records that review.
+
 Ask Codex to “use $selftest” or “use $visual-check for black_hole” to apply the corresponding skill. Screenshots get unique names in ignored `shots/`; Codex must open the image to assess the result. Visual checks require a display and working graphics renderer. A headless check validates scripts and startup, not image quality.
 
-Codex reads `AGENTS.md` and discovers skills under `.agents/skills/`. Tool permissions are managed by your Codex app or environment settings. Machine-specific paths belong in environment variables, not committed files. Existing Windows setup and server launch scripts remain available.
+Codex reads `AGENTS.md` and discovers skills under `.agents/skills/`. Tool permissions are managed by your Codex app or environment settings. Machine-specific paths belong in environment variables, not committed files.
 
 ## 10. Troubleshooting
 
