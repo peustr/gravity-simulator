@@ -68,7 +68,7 @@ def main() -> None:
 
     godot = os.environ.get("GODOT") or shutil.which("godot") or shutil.which("godot4")
     if not godot:
-        raise RuntimeError("Godot 4.6+ not found. Set GODOT to its executable or add it to PATH.")
+        raise RuntimeError("Godot 4.7.2 not found. Set GODOT to its executable or add it to PATH.")
     if sys.platform.startswith("linux"):
         for key, suffix in (("XDG_CACHE_HOME", ".cache"), ("XDG_DATA_HOME", ".local/share")):
             os.environ.setdefault(key, str(VENV / suffix))

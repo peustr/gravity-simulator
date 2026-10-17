@@ -59,7 +59,7 @@ The physics runs on **[REBOUND](https://rebound.hanno-rein.de/)**, an open-sourc
 If you are comfortable installing software, this is all you need. Otherwise follow [section 3](#3-detailed-installation-on-windows), which explains every click.
 
 1. Install **Python 3.13** from [python.org](https://www.python.org/downloads/windows/). Python 3.12 and 3.14 also work. See [3.2](#32-install-python-313) for why not 3.15 yet.
-2. Install **Godot 4.6 or newer**, the standard edition, not .NET, from [godotengine.org](https://godotengine.org/download/windows/).
+2. Install **Godot 4.7.2**, the standard edition, not .NET, from [godotengine.org](https://godotengine.org/download/windows/).
 3. Unzip `gravity-simulator.zip` into a simple folder such as `Documents`. The zip already contains a `gravity-simulator` folder, so extract to `Documents`, not `Documents\gravity-simulator` ([3.1](#31-get-the-project-files)).
 4. Double-click **`setup_physics_server.bat`** and wait for "Self-test PASSED". If Windows won't run it, use the [manual commands](#33-set-up-the-physics-server) instead.
 5. Open Godot, choose **Import**, select `gravity-simulator\godot\project.godot`, then press **F5**.
@@ -74,7 +74,7 @@ Godot starts the physics server for you. Pick a scenario on the welcome screen, 
 |---|---|---|---|
 | **Python 3.13** | Runs the physics server | about 100 MB | free |
 | **REBOUND + NumPy** | The physics engine and fast maths, installed for you by the setup script into a private folder (`physics_server\.venv`) | about 60 MB | free, open source |
-| **Godot 4.6+** | Draws everything and handles your mouse and keyboard. No installer: it is a single .exe | about 150 MB | free, open source |
+| **Godot 4.7.2** | Draws everything and handles your mouse and keyboard. No installer: it is a single .exe | about 150 MB | free, open source |
 
 **System requirements:**
 - Windows 10 or 11, 64-bit.
@@ -183,7 +183,7 @@ There is no need to "activate" the environment, and no PowerShell execution-poli
 ### 3.4 Install Godot
 
 1. Go to <https://godotengine.org/download/windows/> and download **Godot Engine**, the standard build. **Do not** pick the ".NET" build; this project uses GDScript, which the standard build includes.
-   - Use **Godot 4.6+**. CI uses Godot 4.6.3.
+   - Use **Godot 4.7.2**. CI uses Godot 4.7.2.
    - Godot is also on Steam and itch.io if you prefer those.
 2. You get a zip such as `Godot_v4.7.2-stable_win64.exe.zip`. Extract it anywhere, for example `C:\Tools\Godot\`.
 3. Double-click `Godot_v4.x-stable_win64.exe`. There is no installer. (The other file, `..._console.exe`, is the same program with a console window. You don't need it to play, but it is the one to give Codex, see [section 9](#9-developing-with-codex), because it prints errors to the terminal.)
@@ -450,10 +450,10 @@ Two caveats:
 | `.agents/skills/visual-check/SKILL.md` | `$visual-check`: render a scenario and inspect its screenshot |
 | `tools/dev.py` | Cross-platform setup, physics tests, headless Godot checks and screenshot capture |
 
-**Local setup:** install Python 3.13 and standard Godot 4.6+ as described above. If Godot is not on PATH, set `GODOT` to its executable. On Windows, use the console build so Codex can read errors. For example, in PowerShell:
+**Local setup:** install Python 3.13 and standard Godot 4.7.2 as described above. If Godot is not on PATH, set `GODOT` to its executable. On Windows, use the console build so Codex can read errors. For example, in PowerShell:
 
 ```powershell
-$env:GODOT = "C:/Tools/Godot/Godot_v4.6.3-stable_win64_console.exe"
+$env:GODOT = "C:/Tools/Godot/Godot_v4.7.2-stable_win64_console.exe"
 py -3.13 tools/dev.py setup
 py -3.13 tools/dev.py godot-check
 ```
@@ -470,7 +470,7 @@ python3 tools/dev.py visual-check black_hole --pause_at=2 --grid
 
 **Automated quality checks:** run `py -3.13 tools/dev.py setup-dev` once, then `py -3.13 tools/dev.py check` (use `python3` on Linux/macOS). This runs Ruff, regression tests with branch coverage, generated-documentation checks, Python/Godot contract comparisons, and a headless startup that must receive live physics bodies. Individual commands are `lint`, `test`, `docs-check`, `godot-test` (contracts only), and `godot-check`. Run `docs` to regenerate [the runtime reference](docs/runtime-reference.md).
 
-GitHub Actions runs Python checks on Windows and Linux for Python 3.10–3.14, plus Godot 4.6.3 on Linux. Runtime dependencies are pinned; Dependabot proposes reviewed updates weekly. CI never automatically merges dependency changes. Configure repository branch protection to require the Quality jobs before merging; committing a workflow alone does not enforce this.
+GitHub Actions runs Python checks on Windows and Linux for Python 3.10–3.14, plus Godot 4.7.2 on Linux. Runtime dependencies are pinned; Dependabot proposes reviewed updates weekly. CI never automatically merges dependency changes. Configure repository branch protection to require the Quality jobs before merging; committing a workflow alone does not enforce this.
 
 Headless tests do not cover rendered appearance, Windows installers, exported builds or long-duration numerical accuracy.
 
