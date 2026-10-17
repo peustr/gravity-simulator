@@ -52,6 +52,7 @@ The physics runs on **[REBOUND](https://rebound.hanno-rein.de/)**, an open-sourc
   - Procedural planets and stars, with gravitational lensing around black holes.
   - Doppler-beamed accretion disks and bloom.
   - Orbit trails, a "rubber sheet" gravity grid, and impact effects.
+- **Save and restart experiments.** Save custom scenes to portable files, load them later, or return to a restart point with the original camera view.
 - **Seven built-in scenarios:** Solar system, Binary stars, Black hole feast, Planet smash, Planet formation, Colliding galaxies, and Empty space.
 
 ## 2. Quick start (5 steps)
@@ -239,6 +240,21 @@ Server options (add them after `server.py`, or after the `.bat` name in a termin
 - **Supernova!** in the inspector, or **N**, makes the selected star explode.
 - **Delete** removes the selected body.
 
+### Saving and restarting experiments
+
+Use the **Experiment** menu in the top bar:
+
+- **Save scene...** writes a `.gravity.json` file and sets the restart point to that saved moment. The dialog starts in `%APPDATA%\Godot\app_userdata\Gravity Simulator\scenes\` on Windows; you can choose another folder.
+- **Load scene...** replaces the current scene after confirmation and makes the loaded scene the restart point. Invalid or unsupported files leave the current scene untouched.
+- **Set restart point** remembers the current scene and camera for this session without writing a file. Set it after building an experiment, before letting it evolve.
+- **Restart experiment...** returns to that point after confirmation. Choosing a built-in scenario also sets a restart point at its initial conditions; Clear sets an empty restart point.
+
+Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. Trails, selection, body-follow mode and transient visual effects are cleared.
+
+Saves use versioned JSON (maximum 4 MiB), are validated before loading, and replace existing files atomically. Success is shown only after the physics server confirms it. If confirmation times out, check the connection and file before trying again: an operation may have completed even if its reply was lost. Restart points live in the server session; save to disk to keep an experiment after closing the app.
+
+Restores rebuild REBOUND from the saved physical conditions. They do not preserve IAS15's internal timestep history, so subsequent trajectories are not guaranteed to be bit-for-bit identical, particularly in chaotic systems. These files are for the local Python server and Godot client running on the same machine.
+
 ### Controls
 
 | Mouse / key | Action |
@@ -369,6 +385,12 @@ Commands are validated before changing the simulation. Vectors must contain exac
 - `speed` — `{value}`, in simulation time units per second.
 - `clear`
 - `preset` — `{name}`
+- `save_scene` — `{path, camera, request}`; save to a local file and set the restart point.
+- `load_scene` — `{path, request}`; validate and load a local file.
+- `checkpoint` — `{camera, request}`; set an in-memory restart point.
+- `restart` — `{request}`; restore the restart point.
+
+Scene-operation `request` values are unique strings (1–80 characters). The camera is `{focus: [x,y,z], distance, pitch, yaw}`. Replies are JSON `scene_result` messages with `request`, `action`, `ok`, and either an `error` or, for load/restart, the restored `camera`. The client retries once per second for up to ten seconds; the server caches the last 64 replies per server process, keyed by client address and request, so retries do not repeat writes or restores.
 - `bye`
 
 **State packets** are little-endian float32 arrays:
@@ -380,7 +402,7 @@ Commands are validated before changing the simulation. Vectors must contain exac
 
 The server also sends occasional JSON messages: `info`, `preset` (camera hints) and `notice` (text).
 
-UDP commands and events have no acknowledgements or retries. Delivery and ordering are not guaranteed. The default endpoint is localhost; the protocol has no authentication. Float32 IDs lose integer precision above 2^24. Server restarts can reuse IDs and versions while the client retains views.
+Except for the four scene operations above, UDP commands and events have no acknowledgements or retries. Delivery and ordering are not guaranteed. The default endpoint is localhost; the protocol has no authentication. Float32 IDs lose integer precision above 2^24. Server restarts can reuse IDs and versions while the client retains views.
 
 ## 7. Customising and extending
 
@@ -468,7 +490,9 @@ python3 tools/dev.py godot-check
 python3 tools/dev.py visual-check black_hole --pause_at=2 --grid
 ```
 
-**Automated quality checks:** run `py -3.13 tools/dev.py setup-dev` once, then `py -3.13 tools/dev.py check` (use `python3` on Linux/macOS). This runs Ruff, regression tests with branch coverage, generated-documentation checks, Python/Godot contract comparisons, and a headless startup that must receive live physics bodies. Individual commands are `lint`, `test`, `docs-check`, `godot-test` (contracts only), and `godot-check`. Run `docs` to regenerate [the runtime reference](docs/runtime-reference.md).
+**Coverage policy:** Python checks require 100% statement and branch coverage across `physics_server/`, including scene persistence, command validation and server startup/error handling. This measures exercised Python paths; Godot workflows are checked separately with headless integration tests, and rendered appearance still requires a visual check. Coverage does not prove every physical outcome is correct.
+
+**Automated quality checks:** run `py -3.13 tools/dev.py setup-dev` once, then `py -3.13 tools/dev.py check` (use `python3` on Linux/macOS). This runs Ruff, regression tests with branch coverage, generated-documentation checks, Python/Godot contract comparisons, a headless startup that must receive live physics bodies, and a live save/load/restart round trip. Individual commands are `lint`, `test`, `docs-check`, `godot-test` (contracts only), and `godot-check`. Run `docs` to regenerate [the runtime reference](docs/runtime-reference.md).
 
 GitHub Actions runs Python checks on Windows and Linux for Python 3.10–3.14, plus Godot 4.7.2 on Linux. Runtime dependencies are pinned; Dependabot proposes reviewed updates weekly. CI never automatically merges dependency changes. Configure repository branch protection to require the Quality jobs before merging; committing a workflow alone does not enforce this.
 

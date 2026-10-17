@@ -111,6 +111,10 @@ def main() -> None:
     else:
         if "Godot live state check PASSED" not in output:
             raise RuntimeError("Godot did not confirm live physics state.")
+        scene_output = run([godot, "--path", str(ROOT / "godot"), "--headless",
+                            "--script", "res://tests/experiments.gd"])
+        if re.search(r"SCRIPT ERROR|Parse Error|(?:^|\n)\s*ERROR:", scene_output) or "Godot experiment save/load/restart check PASSED" not in scene_output:
+            raise RuntimeError("Godot experiment checks did not pass.")
         print("Godot headless check PASSED (rendered appearance not checked).")
 
 

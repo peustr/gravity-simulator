@@ -34,6 +34,7 @@ except ImportError as exc:  # friendly message instead of a stack trace
     sys.exit(1)
 
 import world as W
+import experiments
 from commands import validate
 
 PROTOCOL_VERSION = 1
@@ -104,6 +105,8 @@ class Server:
         self.verbose = verbose
         self.exit_when_idle = exit_when_idle
         self.client = None
+        self.checkpoint = experiments.capture(world, experiments.DEFAULT_CAMERA)
+        self.scene_replies = {}
         self.last_heard = time.monotonic()
         self.addr = (host, port)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -122,6 +125,7 @@ class Server:
         try:
             self.sock.bind(self.addr)
         except OSError as exc:
+            self.sock.close()
             print(f"\n[physics server] Could not listen on {host}:{port}: {exc}")
             print("Is another copy of the physics server already running?")
             print("Close it (or use --port to pick another port) and try again.\n")
@@ -173,7 +177,9 @@ class Server:
         w = self.world
         if self.verbose and cmd not in ("hello", "predict"):
             log(f"command: {msg}")
-        if cmd == "hello":
+        if cmd in ("save_scene", "load_scene", "checkpoint", "restart"):
+            self.handle_scene(msg, addr)
+        elif cmd == "hello":
             if self.client != addr:
                 log(f"Godot connected from {addr[0]}:{addr[1]}")
             self.client = addr
@@ -207,11 +213,43 @@ class Server:
             w.speed = min(2000.0, max(0.05, float(msg.get("value", 10.0))))
         elif cmd == "clear":
             w.clear()
-        elif cmd == "preset":
+            self.checkpoint = experiments.capture(w, experiments.DEFAULT_CAMERA)
+        else:  # validate() guarantees the remaining command is preset.
             hint = w.load_preset(str(msg.get("name", "empty")))
+            self.checkpoint = experiments.capture(w, hint["camera"])
             self.send_json(hint, addr)
-        else:
-            log(f"ignored unknown command: {cmd!r}")
+
+    def handle_scene(self, msg, addr):
+        # Retries repeat the acknowledgement, never the mutation or disk write.
+        key = (addr, msg["request"])
+        if key in self.scene_replies:
+            self.send_json(self.scene_replies[key], addr)
+            return
+        cmd = msg["cmd"]
+        reply = dict(type="scene_result", request=msg["request"], action=cmd, ok=False)
+        try:
+            if cmd in ("save_scene", "checkpoint"):
+                data = experiments.capture(self.world, msg.get("camera"))
+                if cmd == "save_scene":
+                    experiments.save(msg["path"], data)
+                self.checkpoint = data
+            else:
+                if cmd == "load_scene":
+                    data, candidate, camera = experiments.load(msg["path"])
+                else:
+                    data = self.checkpoint
+                    candidate, camera = experiments.restore(data)
+                candidate.version = self.world.version + 1
+                self.world = candidate
+                self.checkpoint = data
+                reply["camera"] = camera
+            reply["ok"] = True
+        except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError) as exc:
+            reply["error"] = f"Could not {cmd.replace('_', ' ')}: {str(exc)[:200]}"
+        self.scene_replies[key] = reply
+        if len(self.scene_replies) > 64:
+            del self.scene_replies[next(iter(self.scene_replies))]
+        self.send_json(reply, addr)
 
     # ------------------------------------------------------------- main loop
     def run(self):

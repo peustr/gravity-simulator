@@ -6,6 +6,7 @@ signal mass_changed(tool: int, mult: float)
 signal pause_toggled
 signal speed_step(direction: int)
 signal preset_chosen(preset: String)
+signal scene_action(action: String)
 signal clear_requested
 signal follow_requested
 signal delete_requested
@@ -273,6 +274,15 @@ func _build_top_bar() -> void:
 		pm.set_item_tooltip(i, PRESETS[i][2])
 	pm.id_pressed.connect(func(i: int): preset_chosen.emit(PRESETS[i][0]))
 	h.add_child(scen)
+	var files := MenuButton.new()
+	files.text = "Experiment"
+	files.focus_mode = Control.FOCUS_NONE
+	files.flat = false
+	var file_menu := files.get_popup()
+	for label in ["Save scene...", "Load scene...", "Set restart point", "Restart experiment..."]:
+		file_menu.add_item(label)
+	file_menu.id_pressed.connect(func(i: int): scene_action.emit(["save_scene", "load_scene", "checkpoint", "restart"][i]))
+	h.add_child(files)
 	var clear := _button("Clear", "Remove everything")
 	clear.pressed.connect(func(): clear_requested.emit())
 	h.add_child(clear)

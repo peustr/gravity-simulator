@@ -29,6 +29,10 @@ At most 1321 bodies and 64 events fit in one packet.
 | `speed` | value (clamped to 0.05–2000) |
 | `clear` | no fields |
 | `preset` | name |
+| `save_scene` | path, camera, request |
+| `load_scene` | path, request |
+| `checkpoint` | camera, request |
+| `restart` | request |
 
 ## Bodies
 
