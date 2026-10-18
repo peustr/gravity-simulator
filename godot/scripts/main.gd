@@ -5,6 +5,7 @@ extends Node3D
 ## server (REBOUND), draws it smoothly at your screen's frame rate, and turns
 ## mouse/keyboard input into commands for the server.
 
+const SceneFiles = preload("res://scripts/scene_files.gd")
 const Palette = preload("res://scripts/palette.gd")
 const BodyView = preload("res://scripts/body_view.gd")
 const NetClient = preload("res://scripts/net_client.gd")
@@ -26,6 +27,7 @@ const MAX_LIGHTS := 6
 const G := 1.0
 
 var net
+var scene_files
 var rig
 var hud
 var trails
@@ -106,6 +108,10 @@ func _ready() -> void:
 	net.prediction_received.connect(_on_prediction)
 	net.message_received.connect(_on_message)
 	net.connection_changed.connect(_on_connection)
+	scene_files = SceneFiles.new()
+	scene_files.main = self
+	add_child(scene_files)
+	hud.scene_action.connect(scene_files.choose)
 	hud.tool_selected.connect(_set_tool)
 	hud.mass_changed.connect(func(_t, _m): pred_key = "")
 	hud.pause_toggled.connect(_toggle_pause)
@@ -252,6 +258,8 @@ func _on_state(f: PackedFloat32Array) -> void:
 	var t := float(f[2]) + float(f[3])
 	if _first_state or t < packet_time - 1.0:
 		display_time = t
+		if _first_state:
+			print("Physics state received.")
 		_first_state = false
 	packet_time = t
 	display_time = clampf(display_time, t, t + _max_tau())
@@ -780,6 +788,40 @@ func _load_preset(preset: String) -> void:
 	hud.select_tool(-1)
 
 
+func restore_scene_view(cam: Dictionary) -> void:
+	# IDs can be reused after a restore: discard all views and transient effects.
+	for view in views.values():
+		view.queue_free()
+	views.clear()
+	trails.clear_all()
+	remove_child(effects)
+	effects.queue_free()
+	effects = Effects.new()
+	effects.rig = rig
+	add_child(effects)
+	_select(-1)
+	follow_id = -1
+	drag_active = false
+	pred_req += 1
+	pred_applied = pred_req
+	pred_key = ""
+	pred_rel.clear()
+	placement.hide_all()
+	sim_version = -1
+	_first_state = true
+	var f: Array = cam.focus
+	rig.frame(Vector3(f[0], f[1], f[2]), cam.distance, cam.pitch)
+	rig.focus = rig.target_focus
+	rig.distance = rig.target_distance
+	rig.pitch = rig.target_pitch
+	rig.yaw = float(cam.yaw)
+	rig.target_yaw = rig.yaw
+	rig._shake = 0.0
+	rig._apply()
+	hud.show_welcome(false)
+	hud.select_tool(-1)
+
+
 func _reset_view() -> void:
 	# Frame the heaviest bodies.
 	var total := 0.0
@@ -926,6 +968,9 @@ func _run_auto(delta: float) -> void:
 			if views[id].body_type == int(_auto["select_type"]):
 				_select(id)
 				break
+	if _auto.has("quit") and not _auto.has("screenshot") and _auto_time > float(_auto.get("wait", "3")):
+		_auto_done = true
+		get_tree().quit()
 	if _auto.has("screenshot") and _auto_time > float(_auto.get("wait", "3")):
 		_auto_done = true
 		if _auto.has("debug"):

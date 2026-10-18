@@ -824,6 +824,8 @@ class World:
             self.notice(f"Body limit reached ({self.max_bodies}). Delete some debris or clear the scene.")
             return None
         mass = DEFAULT_MASS[btype] * mass_mult
+        if mass <= 0 or not math.isfinite(mass):
+            raise ValueError("mass must be positive and finite")
         snap = self.snapshot()
         vel, a, kick = self.initial_velocity(pos, mass, mode, drag, snap)
         if a is not None and _norm(kick) > 0:
@@ -908,6 +910,9 @@ class World:
         def on_collision(sim_ptr, c):
             if int(c.p1) == test or int(c.p2) == test:
                 hit["flag"] = True
+                # Stop at contact so the last preview point marks the impact,
+                # rather than a later position beyond the collision.
+                sim_ptr.contents.stop()
             return 0
 
         mini.collision = "direct"
@@ -1091,10 +1096,8 @@ class World:
                     self.add_body(PLASMA, 0.05, p, v)
             cam = {"focus": [0, 0, 0], "distance": 700.0, "pitch": 0.9}
 
-        elif name == "empty":
+        else:  # The validated remaining scenario is empty.
             cam = {"focus": [0, 0, 0], "distance": 350.0, "pitch": 0.6}
-        else:
-            self.notice(f"Unknown scenario '{name}'.")
         if self.sim.N > 1 and name != "galaxies":
             # Zero the total momentum so the scene stays where the camera is.
             self.sim.move_to_com()

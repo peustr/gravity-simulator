@@ -35,7 +35,7 @@ def selftest() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("setup", "setup-dev", "selftest", "test", "lint", "docs", "docs-check", "check", "godot-check", "visual-check"))
+    parser.add_argument("command", choices=("setup", "setup-dev", "selftest", "test", "lint", "docs", "docs-check", "check", "godot-test", "godot-check", "visual-check"))
     parser.add_argument("scenario", nargs="?", choices=SCENARIOS, default="solar")
     args, extra = parser.parse_known_args()
     if extra and args.command != "visual-check":
@@ -68,14 +68,14 @@ def main() -> None:
 
     godot = os.environ.get("GODOT") or shutil.which("godot") or shutil.which("godot4")
     if not godot:
-        raise RuntimeError("Godot 4.6+ not found. Set GODOT to its executable or add it to PATH.")
+        raise RuntimeError("Godot 4.7.2 not found. Set GODOT to its executable or add it to PATH.")
     if sys.platform.startswith("linux"):
         for key, suffix in (("XDG_CACHE_HOME", ".cache"), ("XDG_DATA_HOME", ".local/share")):
             os.environ.setdefault(key, str(VENV / suffix))
             Path(os.environ[key]).mkdir(parents=True, exist_ok=True)
     command = [godot, "--path", str(ROOT / "godot")]
     screenshot = None
-    if args.command == "godot-check":
+    if args.command in ("godot-test", "godot-check"):
         contract_output = run(command + ["--headless", "--script", "res://tests/contracts.gd"])
         if re.search(r"SCRIPT ERROR|Parse Error|(?:^|\n)\s*ERROR:", contract_output):
             raise RuntimeError("Godot contract tests reported errors.")
@@ -87,6 +87,8 @@ def main() -> None:
         run([str(PYTHON), "-c",
              "import sys; sys.path[:0] = ['physics_server', 'tools']; "
              "import json, contracts; contracts.check(json.loads(sys.argv[1]))", json.dumps(json.loads(contract))])
+        if args.command == "godot-test":
+            return
         command += ["--headless", "--", "--preset=solar", "--smoke"]
     else:
         if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
@@ -109,6 +111,10 @@ def main() -> None:
     else:
         if "Godot live state check PASSED" not in output:
             raise RuntimeError("Godot did not confirm live physics state.")
+        scene_output = run([godot, "--path", str(ROOT / "godot"), "--headless",
+                            "--script", "res://tests/experiments.gd"])
+        if re.search(r"SCRIPT ERROR|Parse Error|(?:^|\n)\s*ERROR:", scene_output) or "Godot experiment save/load/restart check PASSED" not in scene_output:
+            raise RuntimeError("Godot experiment checks did not pass.")
         print("Godot headless check PASSED (rendered appearance not checked).")
 
 

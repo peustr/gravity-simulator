@@ -3,7 +3,7 @@
 Interactive N-body space sandbox for Windows. Two programs talk over UDP on `127.0.0.1:47810`:
 
 - `physics_server/` — Python 3.10–3.14 + REBOUND 5 (IAS15 integrator) + NumPy. **All physics lives here.**
-- `godot/` — Godot 4.6+ project (GDScript, Forward+ renderer). Rendering, input and UI only. Never put physics in GDScript.
+- `godot/` — Godot 4.7.2 project (GDScript, Forward+ renderer). Rendering, input and UI only. Never put physics in GDScript.
 
 Codex is the primary developer and maintainer. The user plays and develops on Windows 11; cloud development runs on Linux. The physics venv is `physics_server/.venv` (Python 3.13 on Windows; Python 3.12 for cloud development). The user is learning: explain changes in plain language, and keep physics claims honest (see README "What is *not* simulated").
 
@@ -34,11 +34,12 @@ Use `python3` on Linux/macOS or `py -3.13` on Windows to run `tools/dev.py`. The
 | All quality checks | `python3 tools/dev.py check` |
 | Refresh generated runtime reference | `python3 tools/dev.py docs` |
 | Physics self-test | `python3 tools/dev.py selftest` |
+| Godot protocol contract tests | `python3 tools/dev.py godot-test` |
 | Godot headless script/startup check | `python3 tools/dev.py godot-check` |
 | Render and inspect a scenario | `python3 tools/dev.py visual-check black_hole` |
 | Server with a live log | `physics_server/.venv/bin/python physics_server/server.py --verbose` |
 
-On Windows the standalone server interpreter is `physics_server/.venv/Scripts/python.exe`. Use the standard Godot 4.6+ build; choose its console executable on Windows. Godot starts the venv server automatically and stops its child on exit. Do not start a duplicate server on UDP port 47810.
+On Windows the standalone server interpreter is `physics_server/.venv/Scripts/python.exe`. Use the standard Godot 4.7.2 build; choose its console executable on Windows. Godot starts the venv server automatically and stops its child on exit. Do not start a duplicate server on UDP port 47810.
 
 Codex skills: `$selftest` in `.agents/skills/selftest/` and `$visual-check` in `.agents/skills/visual-check/`. These contain diagnosis and validation guidance. Do not launch the editor or play interactively unless requested.
 
@@ -81,7 +82,7 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 
 ## Godot conventions
 
-- Only use APIs available in Godot 4.6. GDScript with tabs, typed where practical.
+- Only use APIs available in Godot 4.7.2. GDScript with tabs, typed where practical.
 - Scripts are referenced with `preload` constants, not `class_name`. `main.tscn` is only a root node; everything else is created in `main.gd`.
 - HDR colour values above 1 drive the bloom. Billboards use `billboard_modelview()` from `noise.gdshaderinc`.
 - The black-hole look depends on the accretion disk being **opaque** (alpha scissor), so the lens shader (`hint_screen_texture`) can bend it.

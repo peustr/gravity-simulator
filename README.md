@@ -52,6 +52,7 @@ The physics runs on **[REBOUND](https://rebound.hanno-rein.de/)**, an open-sourc
   - Procedural planets and stars, with gravitational lensing around black holes.
   - Doppler-beamed accretion disks and bloom.
   - Orbit trails, a "rubber sheet" gravity grid, and impact effects.
+- **Save and restart experiments.** Save custom scenes to portable files, load them later, or return to a restart point with the original camera view.
 - **Seven built-in scenarios:** Solar system, Binary stars, Black hole feast, Planet smash, Planet formation, Colliding galaxies, and Empty space.
 
 ## 2. Quick start (5 steps)
@@ -59,7 +60,7 @@ The physics runs on **[REBOUND](https://rebound.hanno-rein.de/)**, an open-sourc
 If you are comfortable installing software, this is all you need. Otherwise follow [section 3](#3-detailed-installation-on-windows), which explains every click.
 
 1. Install **Python 3.13** from [python.org](https://www.python.org/downloads/windows/). Python 3.12 and 3.14 also work. See [3.2](#32-install-python-313) for why not 3.15 yet.
-2. Install **Godot 4.6 or newer**, the standard edition, not .NET, from [godotengine.org](https://godotengine.org/download/windows/).
+2. Install **Godot 4.7.2**, the standard edition, not .NET, from [godotengine.org](https://godotengine.org/download/windows/).
 3. Unzip `gravity-simulator.zip` into a simple folder such as `Documents`. The zip already contains a `gravity-simulator` folder, so extract to `Documents`, not `Documents\gravity-simulator` ([3.1](#31-get-the-project-files)).
 4. Double-click **`setup_physics_server.bat`** and wait for "Self-test PASSED". If Windows won't run it, use the [manual commands](#33-set-up-the-physics-server) instead.
 5. Open Godot, choose **Import**, select `gravity-simulator\godot\project.godot`, then press **F5**.
@@ -74,7 +75,7 @@ Godot starts the physics server for you. Pick a scenario on the welcome screen, 
 |---|---|---|---|
 | **Python 3.13** | Runs the physics server | about 100 MB | free |
 | **REBOUND + NumPy** | The physics engine and fast maths, installed for you by the setup script into a private folder (`physics_server\.venv`) | about 60 MB | free, open source |
-| **Godot 4.6+** | Draws everything and handles your mouse and keyboard. No installer: it is a single .exe | about 150 MB | free, open source |
+| **Godot 4.7.2** | Draws everything and handles your mouse and keyboard. No installer: it is a single .exe | about 150 MB | free, open source |
 
 **System requirements:**
 - Windows 10 or 11, 64-bit.
@@ -183,7 +184,7 @@ There is no need to "activate" the environment, and no PowerShell execution-poli
 ### 3.4 Install Godot
 
 1. Go to <https://godotengine.org/download/windows/> and download **Godot Engine**, the standard build. **Do not** pick the ".NET" build; this project uses GDScript, which the standard build includes.
-   - Use **Godot 4.6+**. CI uses Godot 4.6.3.
+   - Use **Godot 4.7.2**. CI uses Godot 4.7.2.
    - Godot is also on Steam and itch.io if you prefer those.
 2. You get a zip such as `Godot_v4.7.2-stable_win64.exe.zip`. Extract it anywhere, for example `C:\Tools\Godot\`.
 3. Double-click `Godot_v4.x-stable_win64.exe`. There is no installer. (The other file, `..._console.exe`, is the same program with a console window. You don't need it to play, but it is the one to give Codex, see [section 9](#9-developing-with-codex), because it prints errors to the terminal.)
@@ -238,6 +239,21 @@ Server options (add them after `server.py`, or after the `.bat` name in a termin
 - **Double-click** a body, or press **F**, to follow it. Trails then switch to that body's frame of reference, so moons draw neat loops around their planet.
 - **Supernova!** in the inspector, or **N**, makes the selected star explode.
 - **Delete** removes the selected body.
+
+### Saving and restarting experiments
+
+Use the **Experiment** menu in the top bar:
+
+- **Save scene...** writes a `.gravity.json` file and sets the restart point to that saved moment. The dialog starts in `%APPDATA%\Godot\app_userdata\Gravity Simulator\scenes\` on Windows; you can choose another folder.
+- **Load scene...** replaces the current scene after confirmation and makes the loaded scene the restart point. Invalid or unsupported files leave the current scene untouched.
+- **Set restart point** remembers the current scene and camera for this session without writing a file. Set it after building an experiment, before letting it evolve.
+- **Restart experiment...** returns to that point after confirmation. Choosing a built-in scenario also sets a restart point at its initial conditions; Clear sets an empty restart point.
+
+Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. Trails, selection, body-follow mode and transient visual effects are cleared.
+
+Saves use versioned JSON (maximum 4 MiB), are validated before loading, and replace existing files atomically. Success is shown only after the physics server confirms it. If confirmation times out, check the connection and file before trying again: an operation may have completed even if its reply was lost. Restart points live in the server session; save to disk to keep an experiment after closing the app.
+
+Restores rebuild REBOUND from the saved physical conditions. They do not preserve IAS15's internal timestep history, so subsequent trajectories are not guaranteed to be bit-for-bit identical, particularly in chaotic systems. These files are for the local Python server and Godot client running on the same machine.
 
 ### Controls
 
@@ -369,6 +385,12 @@ Commands are validated before changing the simulation. Vectors must contain exac
 - `speed` — `{value}`, in simulation time units per second.
 - `clear`
 - `preset` — `{name}`
+- `save_scene` — `{path, camera, request}`; save to a local file and set the restart point.
+- `load_scene` — `{path, request}`; validate and load a local file.
+- `checkpoint` — `{camera, request}`; set an in-memory restart point.
+- `restart` — `{request}`; restore the restart point.
+
+Scene-operation `request` values are unique strings (1–80 characters). The camera is `{focus: [x,y,z], distance, pitch, yaw}`. Replies are JSON `scene_result` messages with `request`, `action`, `ok`, and either an `error` or, for load/restart, the restored `camera`. The client retries once per second for up to ten seconds; the server caches the last 64 replies per server process, keyed by client address and request, so retries do not repeat writes or restores.
 - `bye`
 
 **State packets** are little-endian float32 arrays:
@@ -380,7 +402,7 @@ Commands are validated before changing the simulation. Vectors must contain exac
 
 The server also sends occasional JSON messages: `info`, `preset` (camera hints) and `notice` (text).
 
-UDP commands and events have no acknowledgements or retries. Delivery and ordering are not guaranteed. The default endpoint is localhost; the protocol has no authentication.
+Except for the four scene operations above, UDP commands and events have no acknowledgements or retries. Delivery and ordering are not guaranteed. The default endpoint is localhost; the protocol has no authentication. Float32 IDs lose integer precision above 2^24. Server restarts can reuse IDs and versions while the client retains views.
 
 ## 7. Customising and extending
 
@@ -450,10 +472,10 @@ Two caveats:
 | `.agents/skills/visual-check/SKILL.md` | `$visual-check`: render a scenario and inspect its screenshot |
 | `tools/dev.py` | Cross-platform setup, physics tests, headless Godot checks and screenshot capture |
 
-**Local setup:** install Python 3.13 and standard Godot 4.6+ as described above. If Godot is not on PATH, set `GODOT` to its executable. On Windows, use the console build so Codex can read errors. For example, in PowerShell:
+**Local setup:** install Python 3.13 and standard Godot 4.7.2 as described above. If Godot is not on PATH, set `GODOT` to its executable. On Windows, use the console build so Codex can read errors. For example, in PowerShell:
 
 ```powershell
-$env:GODOT = "C:/Tools/Godot/Godot_v4.6.3-stable_win64_console.exe"
+$env:GODOT = "C:/Tools/Godot/Godot_v4.7.2-stable_win64_console.exe"
 py -3.13 tools/dev.py setup
 py -3.13 tools/dev.py godot-check
 ```
@@ -468,9 +490,11 @@ python3 tools/dev.py godot-check
 python3 tools/dev.py visual-check black_hole --pause_at=2 --grid
 ```
 
-**Automated quality checks:** run `py -3.13 tools/dev.py setup-dev` once, then `py -3.13 tools/dev.py check` (use `python3` on Linux/macOS). This runs Ruff, regression tests with branch coverage, generated-documentation checks, Python/Godot contract comparisons, and a headless startup that must receive live physics bodies. Individual commands are `lint`, `test`, `docs-check`, and `godot-check`. Run `docs` to regenerate [the runtime reference](docs/runtime-reference.md).
+**Coverage policy:** Python checks require 100% statement and branch coverage across `physics_server/`, including scene persistence, command validation and server startup/error handling. This measures exercised Python paths; Godot workflows are checked separately with headless integration tests, and rendered appearance still requires a visual check. Coverage does not prove every physical outcome is correct.
 
-GitHub Actions runs Python checks on Windows and Linux for Python 3.10–3.14, plus Godot 4.6.3 on Linux. Runtime dependencies are pinned; Dependabot proposes reviewed updates weekly. CI never automatically merges dependency changes. Configure repository branch protection to require the Quality jobs before merging; committing a workflow alone does not enforce this.
+**Automated quality checks:** run `py -3.13 tools/dev.py setup-dev` once, then `py -3.13 tools/dev.py check` (use `python3` on Linux/macOS). This runs Ruff, regression tests with branch coverage, generated-documentation checks, Python/Godot contract comparisons, a headless startup that must receive live physics bodies, and a live save/load/restart round trip. Individual commands are `lint`, `test`, `docs-check`, `godot-test` (contracts only), and `godot-check`. Run `docs` to regenerate [the runtime reference](docs/runtime-reference.md).
+
+GitHub Actions runs Python checks on Windows and Linux for Python 3.10–3.14, plus Godot 4.7.2 on Linux. Runtime dependencies are pinned; Dependabot proposes reviewed updates weekly. CI never automatically merges dependency changes. Configure repository branch protection to require the Quality jobs before merging; committing a workflow alone does not enforce this.
 
 Headless tests do not cover rendered appearance, Windows installers, exported builds or long-duration numerical accuracy.
 

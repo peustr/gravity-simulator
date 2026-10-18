@@ -15,6 +15,10 @@ COMMANDS = {
     "speed": "value (clamped to 0.05–2000)",
     "clear": "no fields",
     "preset": "name",
+    "save_scene": "path, camera, request",
+    "load_scene": "path, request",
+    "checkpoint": "camera, request",
+    "restart": "request",
 }
 
 
@@ -41,6 +45,14 @@ def validate(msg):
     cmd = msg.get("cmd")
     if not isinstance(cmd, str) or cmd not in COMMANDS:
         raise ValueError("Unknown command")
+    if cmd in ("save_scene", "load_scene", "checkpoint", "restart"):
+        request = msg.get("request")
+        if not isinstance(request, str) or not 1 <= len(request) <= 80:
+            raise ValueError("Invalid scene request")
+        if cmd in ("save_scene", "load_scene"):
+            path = msg.get("path")
+            if not isinstance(path, str) or not path or len(path) > 4096 or "\0" in path:
+                raise ValueError("Invalid scene path")
     if cmd in ("add", "predict", "belt"):
         vector(msg.get("pos"))
         number(msg.get("mass_mult", 1.0), 1e-6, 1e6)
