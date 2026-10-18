@@ -387,7 +387,9 @@ def selftest() -> int:
     # Prediction and belts
     w = W.World(seed=9)
     w.load_preset("solar")
-    res = w.predict(W.ROCKY, (100.0, 0.0, 0.0), "orbit", (0, 0, 0), 1.0)
+    # Check orbit correctness without the interactive preview's 25 ms deadline:
+    # coverage instrumentation and shared CI runners can exceed that budget.
+    res = w.predict(W.ROCKY, (100.0, 0.0, 0.0), "orbit", (0, 0, 0), 1.0, wall_budget=1.0)
     pts = np.array(res["points"])
     radii = np.linalg.norm(pts, axis=1)
     check("orbit preview is a closed circle", len(pts) > 50 and radii.std() < 3.0,

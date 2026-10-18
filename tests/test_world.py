@@ -134,6 +134,18 @@ def test_pause_and_resume():
     assert w.sim.t == pytest.approx(.1)
 
 
-def test_physics_selftest():
+def test_physics_selftest(monkeypatch):
     from server import selftest
+    original = W.World.predict
+
+    def slow_forecast(self, *args, **kwargs):
+        # Model 1 ms per forecast sample without sleeping or replacing physics.
+        # The interactive 25 ms budget truncates this otherwise valid orbit.
+        from itertools import count
+        clock = count(step=.001)
+        with monkeypatch.context() as context:
+            context.setattr(W.time, 'perf_counter', lambda: next(clock))
+            return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(W.World, 'predict', slow_forecast)
     assert selftest() == 0
