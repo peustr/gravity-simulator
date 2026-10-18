@@ -56,6 +56,7 @@ def test_disk_round_trip_restores_physics_and_random_state(tmp_path):
     lambda d: d['bodies'][0].update(pos=[0, 1]),
     lambda d: d['bodies'][0].update(vel=[float('inf'), 0, 0]),
     lambda d: d['bodies'][1].update(id=d['bodies'][0]['id']),
+    lambda d: d['bodies'][1].update(pos=d['bodies'][0]['pos'].copy()),
     lambda d: d.update(max_bodies=1),
     lambda d: d.update(supernova_queue=[9999]),
 ])

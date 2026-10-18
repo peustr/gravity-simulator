@@ -48,10 +48,50 @@ func _run() -> void:
 	if not await _until(func(): return main.net.connected):
 		_fail("Scene test: physics connection timed out")
 		return
+	var initial_time: float = main.packet_time
+	if not await _until(func(): return main.packet_time > initial_time + 1.0):
+		_fail("Empty sandbox clock did not advance")
+		return
+	main.net.send({"cmd": "pause", "value": true})
+	if not await _until(func(): return main.paused):
+		_fail("Empty sandbox did not pause")
+		return
+	var paused_time: float = main.packet_time
+	await create_timer(0.2).timeout
+	if main.packet_time != paused_time:
+		_fail("Empty sandbox clock advanced while paused")
+		return
+	main.net.send({"cmd": "pause", "value": false})
+	if not await _until(func(): return main.packet_time > paused_time + 0.5):
+		_fail("Empty sandbox clock did not resume")
+		return
 	main.net.send({"cmd": "preset", "name": "binary"})
 	main.net.send({"cmd": "pause", "value": true})
 	if not await _until(func(): return main.views.size() == 6 and main.paused):
 		_fail("Scene test: initial scene did not arrive")
+		return
+	if not await _request({"cmd": "checkpoint"}):
+		_fail("Could not set paused restart point for cancellation test")
+		return
+	for action in ["preset", "clear"]:
+		if action == "preset":
+			main.hud.preset_chosen.emit("smash")
+		else:
+			main.hud.clear_requested.emit()
+		await create_timer(0.2).timeout
+		if not main.scene_files.confirm.visible or main.views.size() != 6:
+			_fail("Destructive action ran before confirmation: " + action)
+			return
+		main.scene_files.confirm.get_cancel_button().pressed.emit()
+		await create_timer(0.2).timeout
+		if main.scene_files.confirm.visible or main.views.size() != 6:
+			_fail("Cancel did not preserve scene: " + action)
+			return
+	if not await _request({"cmd": "restart"}):
+		_fail("Restart point lost after cancelling scene changes")
+		return
+	if not await _until(func(): return main.views.size() == 6):
+		_fail("Cancelled scene changes replaced the restart point")
 		return
 	main.rig.frame(Vector3(1, 2, 3), 240, 0.8)
 	main.rig.target_yaw = -1.2
@@ -73,7 +113,8 @@ func _run() -> void:
 	if not await _until(func(): return main.views.size() == 6):
 		_fail("Scene test: restart did not restore bodies")
 		return
-	main.net.send({"cmd": "clear"})
+	main.hud.clear_requested.emit()
+	main.scene_files.confirm.get_ok_button().pressed.emit()
 	if not await _until(func(): return main.views.is_empty()):
 		_fail("Scene test: clear failed")
 		return
@@ -92,6 +133,11 @@ func _run() -> void:
 	file.close()
 	if await _request({"cmd": "load_scene", "path": path}) or main.views.size() != 6:
 		_fail("Scene test: invalid load changed the scene or succeeded")
+		return
+	main.hud.preset_chosen.emit("smash")
+	main.scene_files.confirm.get_ok_button().pressed.emit()
+	if not await _until(func(): return main.views.size() == 2 and main.server_speed == 6):
+		_fail("Confirmed scenario change did not apply")
 		return
 	print("Godot experiment save/load/restart check PASSED")
 	_finish(0)

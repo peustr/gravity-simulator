@@ -118,9 +118,7 @@ func _ready() -> void:
 	hud.speed_step.connect(_speed_step)
 	hud.preset_chosen.connect(_load_preset)
 	hud.clear_requested.connect(func():
-		net.send({"cmd": "clear"})
-		trails.clear_all()
-		_select(-1))
+		scene_files.replace_scene({"cmd": "clear"}))
 	hud.follow_requested.connect(_toggle_follow)
 	hud.delete_requested.connect(_delete_selected)
 	hud.supernova_requested.connect(_supernova_selected)
@@ -251,10 +249,7 @@ func _on_state(f: PackedFloat32Array) -> void:
 		if n == 0 and not _auto.has("preset") and (not _auto.has("screenshot") or _auto.has("welcome")):
 			hud.show_welcome(true)
 
-	var version := int(f[1])
-	if version == sim_version:
-		return
-	sim_version = version
+	# Header time can advance even when there are no particle changes.
 	var t := float(f[2]) + float(f[3])
 	if _first_state or t < packet_time - 1.0:
 		display_time = t
@@ -263,6 +258,10 @@ func _on_state(f: PackedFloat32Array) -> void:
 		_first_state = false
 	packet_time = t
 	display_time = clampf(display_time, t, t + _max_tau())
+	var version := int(f[1])
+	if version == sim_version:
+		return
+	sim_version = version
 	var tau := display_time - packet_time
 
 	var seen := {}
@@ -783,7 +782,13 @@ func _speed_step(direction: int) -> void:
 
 
 func _load_preset(preset: String) -> void:
-	net.send({"cmd": "preset", "name": preset})
+	scene_files.replace_scene({"cmd": "preset", "name": preset})
+
+
+func apply_scene_change(command: Dictionary) -> void:
+	net.send(command)
+	trails.clear_all()
+	_select(-1)
 	hud.show_welcome(false)
 	hud.select_tool(-1)
 

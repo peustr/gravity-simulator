@@ -22,8 +22,39 @@ func _ready() -> void:
 	dialog.file_selected.connect(_file_selected)
 	confirm = ConfirmationDialog.new()
 	add_child(confirm)
-	confirm.confirmed.connect(func(): request(_confirmed))
+	confirm.confirmed.connect(_accept_confirmation)
+	confirm.canceled.connect(func(): _confirmed.clear())
 	main.net.message_received.connect(_on_message)
+
+
+func replace_scene(command: Dictionary) -> void:
+	if not pending.is_empty():
+		main.hud.toast("Waiting for the current scene operation...")
+		return
+	if not main.net.connected:
+		main.hud.toast("Connect to the physics server first.")
+		return
+	if command.cmd == "preset" and main.views.is_empty():
+		main.apply_scene_change(command)
+		return
+	_confirmed = command.duplicate(true)
+	confirm.dialog_text = "Clear the current scene?" if command.cmd == "clear" else "Replace the current scene with this scenario?"
+	confirm.dialog_text += "\nUnsaved changes will be discarded and the restart point will be replaced."
+	confirm.popup_centered()
+
+
+func _accept_confirmation() -> void:
+	var command := _confirmed.duplicate(true)
+	_confirmed.clear()
+	if command.is_empty():
+		return
+	if not main.net.connected or not pending.is_empty():
+		main.hud.toast("Scene unchanged. Wait for the connection or current operation, then try again.")
+		return
+	if command.cmd in ["clear", "preset"]:
+		main.apply_scene_change(command)
+	else:
+		request(command)
 
 
 func choose(action: String) -> void:
