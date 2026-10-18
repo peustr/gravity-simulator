@@ -233,6 +233,9 @@ Server options (add them after `server.py`, or after the `.bat` name in a termin
    - **Shift + click with the Asteroid tool** to create a belt of 80 asteroids. Near a planet, that makes a planetary ring.
 4. Use the **Mass** slider to scale the body from 0.1x to 10x its default. The label tells you what you are making, for example "Red dwarf", "Super-Earth" or "Blue giant".
 
+Placement is rejected if the new body's collision radius touches or overlaps an existing body. Move the preview farther away and try again; rejected placement does not change existing bodies.
+Scene files with bodies at exactly the same position are rejected before replacing the current scene. Overlapping fragments with distinct centres can still be saved and restored.
+
 ### Watching
 
 - **Select** (Q or Esc): click a body to open the inspector. It shows mass, size, speed, what the body orbits, temperature and spectral class for stars, and whether the surface is molten.
@@ -248,6 +251,8 @@ Use the **Experiment** menu in the top bar:
 - **Load scene...** replaces the current scene after confirmation and makes the loaded scene the restart point. Invalid or unsupported files leave the current scene untouched.
 - **Set restart point** remembers the current scene and camera for this session without writing a file. Set it after building an experiment, before letting it evolve.
 - **Restart experiment...** returns to that point after confirmation. Choosing a built-in scenario also sets a restart point at its initial conditions; Clear sets an empty restart point.
+
+**Clear** asks for confirmation. Choosing a scenario asks before replacing a nonempty scene; Cancel preserves both the scene and its restart point. Each scenario sets its own starting speed: Solar system, Binary stars, Black hole feast and Empty space use x1; Planet smash uses x0.6, Planet formation x2.5, and Colliding galaxies x0.8. Switching scenarios preserves pause/resume state.
 
 Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. Trails, selection, body-follow mode and transient visual effects are cleared.
 

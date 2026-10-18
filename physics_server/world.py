@@ -40,6 +40,8 @@ warnings.filterwarnings("ignore", message=".*hash table.*")
 G = 1.0
 MAX_BODIES = 1321  # 10 + 12*N + 8*64 float32 values must fit IPv4 UDP (65507 bytes).
 SCENARIOS = ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty")
+PRESET_SPEEDS = dict(solar=10.0, binary=10.0, black_hole=10.0, smash=6.0,
+                    formation=25.0, galaxies=8.0, empty=10.0)
 
 # --- Body types (must match godot/scripts/palette.gd) -------------------------
 ROCKY, GAS_GIANT, STAR, NEUTRON_STAR, BLACK_HOLE, ASTEROID, PLASMA = range(7)
@@ -827,6 +829,11 @@ class World:
         if mass <= 0 or not math.isfinite(mass):
             raise ValueError("mass must be positive and finite")
         snap = self.snapshot()
+        separation = snap["xyz"] - np.asarray(pos)
+        touching = np.einsum("ij,ij->i", separation, separation) <= (snap["r"] + radius_for(btype, mass)) ** 2
+        if np.any(touching):
+            self.notice("Cannot place a body overlapping another body. Move it farther away.")
+            return None
         vel, a, kick = self.initial_velocity(pos, mass, mode, drag, snap)
         if a is not None and _norm(kick) > 0:
             pa = self.sim.particles[a]
@@ -996,6 +1003,7 @@ class World:
         if name not in SCENARIOS:
             raise ValueError(f"Unknown scenario: {name!r}")
         self.clear()
+        self.speed = PRESET_SPEEDS[name]
         rng = self.rng
         cam = {"focus": [0, 0, 0], "distance": 400.0, "pitch": 0.6}
         origin = (0.0, 0.0, 0.0)
@@ -1063,7 +1071,6 @@ class World:
             cam = {"focus": [0, 0, 0], "distance": 300.0, "pitch": 0.35}
 
         elif name == "smash":
-            self.speed = 6.0
             self.add_body(ROCKY, 0.003, (-9.0, 0.0, -1.0), (0.32, 0.0, 0.025))
             self.add_body(ROCKY, 0.0026, (9.0, 0.4, 1.0), (-0.32, 0.0, -0.025))
             cam = {"focus": [0, 0, 0], "distance": 45.0, "pitch": 0.35}
@@ -1076,11 +1083,9 @@ class World:
                 p, v = self.orbit(origin, origin, sun, r_orb, rng.uniform(0, 6.283), rng.gauss(0, 0.01))
                 v = _add(v, _mul(self._rand_unit(), 0.006 * math.sqrt(sun / r_orb)))
                 self.add_body(ASTEROID, 2e-4 * rng.uniform(0.6, 1.4), p, v)
-            self.speed = 25.0
             cam = {"focus": [0, 0, 0], "distance": 330.0, "pitch": 0.9}
 
         elif name == "galaxies":
-            self.speed = 8.0
             mbh, nstars = 8000.0, 110
             sep = 500.0
             vrel = math.sqrt(2 * G * 2 * mbh / sep)  # parabolic encounter

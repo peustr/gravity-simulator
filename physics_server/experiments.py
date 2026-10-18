@@ -50,6 +50,7 @@ def restore(data):
     if not isinstance(bodies, list) or len(bodies) > world.max_bodies:
         raise ValueError('Too many bodies or invalid body list')
     ids = set()
+    positions = set()
     for body in bodies:
         if not isinstance(body, dict):
             raise ValueError('Invalid body')
@@ -66,6 +67,12 @@ def restore(data):
                 raise ValueError('Invalid body vector')
             for value in body[key]:
                 number(value, -1e30, 1e30)
+        # Existing fragments may overlap radii, but coincident centres make
+        # Newtonian gravity singular before REBOUND can resolve the collision.
+        position = tuple(body['pos'])
+        if position in positions:
+            raise ValueError('Bodies cannot have coincident centres')
+        positions.add(position)
         heat = number(body['heat'], 0, 1e30)
         born = number(body['born'], 0, world.sim.t)
         world._next_id = bid

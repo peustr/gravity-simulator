@@ -28,6 +28,53 @@ def test_full_spawn_is_atomic():
     np.testing.assert_array_equal(w.snapshot()['v'], before)
 
 
+@pytest.mark.parametrize('mode', ['orbit', 'launch'])
+@pytest.mark.parametrize('position', [(0, 0, 0), (5.5, 0, 0), (6, 0, 0)])
+def test_overlapping_placement_is_rejected_without_corrupting_world(mode, position):
+    w = W.World(seed=1)
+    w.add_body(W.STAR, 1000, (0, 0, 0), (0, 0, 0))
+    before = w.snapshot()
+    next_id, version = w._next_id, w.version
+    assert w.spawn(W.ROCKY, position, mode, (10, 0, 0)) is None
+    assert w._next_id == next_id and w.version == version
+    assert 'overlapping' in w.notices[-1]['text']
+    for key in ('m', 'r', 'xyz', 'v'):
+        np.testing.assert_array_equal(w.snapshot()[key], before[key])
+    w.advance(1 / 60, time.perf_counter() + 1)
+    from server import pack_state
+    assert np.isfinite(np.frombuffer(pack_state(w), dtype='<f4')).all()
+
+
+def test_overlap_check_includes_other_bodies_and_precedes_velocity_kick():
+    w = W.World()
+    w.add_body(W.ROCKY, .003, (0, 0, 0), (1, 2, 3))
+    before = w.snapshot()['v'].copy()
+    # A new star would kick this planet into a mutual orbit if accepted.
+    assert w.spawn(W.STAR, (4, 0, 0)) is None
+    np.testing.assert_array_equal(w.snapshot()['v'], before)
+    w.add_body(W.STAR, 1000, (20, 0, 0), (0, 0, 0))
+    # The star dominates the pull here, but the overlap is with the planet.
+    assert w._dominant((1, 0, 0), w.snapshot()) == 1
+    assert w.spawn(W.ROCKY, (1, 0, 0)) is None
+    assert w.spawn(W.ROCKY, (10, 0, 0)) is not None
+
+
+@pytest.mark.parametrize('paused', [False, True])
+@pytest.mark.parametrize('preset, expected', [
+    ('solar', 10), ('binary', 10), ('black_hole', 10), ('smash', 6),
+    ('formation', 25), ('galaxies', 8), ('empty', 10),
+])
+def test_preset_speed_is_independent_of_previous_scene(preset, expected, paused):
+    w = W.World(seed=1)
+    for previous in W.SCENARIOS:
+        w.load_preset(previous)
+        w.speed = 640
+        w.paused = paused
+        hint = w.load_preset(preset)
+        assert w.speed == hint['speed'] == expected
+        assert w.paused is paused
+
+
 def test_remove_repartitions_and_preserves_names():
     w = W.World()
     ids = [w.add_body(t, W.DEFAULT_MASS[t], (i * 100, 0, 0), (0, 0, 0))
