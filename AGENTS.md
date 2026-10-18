@@ -18,6 +18,10 @@ Codex is the primary developer and maintainer. The user plays and develops on Wi
 
 ## Documentation
 
+- The user-requested `docs/physics-roadmap.md` is the maintained planning exception:
+  track acceptance criteria there, cross out a milestone only when fully complete,
+  then continue with the next. Target broad consumer hardware classes; do not make
+  progress depend on an individual's machine or confuse headless and rendered results.
 - Document only the current repository: setup, commands, architecture, behavior, contracts and relevant limitations.
 - Keep documentation concise, factual and useful to a human reader. Avoid narrative prose, change summaries, dated review reports, session notes and historical test results.
 - Update or remove outdated information in place. Use Git history and PR descriptions for change history; do not keep changelogs or completed-work reports in repository documentation.
@@ -32,6 +36,9 @@ Use `python3` on Linux/macOS or `py -3.13` on Windows to run `tools/dev.py`. The
 | Create/refresh the venv and validate physics | `python3 tools/dev.py setup` |
 | Install developer tools | `python3 tools/dev.py setup-dev` |
 | All quality checks | `python3 tools/dev.py check` |
+| Physical accuracy references | `python3 tools/dev.py accuracy` |
+| Physics performance baseline | `python3 tools/dev.py benchmark --profile` |
+| Rendered performance baseline | `python3 tools/dev.py benchmark-visual solar` |
 | Refresh generated runtime reference | `python3 tools/dev.py docs` |
 | Physics self-test | `python3 tools/dev.py selftest` |
 | Godot protocol contract tests | `python3 tools/dev.py godot-test` |
@@ -51,6 +58,9 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 |---|---|
 | `physics_server/world.py` | `World`: REBOUND sim, body types, collisions, fragmentation, tides, supernovae, scenarios (`load_preset`), orbit forecast (`predict`) |
 | `physics_server/server.py` | UDP loop (60 Hz), JSON commands, binary packing, `--selftest` |
+| `physics_server/diagnostics.py`, `validation.py` | Optional conservation accounting and physical reference problems |
+| `tools/benchmark.py` | Seeded performance workloads, profiling and JSON reports |
+| `docs/physics-roadmap.md` | Ordered realism milestones and current acceptance checklist |
 | `godot/scripts/main.gd` | Builds the scene in code, parses state packets, smooth motion, input, automation flags (`_run_auto`) |
 | `godot/scripts/net_client.gd` | UDP client; auto-starts the server from `.venv` or `server.exe` |
 | `godot/scripts/body_view.gd` | Visuals for one body (per type) |

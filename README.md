@@ -218,6 +218,7 @@ Server options (add them after `server.py`, or after the `.bat` name in a termin
 | `--max-bodies 900` | Allow more bodies (default 600). More bodies means slower physics. |
 | `--port 47810` | UDP port. If you change it, also change `SERVER_PORT` in `godot/scripts/net_client.gd`. |
 | `--verbose` | Log every command Godot sends. |
+| `--seed 42` | Reproduce initial random conditions; wall-clock budgets can still change later trajectories. |
 | `--selftest` | Run the checks and exit. |
 | `--log FILE` | Also write the log to a file. Godot uses `physics_server\server.log` when it starts the server. |
 
@@ -405,7 +406,7 @@ Scene-operation `request` values are unique strings (1–80 characters). The cam
 
 **Forecast replies** start with `2`: `[2, req, n_points, hit, attractor_id, vx, vy, vz]`, followed by the points.
 
-The server also sends occasional JSON messages: `info`, `preset` (camera hints) and `notice` (text).
+The server also sends occasional JSON messages: `info` (including its process `pid` for local benchmark ownership checks), `preset` (camera hints) and `notice` (text).
 
 Except for the four scene operations above, UDP commands and events have no acknowledgements or retries. Delivery and ordering are not guaranteed. The default endpoint is localhost; the protocol has no authentication. Float32 IDs lose integer precision above 2^24. Server restarts can reuse IDs and versions while the client retains views.
 
@@ -494,6 +495,68 @@ python3 tools/dev.py selftest
 python3 tools/dev.py godot-check
 python3 tools/dev.py visual-check black_hole --pause_at=2 --grid
 ```
+
+**Physics accuracy and performance:** the maintained [physics roadmap](docs/physics-roadmap.md)
+tracks the realism milestones and their completion criteria. Start with:
+
+```powershell
+py -3.13 tools/dev.py accuracy
+py -3.13 tools/dev.py benchmark --profile
+py -3.13 tools/dev.py benchmark-visual solar
+py -3.13 tools/dev.py benchmark-visual galaxies
+```
+
+Use `python3` instead of `py -3.13` on Linux/macOS. These commands use the existing
+physics venv. Reports have unique names in ignored `benchmarks/`; `--output PATH`
+chooses another location. `benchmark --help` lists scenario, seed, tick-count and
+repeat options. `benchmark-visual --help` lists rendered-run options.
+
+`accuracy` checks circular/eccentric Kepler trajectories over 20 periods, a
+hyperbolic flyby, a hierarchical moon over 20 outer orbits, and an inelastic
+merger. The first three orbital cases compare against analytical solutions or
+conservation laws; the moon also has a bounded-radius check. These deliberately
+small, fully gravitating reference systems use small physical collision radii.
+The report includes measured errors and acceptance thresholds. It does not
+establish long-duration accuracy for every playable scene.
+
+`benchmark` runs six seeded scenarios, with a disposable warmup and three
+600-tick repeats by default. It records physical solver settings, body counts,
+simulation progress, tick/forecast/packing latency percentiles and versions.
+On Windows it also attempts to identify the machine model, CPU, GPU and RAM.
+Ticks are fed at a requested 1/60-second interval without sleeping, so this
+measures processing cost and throughput, not live input latency. Profile data
+comes from separate runs: inclusive phase times overlap and must not be summed.
+Gravity and collision detection share REBOUND's native integration call.
+
+Separate accounting runs measure mass, momentum, orbital angular momentum, and
+Newtonian mechanical energy. The ledger records inventory removed by the escape
+boundary and prescribed black-hole mass loss, including their effect on potential
+energy. It does **not** compute radiated gravitational-wave energy. Remaining
+changes may come from collisions, supernova prescriptions, or tracer forces and
+must not automatically be called integration error. Spin, thermal energy and
+rest-mass energy are absent. Undefined inventory measurements are reported as
+errors and fail the benchmark without preventing the physical rule from running.
+
+`benchmark-visual` opens a 1280×720 window, warms up for three seconds of live
+physics, then records ten seconds of frame intervals and observed state-delivery
+gaps. It uses a dedicated seeded server, verifies its process identity, and
+refuses to use an occupied server port or an existing report file. Close the
+simulator/server first. A display and working renderer are required; headless
+runs cannot provide rendered performance measurements. Frame intervals include
+VSync, CPU, GPU and scheduling costs; they do not isolate GPU time or measure
+input-to-display latency.
+
+Use `--renderer gl_compatibility` to measure the OpenGL renderer instead of the
+default Forward+ renderer. The report identifies the actual renderer and GPU;
+software rendering can validate the workflow but does not establish consumer GPU
+performance. Audio is disabled during these automated measurements.
+
+Keep power mode and resolution consistent, keep the benchmark window visible,
+and close other demanding applications. Retain the JSON reports and note the
+power mode when comparing runs. The roadmap defines broad consumer hardware
+classes and initial performance goals. Benchmark results describe the machine
+that produced them; physical accuracy gates apply across machines. Development
+does not depend on a particular user's computer.
 
 **Coverage policy:** Python checks require 100% statement and branch coverage across `physics_server/`, including scene persistence, command validation and server startup/error handling. This measures exercised Python paths; Godot workflows are checked separately with headless integration tests, and rendered appearance still requires a visual check. Coverage does not prove every physical outcome is correct.
 

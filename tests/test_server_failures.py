@@ -142,6 +142,18 @@ def test_cli_selftest_propagates_status(monkeypatch):
     assert exc.value.code == 7
 
 
+def test_cli_seed_reaches_world(monkeypatch):
+    import random
+    received = []
+    def service(_host, _port, world, *_args):
+        received.append(world.rng.random())
+        return Mock()
+    monkeypatch.setattr(sys, 'argv', ['server.py', '--seed', '91'])
+    monkeypatch.setattr(S, 'Server', service)
+    S.main()
+    assert received == [random.Random(91).random()]
+
+
 def test_cli_entrypoint_runs_and_writes_log(tmp_path, monkeypatch):
     path = tmp_path / 'server.log'
     monkeypatch.setattr(sys, 'argv', ['server.py', '--port', '0', '--exit-when-idle', '.001', '--log', str(path)])

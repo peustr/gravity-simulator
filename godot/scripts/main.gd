@@ -6,6 +6,7 @@ extends Node3D
 ## mouse/keyboard input into commands for the server.
 
 const SceneFiles = preload("res://scripts/scene_files.gd")
+const Benchmark = preload("res://scripts/benchmark.gd")
 const Palette = preload("res://scripts/palette.gd")
 const BodyView = preload("res://scripts/body_view.gd")
 const NetClient = preload("res://scripts/net_client.gd")
@@ -128,6 +129,17 @@ func _ready() -> void:
 	rig.follow_broken.connect(func(): follow_id = -1)
 	_update_hint()
 	hud.set_connection("offline", "Physics offline")
+	if _auto.has("benchmark"):
+		# The benchmark helper owns a seeded server; never silently start an
+		# unseeded replacement if that process fails.
+		net._launch_tried = true
+		var benchmark = Benchmark.new()
+		benchmark.main = self
+		benchmark.output_path = str(_auto["benchmark"])
+		benchmark.scenario = str(_auto.get("preset", "solar"))
+		benchmark.seconds = clampf(float(_auto.get("benchmark_seconds", "10")), 1.0, 120.0)
+		benchmark.seed_value = int(_auto.get("benchmark_seed", "42"))
+		add_child(benchmark)
 
 
 func _parse_cmdline() -> void:

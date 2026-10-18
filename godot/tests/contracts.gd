@@ -4,8 +4,14 @@ const Palette = preload("res://scripts/palette.gd")
 const Net = preload("res://scripts/net_client.gd")
 const Main = preload("res://scripts/main.gd")
 const Hud = preload("res://scripts/hud.gd")
+const Benchmark = preload("res://scripts/benchmark.gd")
 
 func _initialize() -> void:
+	var timing := Benchmark.distribution([1.0, 2.0, 3.0, 100.0])
+	if timing.p95 != 100.0 or timing.mean != 26.5 or Benchmark.distribution([]).count != 0:
+		push_error("Frame timing statistics discarded outliers or mishandled empty data")
+		quit(1)
+		return
 	var invalid := [[], [1], [2], [1, 0, 0, 0, -1, 0, 0, 10, 1, 600],
 		[2, 0, 1, 0, -1, 0, 0, 0], [2, 0, NAN, 0, -1, 0, 0, 0],
 		[2, 0, 0.5, 0, -1, 0, 0, 0]]

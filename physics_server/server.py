@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import select
 import socket
 import sys
@@ -185,7 +186,7 @@ class Server:
             self.client = addr
             self.send_json({
                 "type": "info", "protocol": PROTOCOL_VERSION, "rebound": rebound.__version__,
-                "integrator": "IAS15", "max_bodies": w.max_bodies,
+                "integrator": "IAS15", "max_bodies": w.max_bodies, "pid": os.getpid(),
             }, addr)
         elif cmd == "bye":
             if self.client == addr:
@@ -416,6 +417,7 @@ def main():
     ap.add_argument("--host", default="127.0.0.1", help="address to listen on (default 127.0.0.1)")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"UDP port (default {DEFAULT_PORT})")
     ap.add_argument("--max-bodies", type=int, default=600, help="cap on simultaneous bodies (default 600)")
+    ap.add_argument("--seed", type=int, default=None, help="seed initial conditions and stochastic outcomes")
     ap.add_argument("--exit-when-idle", type=float, default=0.0,
                     help="exit after this many seconds without hearing from Godot (0 = never)")
     ap.add_argument("--selftest", action="store_true", help="run the built-in checks and exit")
@@ -436,7 +438,7 @@ def main():
         ap.error("--port must be between 0 and 65535")
     if not np.isfinite(args.exit_when_idle) or args.exit_when_idle < 0:
         ap.error("--exit-when-idle must be finite and nonnegative")
-    Server(args.host, args.port, W.World(max_bodies=args.max_bodies), args.verbose, args.exit_when_idle).run()
+    Server(args.host, args.port, W.World(max_bodies=args.max_bodies, seed=args.seed), args.verbose, args.exit_when_idle).run()
 
 
 if __name__ == "__main__":

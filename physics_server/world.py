@@ -188,6 +188,7 @@ class World:
 
     # ------------------------------------------------------------------ setup
     def _new_simulation(self):
+        self.ledger = None  # opt-in accounting applies to one world history
         sim = rebound.Simulation()
         sim.G = G
         sim.integrator = "ias15"
@@ -399,8 +400,11 @@ class World:
             return
         d2 = np.einsum("ij,ij->i", snap["xyz"], snap["xyz"])
         far = np.nonzero(d2 > ESCAPE_DISTANCE ** 2)[0]
+        before = self.ledger.capture(self) if self.ledger is not None and len(far) else None
         for i in sorted(far, reverse=True):
             self.remove_body(int(snap["names"][i]))
+        if before is not None:
+            self.ledger.record('escape_boundary', before, self.ledger.capture(self))
 
     # ------------------------------------------------------------ collisions
     def _resolve_collision(self, sim_ptr, collision):
@@ -481,8 +485,11 @@ class World:
         if ts == BLACK_HOLE:
             if tr == BLACK_HOLE:
                 # About 5% of the total mass leaves as gravitational waves.
+                before = self.ledger.capture(self) if self.ledger is not None else None
                 p.m *= 0.95
                 p.r = radius_for(BLACK_HOLE, p.m)
+                if before is not None:
+                    self.ledger.record('prescribed_black_hole_mass_loss', before, self.ledger.capture(self))
                 self._event(EV_BH_MERGER, pos, 3.0, p.r * 30, sid, rid)
             else:
                 p.r = radius_for(BLACK_HOLE, p.m)

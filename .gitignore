@@ -44,6 +44,7 @@ physics_server/server.log
 # --- Project outputs ---------------------------------------------------------------
 # Screenshots from $visual-check and the --screenshot flag
 /shots/
+/benchmarks/
 # Distribution zips
 *.zip
 
