@@ -34,7 +34,7 @@ jobs:
       - run: python tools/dev.py lint
       - run: python tools/dev.py test
       - run: python tools/dev.py docs-check
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: coverage-${{ matrix.os }}-${{ matrix.python }}
@@ -67,7 +67,7 @@ jobs:
           chmod +x /tmp/godot/Godot_v4.7.2-stable_linux.x86_64
           echo "GODOT=/tmp/godot/Godot_v4.7.2-stable_linux.x86_64" >> "$GITHUB_ENV"
       - run: python tools/dev.py godot-check
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: godot-server-log
