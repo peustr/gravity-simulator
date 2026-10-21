@@ -7,6 +7,8 @@ import world
 
 def check(data):
     assert data['keys'] == list(world.TYPE_KEYS)
+    assert data['protocol'] == server.PROTOCOL_VERSION
+    assert data['kinds'] == [server.STATE_KIND, server.PREDICTION_KIND]
     assert data['port'] == server.DEFAULT_PORT
     assert data['layout'] == [server.HEADER_FLOATS, server.BODY_FLOATS, server.EVENT_FLOATS]
     assert data['presets'] == list(world.SCENARIOS)
@@ -15,6 +17,6 @@ def check(data):
     assert data['ids'] == expected_ids
     np.testing.assert_allclose(data['masses'], list(world.DEFAULT_MASS.values()), rtol=1e-7)
     for kind, row in enumerate(data['radii']):
-        np.testing.assert_allclose(row, [world.radius_for(kind, m) for m in data['samples']], rtol=1e-7)
+        np.testing.assert_allclose(row, [world.legacy_radius_for(kind, m) for m in data['samples']], rtol=1e-7)
     assert len(data['radii']) == len(world.TYPE_KEYS)
     print('Python/Godot contract checks PASSED')

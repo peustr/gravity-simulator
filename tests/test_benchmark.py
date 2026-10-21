@@ -19,11 +19,11 @@ def test_summary_retains_latency_outliers_and_empty_samples():
 def test_seeded_workload_and_separate_accounting():
     first = benchmark.workload('solar', 2, 7)
     second = benchmark.workload('solar', 2, 7, audit=True)
-    assert first['initial_bodies'] == second['initial_bodies'] == 112
+    assert first['initial_bodies'] == second['initial_bodies'] == 73
     assert first['advance']['count'] == 2 and first['forecast']['count'] == 1
-    assert first['initial_tracers'] == 100
+    assert first['initial_tracers'] == 60
     assert 'accounting' not in first and 'accounting' in second
-    assert second['accounting']['initial']['tracers'] == 100
+    assert second['accounting']['initial']['tracers'] == 60
     assert first['requested_simulated_time'] == pytest.approx(1 / 3)
 
 

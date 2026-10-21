@@ -35,7 +35,9 @@ def test_capacity_rejection_does_not_consume_ids():
     assert add(w) == 1
     assert add(w) is None
     assert w.sim.N == 1 and w._next_id == 2
-    assert W.radius_for(-1, 1) == 1
+    assert W.legacy_radius_for(-1, 1) == 1
+    with pytest.raises(ValueError, match="Unknown body"):
+        W.radius_for(-1, 1)
 
 
 def test_invalid_placement_mode_and_nonfinite_mass():

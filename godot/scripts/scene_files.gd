@@ -95,7 +95,7 @@ func request(command: Dictionary) -> void:
 	if pending.cmd in ["save_scene", "checkpoint"]:
 		var f: Vector3 = main.rig.focus
 		pending["camera"] = {"focus": [f.x, f.y, f.z], "distance": main.rig.distance,
-			"pitch": main.rig.pitch, "yaw": main.rig.yaw}
+			"pitch": main.rig.pitch, "yaw": main.rig.yaw, "display_scale": main.display_scale}
 	_elapsed = 0.0
 	_retry = 0.0
 	main.net.send(pending)

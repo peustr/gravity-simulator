@@ -23,6 +23,7 @@ from diagnostics import Ledger, totals
 from server import MAX_EVENTS_PER_PACKET, PHYSICS_BUDGET, TICK_HZ, pack_state
 from validation import run_accuracy
 import world as W
+import units
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = ('solar', 'binary', 'black_hole', 'smash', 'formation', 'galaxies')
@@ -70,7 +71,8 @@ def workload(name, ticks, seed, audit=False):
     initial = totals(world)
     solver = dict(integrator=str(world.sim.integrator), epsilon=world.sim.integrator.epsilon,
                   minimum_timestep=world.sim.integrator.min_dt, collision=world.sim.collision,
-                  gravity_constant=world.sim.G, max_bodies=world.max_bodies)
+                  gravity_constant=world.sim.G, max_bodies=world.max_bodies,
+                  units=units.metadata(), radius_model=world.units)
     if audit:
         world.ledger = Ledger()
     advance, packing, forecast, tick_times, point_counts = [], [], [], [], []

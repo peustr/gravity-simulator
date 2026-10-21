@@ -20,8 +20,8 @@ const SH_STARFIELD := preload("res://shaders/starfield.gdshader")
 const SH_RING := preload("res://shaders/ring.gdshader")
 
 const DEFAULT_SPEED := 10.0
-const SPEED_STEPS := [0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
-const HEADER := 10
+const SPEED_STEPS := [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
+const HEADER := 11
 const BODY := 12
 const EVENT := 8
 const MAX_LIGHTS := 6
@@ -42,6 +42,9 @@ var selection_ring: MeshInstance3D
 
 # Timing
 var sim_version := -1
+var display_scale := 1.0
+var legacy_units := false
+
 var packet_time := 0.0
 var display_time := 0.0
 var server_speed := DEFAULT_SPEED
@@ -67,6 +70,7 @@ var pred_timer := 0.0
 var pred_key := ""
 var pred_refresh := 0.0
 var pred_rel := PackedVector3Array()
+var pred_radius := 0.0
 var pred_hit := false
 var pred_attractor := -1
 var pred_vel := Vector3.ZERO
@@ -114,7 +118,7 @@ func _ready() -> void:
 	add_child(scene_files)
 	hud.scene_action.connect(scene_files.choose)
 	hud.tool_selected.connect(_set_tool)
-	hud.mass_changed.connect(func(_t, _m): pred_key = "")
+	hud.mass_changed.connect(func(_t, _m): _clear_prediction())
 	hud.pause_toggled.connect(_toggle_pause)
 	hud.speed_step.connect(_speed_step)
 	hud.preset_chosen.connect(_load_preset)
@@ -239,7 +243,7 @@ func _max_tau() -> float:
 
 
 func _on_state(f: PackedFloat32Array) -> void:
-	if not NetClient.valid_packet(f) or f[0] != 1.0:
+	if not NetClient.valid_packet(f) or f[0] != NetClient.STATE_KIND:
 		return
 	var n := int(f[4])
 	var ne := int(f[5])
@@ -249,6 +253,7 @@ func _on_state(f: PackedFloat32Array) -> void:
 	server_speed = f[7]
 	perf = f[8]
 	max_bodies = int(f[9])
+	legacy_units = f[10] == 0.0
 
 	# Events first, while the bodies involved still have their views.
 	var eo := HEADER + n * BODY
@@ -320,7 +325,7 @@ func _on_state(f: PackedFloat32Array) -> void:
 			if h == v:
 				continue
 			var d: Vector3 = h.base_pos - v.base_pos
-			var soft: float = h.radius * h.radius
+			var soft: float = h.physical_radius * h.physical_radius
 			var r2 := d.length_squared() + soft
 			acc += d * (G * h.mass / (r2 * sqrt(r2)))
 		v.acc = acc
@@ -413,24 +418,25 @@ func _event_text(kind: int, a: int, b: int) -> Array:
 
 
 func _on_prediction(f: PackedFloat32Array) -> void:
-	if not NetClient.valid_packet(f) or f[0] != 2.0:
+	if not NetClient.valid_packet(f) or f[0] != NetClient.PREDICTION_KIND:
 		return
 	var req := int(f[1])
 	if req < pred_applied:
 		return
 	pred_applied = req
 	var n := int(f[2])
-	if f.size() < 8 + n * 3:
+	if f.size() < 9 + n * 3:
 		return
 	pred_hit = f[3] > 0.5
 	pred_attractor = int(f[4])
 	pred_vel = Vector3(f[5], f[6], f[7])
+	pred_radius = f[8]
 	var origin := Vector3.ZERO
 	if views.has(pred_attractor):
 		origin = views[pred_attractor].position
 	pred_rel = PackedVector3Array()
 	for k in range(n):
-		var o := 8 + k * 3
+		var o := 9 + k * 3
 		var p := Vector3(f[o], f[o + 1], f[o + 2])
 		if not p.is_finite():
 			break
@@ -447,6 +453,7 @@ func _process(delta: float) -> void:
 	var decay := exp(-delta / 0.12)
 	for id in views:
 		var v = views[id]
+		v.set_display_size(display_scale, _world_per_px(v.position))
 		v.offset *= decay
 		v.position = v.base_pos + v.vel * tau + 0.5 * v.acc * tau * tau + v.offset
 
@@ -470,6 +477,7 @@ func _process(delta: float) -> void:
 	if _stats_timer <= 0.0:
 		_stats_timer = 0.2
 		hud.set_stats(display_time, views.size(), max_bodies, server_speed / DEFAULT_SPEED, paused, perf)
+		hud.time_label.text = "t = " + _physical_value(display_time, "time_s", "days", 1.0 / 86400.0)
 		_update_inspector()
 		if not net.connected and _alive > 1.6:
 			var why: String = net.launch_status
@@ -538,7 +546,7 @@ func _update_placement(delta: float) -> void:
 		return
 	var mult: float = hud.mass_mult(tool)
 	var mass: float = Palette.DEFAULT_MASS[tool] * mult
-	var r := Palette.radius_for(tool, mass)
+	var r := Palette.rendered_radius(tool, mass, pred_radius, display_scale, _world_per_px(anchor))
 	placement.set_ghost(anchor, r, tool)
 
 	var launching := false
@@ -679,6 +687,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_speed_step(1)
 			KEY_T:
 				hud.toast("Trails: " + trails.cycle_mode())
+			KEY_V:
+				display_scale = 2.0 if display_scale == 1.0 else (0.0 if display_scale == 2.0 else 1.0)
+				hud.toast("Physical body sizes (markers remain visible)" if display_scale == 0.0 else "Visual enlargement x%.0f" % display_scale)
 			KEY_G:
 				grid.always_on = not grid.always_on
 				hud.toast("Gravity grid: " + ("on" if grid.always_on else "off"))
@@ -722,12 +733,20 @@ func _set_tool(t: int) -> void:
 	tool = t
 	drag_active = false
 	drag_world = Vector3.ZERO
-	pred_key = ""
-	pred_rel = PackedVector3Array()
-	pred_attractor = -1
+	_clear_prediction()
 	if t >= 0:
 		hud.show_welcome(false)
 	_update_hint()
+
+
+func _clear_prediction() -> void:
+	# Discard in-flight replies after changing the proposed type or mass.
+	pred_req += 1
+	pred_applied = pred_req
+	pred_key = ""
+	pred_radius = 0.0
+	pred_rel.clear()
+	pred_attractor = -1
 
 
 func _update_hint() -> void:
@@ -806,6 +825,7 @@ func apply_scene_change(command: Dictionary) -> void:
 
 
 func restore_scene_view(cam: Dictionary) -> void:
+	display_scale = float(cam.get("display_scale", 1.0))
 	# IDs can be reused after a restore: discard all views and transient effects.
 	for view in views.values():
 		view.queue_free()
@@ -822,6 +842,7 @@ func restore_scene_view(cam: Dictionary) -> void:
 	pred_req += 1
 	pred_applied = pred_req
 	pred_key = ""
+	pred_radius = 0.0
 	pred_rel.clear()
 	placement.hide_all()
 	sim_version = -1
@@ -895,9 +916,10 @@ func _update_inspector() -> void:
 		tlabel = "%s-type star  ·  %d K" % [Palette.spectral_class(k), int(round(k / 100.0) * 100)]
 	info["type"] = tlabel
 	info["color"] = Palette.TYPE_COLORS[v.body_type]
-	info["Mass"] = Palette.friendly_mass(v.mass, v.body_type)
-	info["Radius"] = "%.2f" % v.radius
-	info["Speed"] = "%.2f" % v.vel.length()
+	info["Mass"] = _physical_value(v.mass, "mass_kg", "kg")
+	info["Physical radius"] = _physical_value(v.physical_radius, "length_m", "km", 0.001)
+	info["Speed"] = _physical_value(v.vel.length(), "velocity_m_s", "km/s", 0.001)
+	info["Display"] = "Physical sizes" if display_scale == 0.0 else "Enlarged x%.0f" % display_scale
 	# What is it orbiting? (the strongest pull, m / d^2)
 	var best = null
 	var best_s := 0.0
@@ -912,13 +934,22 @@ func _update_inspector() -> void:
 			best = o
 	if best != null:
 		info["Orbiting"] = best.display_name
-		info["Distance"] = "%.1f" % best.position.distance_to(v.position)
+		info["Distance"] = _physical_value(best.position.distance_to(v.position), "length_m", "km", 0.001)
 	if v.heat > 0.05:
 		info["Surface"] = "Molten (%d%%)" % int(v.heat * 100)
-	info["Age"] = "%.0f" % v.age
+	info["Age"] = _physical_value(v.age, "time_s", "days", 1.0 / 86400.0)
 	info["can_nova"] = v.body_type == Palette.STAR
 	info["following"] = follow_id == selected_id
 	hud.show_inspector(info)
+
+
+func _physical_value(value: float, quantity: String, label: String, factor := 1.0) -> String:
+	if legacy_units:
+		return "%s legacy units" % Palette._sig(value)
+	var scale: Dictionary = net.server_info.get("physical_units", {})
+	if not scale.has(quantity):
+		return "Waiting for units"
+	return "%s %s" % [Palette._sig(value * float(scale[quantity]) * factor), label]
 
 
 # =================================================================== automation
@@ -994,7 +1025,7 @@ func _run_auto(delta: float) -> void:
 			var list := views.values()
 			list.sort_custom(func(a, b): return a.mass > b.mass)
 			for v in list.slice(0, 6):
-				print("  body ", v.id, " type ", v.body_type, " mass ", v.mass, " r ", v.radius, " pos ", v.position)
+				print("  body ", v.id, " type ", v.body_type, " mass ", v.mass, " r ", v.physical_radius, " pos ", v.position)
 			print("  camera ", rig.camera.global_position, " focus ", rig.focus, " dist ", rig.distance)
 		_save_screenshot(str(_auto["screenshot"]))
 		if _auto.has("quit"):

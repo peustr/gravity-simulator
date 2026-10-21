@@ -76,7 +76,7 @@ def visual_benchmark(argv) -> None:
                 while True:
                     if process.poll() is not None:
                         raise RuntimeError(f'Benchmark server failed; inspect {path.with_suffix(".log")}')
-                    client.sendto(b'{"cmd":"hello"}', ('127.0.0.1', 47810))
+                    client.sendto(b'{"cmd":"hello","protocol":2}', ('127.0.0.1', 47810))
                     try:
                         packet, _address = client.recvfrom(65535)
                         if json.loads(packet).get('pid') == process.pid:

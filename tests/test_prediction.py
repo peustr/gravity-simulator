@@ -22,7 +22,7 @@ def predict(w, pos=(100, 0, 0), mode='orbit', drag=(0, 0, 0), **kwargs):
 
 def test_empty_forecast_and_immediate_impact():
     result = predict(W.World(), mode='launch', drag=(20, 0, 0))
-    assert result == dict(points=[], hit=False, attractor=-1, vel=(1, 0, 0))
+    assert result == dict(points=[], hit=False, attractor=-1, vel=(1, 0, 0), radius=W.radius_for(W.ROCKY, .003))
     result = predict(star_world(), pos=(0, 0, 0))
     assert result['hit'] and result['attractor'] == 1
     assert result['points'] == [(0, 0, 0)] and result['vel'] == (0, 0, 0)
@@ -79,7 +79,27 @@ def test_background_collision_does_not_flag_preview_as_impact(monkeypatch):
         assert sim._collision_resolve(ctypes.pointer(sim), contact) == 0
     monkeypatch.setattr(rebound.Simulation, 'integrate', integrate)
     result = predict(w, samples=2, wall_budget=1)
-    assert len(result['points']) == 3 and not result['hit']
+    assert len(result['points']) == 2 and not result['hit']
+
+
+def test_physical_background_impact_cannot_stall_native_forecast():
+    # A subprocess timeout catches a native IAS15 stall that Python's wall
+    # budget cannot interrupt. Both colliding bodies already exist in smash.
+    import subprocess
+    import sys
+    from pathlib import Path
+    code = """
+import sys
+sys.path.insert(0, 'physics_server')
+import world as W
+w = W.World(seed=42)
+w.load_preset('smash')
+result = w.predict(W.ROCKY, (400, 50, 0), 'orbit', (0, 0, 0), 1, wall_budget=1)
+assert len(result['points']) == 2 and not result['hit']
+assert w.sim.t == 0 and w.sim.N == 2
+"""
+    subprocess.run([sys.executable, '-c', code], cwd=Path(__file__).resolve().parents[1],
+                   check=True, timeout=10, capture_output=True)
 
 
 def test_tied_attractor_is_kept_even_when_sort_places_it_outside_top_twenty(monkeypatch):

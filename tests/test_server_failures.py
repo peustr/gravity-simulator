@@ -57,7 +57,7 @@ def test_send_without_client_and_failed_send_are_harmless(service):
 
 @pytest.mark.parametrize('ending', [OSError('closed'), InterruptedError()])
 def test_receive_reset_continues_until_socket_unavailable(service, ending):
-    service.sock.recvfrom.side_effect = [ConnectionResetError(), (b'{"cmd":"hello"}', ADDRESS), ending]
+    service.sock.recvfrom.side_effect = [ConnectionResetError(), (b'{"protocol":2,"cmd":"hello"}', ADDRESS), ending]
     service.poll()
     assert service.client == ADDRESS
     assert service.sock.recvfrom.call_count == 3
@@ -67,7 +67,7 @@ def test_receive_reset_continues_until_socket_unavailable(service, ending):
 def test_poll_is_bounded_and_other_client_cannot_disconnect(service):
     service.client = ADDRESS
     before = service.last_heard
-    service.sock.recvfrom.return_value = (b'{"cmd":"bye"}', ('127.0.0.1', 9999))
+    service.sock.recvfrom.return_value = (b'{"protocol":2,"cmd":"bye"}', ('127.0.0.1', 9999))
     service.poll()
     assert service.sock.recvfrom.call_count == 500
     assert service.client == ADDRESS and service.last_heard == before
@@ -76,10 +76,10 @@ def test_poll_is_bounded_and_other_client_cannot_disconnect(service):
 def test_poll_reports_bad_commands_and_recovers_from_handler_failure(service, monkeypatch, capsys):
     service.verbose = True
     service.sock.recvfrom.side_effect = [
-        (b'{"cmd":"speed","value":"bad"}', ADDRESS),
-        (b'{"cmd":"clear"}', ADDRESS),
-        (b'{"cmd":"hello"}', ADDRESS),
-        (b'{"cmd":"hello"}', ADDRESS), BlockingIOError()]
+        (b'{"protocol":2,"cmd":"speed","value":"bad"}', ADDRESS),
+        (b'{"protocol":2,"cmd":"clear"}', ADDRESS),
+        (b'{"protocol":2,"cmd":"hello"}', ADDRESS),
+        (b'{"protocol":2,"cmd":"hello"}', ADDRESS), BlockingIOError()]
     monkeypatch.setattr(service.world, 'clear', Mock(side_effect=RuntimeError('injected failure')))
     service.poll()
     output = capsys.readouterr()
@@ -121,7 +121,7 @@ def test_packet_fallback_for_missing_metadata():
     w = W.World()
     bid = w.add_body(W.ROCKY, .003, (0, 0, 0), (0, 0, 0))
     w.meta.pop(str(bid))
-    body = np.frombuffer(S.pack_state(w), dtype='<f4')[10:]
+    body = np.frombuffer(S.pack_state(w), dtype='<f4')[11:]
     assert body[1] == W.ASTEROID
     assert body[10:].tolist() == [0, 0]
 

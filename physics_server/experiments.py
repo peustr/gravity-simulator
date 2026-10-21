@@ -6,9 +6,10 @@ import tempfile
 
 from commands import integer, number, vector
 import world as W
+import units
 
 MAX_FILE_BYTES = 4 * 1024 * 1024
-DEFAULT_CAMERA = dict(focus=[0, 0, 0], distance=400.0, pitch=0.6, yaw=0.5)
+DEFAULT_CAMERA = dict(focus=[0, 0, 0], distance=400.0, pitch=0.6, yaw=0.5, display_scale=1.0)
 
 
 def camera_state(camera):
@@ -18,7 +19,8 @@ def camera_state(camera):
     return dict(focus=list(camera['focus']),
                 distance=number(camera.get('distance'), 1.5, 40000),
                 pitch=number(camera.get('pitch'), -1.52, 1.52),
-                yaw=number(camera.get('yaw', 0.5), -1e12, 1e12))
+                yaw=number(camera.get('yaw', 0.5), -1e12, 1e12),
+                display_scale=number(camera.get('display_scale', 1.0), 0, 4))
 
 
 def capture(world, camera):
@@ -28,7 +30,7 @@ def capture(world, camera):
         bodies.append(dict(id=int(p.name), type=md['type'], mass=p.m, radius=p.r,
                            pos=[p.x, p.y, p.z], vel=[p.vx, p.vy, p.vz],
                            heat=md['heat'], born=md['born']))
-    return dict(format='gravity-simulator', version=1, bodies=bodies,
+    return dict(format='gravity-simulator', version=2, units=world.units, bodies=bodies,
                 time=world.sim.t, speed=world.speed, paused=world.paused,
                 max_bodies=world.max_bodies, next_id=world._next_id,
                 rng=world.rng.getstate(), supernova_queue=list(world._supernova_queue),
@@ -37,10 +39,14 @@ def capture(world, camera):
 
 def restore(data):
     """Build a separate world; callers swap it in only after all validation succeeds."""
-    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] != 1:
+    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2):
         raise ValueError('Unsupported scene format or version')
     camera = camera_state(data.get('camera'))
     world = W.World(max_bodies=data['max_bodies'])
+    world.units = units.LEGACY if data['version'] == 1 else data.get('units')
+    if world.units not in (units.SYSTEM, units.LEGACY):
+        raise ValueError('Unsupported physical units / radius model')
+    world.sim.integrator.min_dt = 1e-4 if world.units == units.LEGACY else 0.0
     world.sim.t = number(data['time'], 0, 1e20)
     world.speed = number(data['speed'], 0.05, 2000)
     if type(data['paused']) is not bool:

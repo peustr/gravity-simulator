@@ -16,12 +16,12 @@ signal relaunch_requested
 const Palette = preload("res://scripts/palette.gd")
 
 const PRESETS := [
-	["solar", "Solar system", "A Sun, rocky planets, moons, an asteroid belt and ringed giants."],
+	["solar", "Solar system", "A Sun, rocky planets, gas giants and moons at physical orbital distances."],
 	["binary", "Binary stars", "Two suns locked in orbit, with planets on the edge of chaos."],
 	["black_hole", "Black hole feast", "A star on a plunging orbit gets spaghettified."],
 	["smash", "Planet smash", "Two Earths on a collision course."],
 	["formation", "Planet formation", "200 planetesimals collide and grow."],
-	["galaxies", "Colliding galaxies", "Two black-hole-centred galaxies fly past each other and throw out tidal tails."],
+	["galaxies", "Tidal encounter", "Two tracer disks around stellar-mass black holes form tidal tails."],
 	["empty", "Empty space", "Nothing but you and the void."],
 ]
 
@@ -368,7 +368,7 @@ func _refresh_mass_label() -> void:
 func _fmt_mult(m: float) -> String:
 	if m >= 10.0: return "%d" % int(round(m))
 	if m >= 1.0: return "%.1f" % m
-	return "%.2f" % m
+	return "%.3f" % m if m < 0.01 else "%.2f" % m
 
 
 func mass_mult(tool: int) -> float:
@@ -456,7 +456,7 @@ func _build_inspector() -> void:
 	insp_grid.add_theme_constant_override("h_separation", 14)
 	insp_grid.add_theme_constant_override("v_separation", 4)
 	v.add_child(insp_grid)
-	for key in ["Mass", "Radius", "Speed", "Orbiting", "Distance", "Surface", "Age"]:
+	for key in ["Mass", "Physical radius", "Speed", "Orbiting", "Distance", "Surface", "Age", "Display"]:
 		insp_grid.add_child(_label(key, 13, C_DIM))
 		var val := _label("", 13, C_TEXT)
 		insp_grid.add_child(val)
@@ -701,7 +701,7 @@ func _build_help() -> void:
 		["1 - 6,   Q or Esc", "Choose a body tool,  back to Select"],
 		["Space,   -  /  +", "Pause,  slow down / speed up time"],
 		["F,  Delete,  N", "Follow,  delete,  supernova (selected star)"],
-		["T,  G", "Trails (off / short / long),  gravity grid"],
+		["T,  G,  V", "Trails,  gravity grid,  visual / physical sizes"],
 		["R,  Tab,  F12", "Reset view,  hide interface,  save screenshot"],
 	]
 	for r in rows:
@@ -715,7 +715,7 @@ func _build_help() -> void:
 		"What you are seeing: gravity is computed between every pair of bodies with REBOUND's IAS15 integrator. " +
 		"Slow impacts merge, fast ones shatter bodies into fragments, bodies that stray inside a Roche limit are torn apart, " +
 		"gas giants that grow past ~80 Jupiters ignite into stars, and black holes swallow whatever crosses their horizon. " +
-		"Sizes are exaggerated so you can see things - just like every space game.", 12, C_DIM)
+		"Visual enlargement does not change physical contact. Press V to view physical body sizes.", 12, C_DIM)
 	notes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	notes.custom_minimum_size.x = 690
 	v.add_child(notes)

@@ -37,8 +37,8 @@ store generated measurements in ignored `benchmarks/`, not in this document.
 ## Milestones
 
 - [x] ~~1. Accuracy and performance baseline~~
-- [ ] **2. Physical units and independent display sizes — active**
-- [ ] **3. Trustworthy orbital dynamics**
+- [x] ~~2. Physical units and independent display sizes~~
+- [ ] **3. Trustworthy orbital dynamics — active**
 - [ ] **4. Credible impact outcomes**
 - [ ] **5. Rotation and tidal evolution**
 - [ ] **6. Composition and thermal history**
@@ -71,25 +71,31 @@ must not be presented as rendered or consumer-device results.
 
 ## 2. Physical units and independent display sizes
 
-- [ ] Define explicit unit conversions and authoritative physical constants.
-- [ ] Separate physical, rendered, and selection radii throughout placement,
+- [x] Define explicit unit conversions and authoritative physical constants.
+- [x] Separate physical, rendered, and selection radii throughout placement,
   collision detection, orbit forecasts, and Godot presentation.
-- [ ] Adopt defensible density or mass–radius models and rebuild scenarios with
+- [x] Adopt defensible density or mass–radius models and rebuild scenarios with
   consistent initial conditions.
-- [ ] Migrate saved scenes and the Python/Godot protocol without silently
+- [x] Migrate saved scenes and the Python/Godot protocol without silently
   changing the meaning of existing values.
-- [ ] Verify that visual enlargement cannot change physics; run the physical
+- [x] Verify that visual enlargement cannot change physics; run the physical
   accuracy gates and compare runtime cost with the baseline.
 
 Acceptance: changing visual enlargement cannot change physical outcomes;
 unit conversions and scenario orbits pass the baseline checks. Migrate saves and
 the Python/Godot protocol explicitly when their meaning changes.
 
+Implementation reference for units, radii, scenarios and compatibility:
+[physical model](physical-model.md).
+
 ## 3. Trustworthy orbital dynamics
 
 Validate close encounters and collision detection; revisit the IAS15 minimum
 timestep; evaluate symplectic integration for eligible long-lived planetary
-systems. Make tracer/full gravity choices explicit, considering collective
+systems. Investigate IAS15 convergence warnings during radial compact-object
+capture, and bound forecast work between native integration calls to meet the
+forecast latency target without loosening accuracy. Make tracer/full gravity
+choices explicit, considering collective
 debris mass. Define removal boundaries and forecast accuracy limits.
 
 Acceptance: documented long-duration error targets and convergence under tighter

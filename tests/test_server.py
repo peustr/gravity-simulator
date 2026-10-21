@@ -41,15 +41,15 @@ def test_udp_recovers_after_malformed_packets(server):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.bind(('127.0.0.1', 0))
         client.settimeout(2)
-        for data in [b'\xff', b'{', b'[]', b'{"cmd":"add","pos":[NaN,0,0]}',
-                     b'[' * 1100, json.dumps({'cmd': 'hello'}).encode()]:
+        for data in [b'\xff', b'{', b'[]', b'{"protocol":2,"cmd":"add","pos":[NaN,0,0]}',
+                     b'[' * 1100, json.dumps({'cmd': 'hello', 'protocol': 2}).encode()]:
             client.sendto(data, server.sock.getsockname())
         deadline = time.monotonic() + 2
         while server.client is None and time.monotonic() < deadline:
             server.poll()
         assert json.loads(client.recv(4096))['protocol'] == S.PROTOCOL_VERSION
         server.send(S.pack_state(server.world))
-        assert struct.unpack('<10f', client.recv(65535))[0] == 1
+        assert struct.unpack('<11f', client.recv(65535))[0] == 3
         server.handle({'cmd': 'bye'}, client.getsockname())
         assert server.client is None
 
@@ -65,12 +65,12 @@ def test_maximum_packet_and_event_backlog():
     values = np.frombuffer(data, dtype='<f4')
     assert values[4:6].tolist() == [W.MAX_BODIES, 64]
     assert len(w.events) == 6
-    assert len(data) == 4 * (10 + 12 * W.MAX_BODIES + 8 * 64)
+    assert len(data) == 4 * (11 + 12 * W.MAX_BODIES + 8 * 64)
 
 
 def test_prediction_wire_layout():
-    data = S.pack_prediction(123, dict(points=[(1, 2, 3)], hit=True, attractor=42, vel=(4, 5, 6)))
-    assert struct.unpack('<11f', data) == (2, 123, 1, 1, 42, 4, 5, 6, 1, 2, 3)
+    data = S.pack_prediction(123, dict(points=[(1, 2, 3)], hit=True, attractor=42, vel=(4, 5, 6), radius=0.5))
+    assert struct.unpack('<12f', data) == (4, 123, 1, 1, 42, 4, 5, 6, 0.5, 1, 2, 3)
 
 
 def test_valid_command_sequence(server):
@@ -102,12 +102,12 @@ def test_run_sends_state_and_exits_when_idle(server):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.bind(('127.0.0.1', 0))
         client.settimeout(2)
-        client.sendto(b'{"cmd":"hello"}', server.sock.getsockname())
+        client.sendto(b'{"protocol":2,"cmd":"hello"}', server.sock.getsockname())
         server.world.notice('queued')
         server.exit_when_idle = .04
         server.run()
         assert json.loads(client.recv(4096))['type'] == 'info'
-        assert struct.unpack('<10f', client.recv(65535))[0] == 1
+        assert struct.unpack('<11f', client.recv(65535))[0] == 3
         assert json.loads(client.recv(4096))['text'] == 'queued'
         assert server.sock.fileno() == -1
 

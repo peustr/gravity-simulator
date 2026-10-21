@@ -95,6 +95,7 @@ func _run() -> void:
 		return
 	main.rig.frame(Vector3(1, 2, 3), 240, 0.8)
 	main.rig.target_yaw = -1.2
+	main.display_scale = 2.0
 	await create_timer(1).timeout
 	var camera_focus: Vector3 = main.rig.focus
 	if not await _request({"cmd": "save_scene", "path": path}):
@@ -119,14 +120,33 @@ func _run() -> void:
 		_fail("Scene test: clear failed")
 		return
 	main.rig.frame(Vector3.ZERO, 1000, 0.2)
+	main.display_scale = 0.0
 	if not await _request({"cmd": "load_scene", "path": path}):
 		_fail("Scene test: load failed")
 		return
 	if not await _until(func(): return main.views.size() == 6 and main.paused):
 		_fail("Scene test: load did not restore bodies and pause state")
 		return
+	if main.display_scale != 2.0 or main.legacy_units or not main._physical_value(1000, "mass_kg", "kg").contains("e30 kg"):
+		_fail("Physical units or display size setting did not round trip")
+		return
 	if not main.rig.target_focus.is_equal_approx(camera_focus):
 		_fail("Scene test: camera was not restored")
+		return
+	main._select(main.views.keys()[0])
+	main._update_inspector()
+	if not main.hud.insp_values["Physical radius"].text.ends_with(" km") or main.hud.insp_values["Display"].text != "Enlarged x2":
+		_fail("Physical inspector fields did not reach the HUD")
+		return
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":2', '"version":1')
+	var migration_file := FileAccess.open(path, FileAccess.WRITE)
+	migration_file.store_string(legacy)
+	migration_file.close()
+	if not await _request({"cmd": "load_scene", "path": path}) or not await _until(func(): return main.legacy_units):
+		_fail("Legacy scene's unit flag did not reach the client")
+		return
+	if not main._physical_value(1.0, "length_m", "km").ends_with("legacy units"):
+		_fail("Legacy values were silently labelled as physical measurements")
 		return
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_string("{broken")
@@ -136,7 +156,7 @@ func _run() -> void:
 		return
 	main.hud.preset_chosen.emit("smash")
 	main.scene_files.confirm.get_ok_button().pressed.emit()
-	if not await _until(func(): return main.views.size() == 2 and main.server_speed == 6):
+	if not await _until(func(): return main.views.size() == 2 and is_equal_approx(main.server_speed, 0.05)):
 		_fail("Confirmed scenario change did not apply")
 		return
 	print("Godot experiment save/load/restart check PASSED")

@@ -97,6 +97,8 @@ func _finish() -> void:
 			over_30 += 1
 	var report := {"format": "gravity-render-baseline", "version": 1,
 		"scenario": scenario, "seed": seed_value, "warmup_seconds": 3.0,
+		"physical_units": main.net.server_info.get("physical_units", {}),
+		"display_scale": main.display_scale, "legacy_units": main.legacy_units,
 		"sample_seconds": (Time.get_ticks_usec() - _sampling) / 1000000.0,
 		"frame_intervals_ms": frame_stats, "average_fps": 1000.0 / frame_stats.mean,
 		"frames_over_60fps_budget": over_60, "frames_over_30fps_budget": over_30,

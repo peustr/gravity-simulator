@@ -76,9 +76,9 @@ class WorldTests(unittest.TestCase):
         packet = server.pack_state(w)
         self.assertLessEqual(len(packet), 65507)
         header = np.frombuffer(packet, dtype='<f4')[:10]
-        self.assertEqual(tuple(header[[0, 4, 5]]), (1, W.MAX_BODIES, 64))
+        self.assertEqual(tuple(header[[0, 4, 5]]), (3, W.MAX_BODIES, 64))
         self.assertEqual(len(w.events), 1)
-        self.assertEqual(len(server.pack_state(w)), 40 + W.MAX_BODIES * 48 + 32)
+        self.assertEqual(len(server.pack_state(w)), 44 + W.MAX_BODIES * 48 + 32)
 
     def test_simultaneous_contact_cannot_discard_later_mass(self):
         w = W.World()
@@ -163,15 +163,15 @@ class CommandTests(unittest.TestCase):
         client.settimeout(2)
         address = service.sock.getsockname()
         for data in (b'\xff', b'{', b'[]', b'[' * 2000,
-                     b'{"cmd":"add","type":"star","pos":[NaN,0,0]}',
-                     json.dumps({'cmd': 'hello'}).encode()):
+                     b'{"protocol":2,"cmd":"add","type":"star","pos":[NaN,0,0]}',
+                     json.dumps({'cmd': 'hello', 'protocol': 2}).encode()):
             client.sendto(data, address)
         deadline = time.monotonic() + 2
         while service.client is None and time.monotonic() < deadline:
             service.poll()
-        self.assertEqual(json.loads(client.recv(4096))['protocol'], 1)
+        self.assertEqual(json.loads(client.recv(4096))['protocol'], 2)
         self.assertEqual(w.sim.N, 0)
-        client.sendto(b'{"cmd":"add","type":"rocky","pos":[0,0,0]}', address)
+        client.sendto(b'{"protocol":2,"cmd":"add","type":"rocky","pos":[0,0,0]}', address)
         while w.sim.N == 0 and time.monotonic() < deadline:
             service.poll()
         self.assertEqual(w.sim.N, 1)

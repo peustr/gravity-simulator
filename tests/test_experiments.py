@@ -37,7 +37,7 @@ def test_disk_round_trip_restores_physics_and_random_state(tmp_path):
     assert restored._next_id == original._next_id
     assert restored.rng.getstate() == original.rng.getstate()
     assert camera == data['camera']
-    assert saved['version'] == 1
+    assert saved['version'] == 2
     restored.paused = False
     restored.advance(.01, time.perf_counter() + 1)
     assert restored.sim.t > original.sim.t
@@ -45,7 +45,7 @@ def test_disk_round_trip_restores_physics_and_random_state(tmp_path):
 
 
 @pytest.mark.parametrize('change', [
-    lambda d: d.update(version=2),
+    lambda d: d.update(version=3),
     lambda d: d.update(time=float('nan')),
     lambda d: d.update(paused='yes'),
     lambda d: d.update(next_id=1),

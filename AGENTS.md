@@ -65,16 +65,19 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 | `godot/scripts/net_client.gd` | UDP client; auto-starts the server from `.venv` or `server.exe` |
 | `godot/scripts/body_view.gd` | Visuals for one body (per type) |
 | `godot/scripts/hud.gd` | All UI, built in code with a code-made Theme |
-| `godot/scripts/palette.gd` | Shared constants: type ids, colours, names, radius formula |
+| `physics_server/units.py` | SI constants, conversions and physical radius models; version-1 saves keep legacy sandbox rules |
+| `godot/scripts/palette.gd` | Type ids, colours, names and artistic display sizes; never authoritative physics |
 | `godot/shaders/` | Stars, planets, black-hole lens, accretion disk, starfield, grid; helpers in `noise.gdshaderinc` |
 | `README.md` | User-facing install guide, controls, physics notes, protocol |
+
+Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse-picking size separate. Godot receives SI conversion factors from the server; do not mirror physical model formulas there.
 
 ## Things that must stay in sync
 
 | What | Where |
 |---|---|
-| Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_KILONOVA=9), `DEFAULT_MASS`, `radius_for()` | `world.py` ↔ `godot/scripts/palette.gd` |
-| Packet layout: header 10 floats, body 12, event 8; forecast reply header 8 | `server.py` `pack_state`/`pack_prediction` ↔ `main.gd` `_on_state`/`_on_prediction` |
+| Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_KILONOVA=9), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
+| Packet layout: header 11 floats, body 12, event 8; forecast reply header 9 (protocol 2, packet kinds 3/4) | `server.py` `pack_state`/`pack_prediction` ↔ `main.gd` `_on_state`/`_on_prediction` |
 | UDP port 47810 | `server.py` `DEFAULT_PORT` ↔ `net_client.gd` `SERVER_PORT` |
 | Scenario names | `world.load_preset()` ↔ `hud.gd` `PRESETS` |
 | New body type | also `TYPE_LABELS`, `TYPE_COLORS`, `TOOL_TYPES`, a builder in `body_view.gd`, an icon in `hud.gd`, trail strength in `trails.gd` |
@@ -87,7 +90,7 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 - Never add particles inside the collision callback. `_resolve_collision` merges and records; `_handle_collision` runs after `sim.steps(1)` and may shatter.
 - Collision callback return: 1 removes p1, 2 removes p2. REBOUND reports only *approaching* overlaps, so fragments may start overlapping the remnant.
 - Light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
-- IAS15 has one global timestep, so a single close encounter slows everything. `min_dt` is 1e-4. Keep debris counts in check (`SHATTER_MIN_MASS`, fragment caps).
+- IAS15 has one global timestep, so a single close encounter slows everything. `min_dt` is zero for physical scenes and 1e-4 only for legacy saves. Keep debris counts in check (`SHATTER_MIN_MASS`, fragment caps).
 - Prefer Python 3.13 on Windows (3.12 for cloud development). Check wheel availability before moving to a newer Python; do not silently introduce a compiler requirement.
 
 ## Godot conventions

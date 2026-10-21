@@ -11,6 +11,10 @@ signal prediction_received(packet: PackedFloat32Array)
 signal message_received(msg: Dictionary)
 signal connection_changed(is_connected: bool)
 
+const PROTOCOL_VERSION := 2
+const STATE_KIND := 3
+const PREDICTION_KIND := 4
+
 const SERVER_HOST := "127.0.0.1"
 const SERVER_PORT := 47810
 const HELLO_INTERVAL := 0.5
@@ -42,6 +46,8 @@ func _now() -> float:
 func send(cmd: Dictionary) -> void:
 	if not udp.is_bound():
 		return
+	cmd = cmd.duplicate()
+	cmd["protocol"] = PROTOCOL_VERSION
 	udp.put_packet(JSON.stringify(cmd).to_utf8_buffer())
 
 
@@ -63,10 +69,15 @@ func _process(delta: float) -> void:
 			var msg = JSON.parse_string(pkt.get_string_from_utf8())
 			if msg is Dictionary:
 				if msg.get("type", "") == "info":
-					if msg.get("protocol", -1) != 1:
+					if msg.get("protocol", -1) != PROTOCOL_VERSION:
+						launch_status = "Physics protocol mismatch. Update the client and server together."
+						_launch_tried = true
 						continue
 					server_info = msg
 					_last_packet = _now()
+				elif msg.get("type", "") == "protocol_error":
+					launch_status = str(msg.get("text", "Physics protocol mismatch."))
+					_launch_tried = true
 				message_received.emit(msg)
 			continue
 		if pkt.size() % 4 != 0:
@@ -76,14 +87,14 @@ func _process(delta: float) -> void:
 			continue
 		_last_packet = _now()
 		var kind := int(f[0])
-		if kind == 1:
+		if kind == STATE_KIND:
 			# Every state packet may carry one-off events, so pass them all on,
 			# but only the newest one needs to update positions.
 			if have_state:
 				state_received.emit(latest_state)
 			latest_state = f
 			have_state = true
-		elif kind == 2:
+		elif kind == PREDICTION_KIND:
 			prediction_received.emit(f)
 	if have_state:
 		state_received.emit(latest_state)
@@ -163,24 +174,26 @@ static func valid_packet(f: PackedFloat32Array) -> bool:
 	for value in f:
 		if not is_finite(value):
 			return false
-	if f[0] == 1.0:
-		if f.size() < 10 or f[4] < 0 or f[4] > 1321 or f[5] < 0 or f[5] > 64:
+	if f[0] == STATE_KIND:
+		if f.size() < 11 or f[4] < 0 or f[4] > 1321 or f[5] < 0 or f[5] > 64:
 			return false
 		var n := int(f[4])
 		var events := int(f[5])
 		if n < 0 or n > 1321 or events < 0 or events > 64 or f[4] != n or f[5] != events:
 			return false
-		if f.size() != 10 + n * 12 + events * 8:
+		if f.size() != 11 + n * 12 + events * 8:
+			return false
+		if f[10] != 0.0 and f[10] != 1.0:
 			return false
 		for i in range(n):
-			var offset := 10 + i * 12
+			var offset := 11 + i * 12
 			if f[offset + 1] < 0 or f[offset + 1] > 6 or f[offset + 1] != int(f[offset + 1]):
 				return false
 			if f[offset + 8] <= 0 or f[offset + 9] <= 0:
 				return false
 		return true
-	if f[0] == 2.0:
-		if f.size() < 8 or f[2] < 0 or f[2] > 221 or f[2] != int(f[2]):
+	if f[0] == PREDICTION_KIND:
+		if f.size() < 9 or f[2] < 0 or f[2] > 221 or f[2] != int(f[2]):
 			return false
-		return f.size() == 8 + int(f[2]) * 3
+		return f.size() == 9 + int(f[2]) * 3 and f[8] > 0.0
 	return false
