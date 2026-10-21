@@ -24,7 +24,8 @@ static var _cone: CylinderMesh
 var id := 0
 var body_type := -1
 var mass := 0.0
-var radius := 1.0
+var physical_radius := 1.0
+var rendered_radius := 1.0
 var heat := 0.0
 var age := 0.0
 var seed := 0.0
@@ -298,9 +299,7 @@ func _build_marker() -> void:
 func set_physical(m: float, r: float, h: float, a: float) -> void:
 	mass = m
 	age = a
-	if absf(r - radius) > 1e-4 * maxf(r, 1e-6):
-		radius = r
-		_apply_radius()
+	physical_radius = r
 	if absf(h - _last_heat) > 0.02 or (h == 0.0 and _last_heat != 0.0):
 		heat = h
 		_last_heat = h
@@ -310,6 +309,13 @@ func set_physical(m: float, r: float, h: float, a: float) -> void:
 			_update_plasma()
 	if body_type == Palette.STAR and absf(m - _last_color_mass) > 0.005 * maxf(m, 1e-6):
 		_update_star_colors()
+
+
+func set_display_size(enlargement: float, world_per_px: float) -> void:
+	var r := Palette.rendered_radius(body_type, mass, physical_radius, enlargement, world_per_px)
+	if absf(r - rendered_radius) > 1e-4 * maxf(r, 1e-12):
+		rendered_radius = r
+		_apply_radius()
 
 
 func _update_star_colors() -> void:
@@ -342,7 +348,7 @@ func _update_plasma() -> void:
 
 
 func _apply_radius() -> void:
-	var r := radius
+	var r := rendered_radius
 	match body_type:
 		Palette.STAR:
 			_surface.scale = Vector3.ONE * r
@@ -385,10 +391,10 @@ func _apply_radius() -> void:
 func pick_radius() -> float:
 	## Radius used for mouse picking and the selection ring.
 	match body_type:
-		Palette.BLACK_HOLE: return radius * 4.0
-		Palette.STAR: return radius * 1.3
-		Palette.PLASMA: return maxf(radius * 3.0, 0.5)
-	return radius
+		Palette.BLACK_HOLE: return rendered_radius * 4.0
+		Palette.STAR: return rendered_radius * 1.3
+		Palette.PLASMA: return maxf(rendered_radius * 3.0, 0.5)
+	return rendered_radius
 
 
 func add_flare(amount: float) -> void:

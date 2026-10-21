@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import select
 import socket
 import sys
@@ -35,14 +36,17 @@ except ImportError as exc:  # friendly message instead of a stack trace
 
 import world as W
 import experiments
+import units
 from commands import validate
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
+STATE_KIND = 3
+PREDICTION_KIND = 4
 DEFAULT_PORT = 47810
 TICK_HZ = 60
 PHYSICS_BUDGET = 0.011       # seconds of physics per tick (keeps the server responsive)
 MAX_EVENTS_PER_PACKET = 64
-HEADER_FLOATS = 10
+HEADER_FLOATS = 11
 BODY_FLOATS = 12
 EVENT_FLOATS = 8
 
@@ -60,8 +64,9 @@ def pack_state(world: W.World) -> bytes:
     t = world.sim.t
     t_hi = float(int(t // 1000.0) * 1000.0)
     header = np.array([
-        1.0, float(world.version % 16_000_000), t_hi, t - t_hi, n, len(events),
+        STATE_KIND, float(world.version % 16_000_000), t_hi, t - t_hi, n, len(events),
         1.0 if world.paused else 0.0, world.speed, world.perf, world.max_bodies,
+        0.0 if world.units == units.LEGACY else 1.0,
     ], dtype="<f4")
     bodies = np.zeros((n, BODY_FLOATS), dtype="<f4")
     if n:
@@ -93,8 +98,8 @@ def pack_state(world: W.World) -> bytes:
 def pack_prediction(req_id: int, result: dict) -> bytes:
     pts = result["points"]
     vel = result["vel"]
-    head = np.array([2.0, req_id, len(pts), 1.0 if result["hit"] else 0.0,
-                     result["attractor"], vel[0], vel[1], vel[2]], dtype="<f4")
+    head = np.array([PREDICTION_KIND, req_id, len(pts), 1.0 if result["hit"] else 0.0,
+                     result["attractor"], vel[0], vel[1], vel[2], result["radius"]], dtype="<f4")
     body = np.array(pts, dtype="<f4").reshape(len(pts), 3)
     return head.tobytes() + body.tobytes()
 
@@ -161,6 +166,10 @@ class Server:
                 continue
             if isinstance(msg, dict):
                 try:
+                    if msg.get("protocol") != PROTOCOL_VERSION:
+                        self.send_json({"type": "protocol_error", "protocol": PROTOCOL_VERSION,
+                                        "text": "Update both the physics server and Godot client (protocol 2)."}, addr)
+                        continue
                     self.handle(msg, addr)
                     if addr == self.client:
                         self.last_heard = time.monotonic()
@@ -185,7 +194,8 @@ class Server:
             self.client = addr
             self.send_json({
                 "type": "info", "protocol": PROTOCOL_VERSION, "rebound": rebound.__version__,
-                "integrator": "IAS15", "max_bodies": w.max_bodies,
+                "integrator": "IAS15", "max_bodies": w.max_bodies, "pid": os.getpid(),
+                "physical_units": units.metadata(),
             }, addr)
         elif cmd == "bye":
             if self.client == addr:
@@ -332,8 +342,9 @@ def selftest() -> int:
     # Gentle merger
     w = W.World(seed=2)
     w.add_body(W.ROCKY, 0.003, (0, 0, 0), (0, 0, 0))
-    w.add_body(W.ROCKY, 0.001, (3, 0, 0), (-0.05, 0, 0))
-    run(w, 80)
+    contact = W.radius_for(W.ROCKY, .003) + W.radius_for(W.ROCKY, .001)
+    w.add_body(W.ROCKY, 0.001, (3 * contact, 0, 0), (-0.05, 0, 0))
+    run(w, .1)
     kinds = [e[0] for e in w.events]
     check("slow impact merges two planets", w.sim.N == 1 and W.EV_MERGE in kinds,
           f"{w.sim.N} body left, mass {w.sim.particles[0].m:.4f}")
@@ -350,9 +361,9 @@ def selftest() -> int:
     # Black hole swallow
     w = W.World(seed=4)
     w.add_body(W.BLACK_HOLE, 20000, (0, 0, 0), (0, 0, 0))
-    w.add_body(W.ROCKY, 0.003, (3000, 0, 0), (-20, 0, 0))
-    run(w, 200)
-    check("black hole swallows a planet", w.sim.N == 1 and W.EV_SWALLOW in [e[0] for e in w.events])
+    w.add_body(W.ASTEROID, 2e-5, (20, 0, 0), (-20, 0, 0))
+    run(w, 2)
+    check("black hole captures a small body at physical contact", w.sim.N == 1 and W.EV_SWALLOW in [e[0] for e in w.events])
 
     # Tidal disruption
     w = W.World(seed=5)
@@ -416,6 +427,7 @@ def main():
     ap.add_argument("--host", default="127.0.0.1", help="address to listen on (default 127.0.0.1)")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"UDP port (default {DEFAULT_PORT})")
     ap.add_argument("--max-bodies", type=int, default=600, help="cap on simultaneous bodies (default 600)")
+    ap.add_argument("--seed", type=int, default=None, help="seed initial conditions and stochastic outcomes")
     ap.add_argument("--exit-when-idle", type=float, default=0.0,
                     help="exit after this many seconds without hearing from Godot (0 = never)")
     ap.add_argument("--selftest", action="store_true", help="run the built-in checks and exit")
@@ -436,7 +448,7 @@ def main():
         ap.error("--port must be between 0 and 65535")
     if not np.isfinite(args.exit_when_idle) or args.exit_when_idle < 0:
         ap.error("--exit-when-idle must be finite and nonnegative")
-    Server(args.host, args.port, W.World(max_bodies=args.max_bodies), args.verbose, args.exit_when_idle).run()
+    Server(args.host, args.port, W.World(max_bodies=args.max_bodies, seed=args.seed), args.verbose, args.exit_when_idle).run()
 
 
 if __name__ == "__main__":

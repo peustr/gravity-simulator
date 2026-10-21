@@ -8,8 +8,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / "physics_server" / ".venv"
@@ -33,9 +35,88 @@ def selftest() -> None:
         raise RuntimeError("Physics runner did not report completed, passing checks.")
 
 
+def visual_benchmark(argv) -> None:
+    parser = argparse.ArgumentParser(description='Measure rendered frame times with a dedicated seeded physics server.')
+    parser.add_argument('scenario', choices=SCENARIOS[:-1], nargs='?', default='solar')
+    parser.add_argument('--seconds', type=int, choices=range(1, 121), default=10, metavar='SECONDS',
+                        help='measurement duration from 1 to 120 seconds (default 10)')
+    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--renderer', choices=('forward_plus', 'mobile', 'gl_compatibility'), default='forward_plus')
+    parser.add_argument('--output', type=Path)
+    args = parser.parse_args(argv)
+    if sys.platform.startswith('linux') and not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
+        raise RuntimeError('Rendered benchmarks require a working display and renderer; headless timings are invalid.')
+    godot = os.environ.get('GODOT') or shutil.which('godot') or shutil.which('godot4')
+    if not godot or not PYTHON.is_file():
+        raise RuntimeError('Set up the physics venv and Godot before benchmarking.')
+    # Do not replace or modify a user's existing session on the fixed app port.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.bind(('127.0.0.1', 47810))
+        except OSError as exc:
+            raise RuntimeError('UDP port 47810 is unavailable. Close the running simulator/server before benchmarking.') from exc
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    path = (args.output or ROOT / 'benchmarks' / f'render-{args.scenario}-{stamp}.json').resolve()
+    if path.exists():
+        raise RuntimeError('Choose a new report path; an existing file cannot serve as evidence for this run.')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if sys.platform.startswith('linux'):
+        for key, suffix in (('XDG_CACHE_HOME', '.cache'), ('XDG_DATA_HOME', '.local/share')):
+            os.environ.setdefault(key, str(VENV / suffix))
+            Path(os.environ[key]).mkdir(parents=True, exist_ok=True)
+    with path.with_suffix('.log').open('w', encoding='utf-8') as log:
+        process = subprocess.Popen([str(PYTHON), str(ROOT / 'physics_server/server.py'),
+                                    '--seed', str(args.seed)],
+                                   cwd=ROOT, stdout=log, stderr=subprocess.STDOUT)
+        try:
+            # Verify this exact child owns the port before Godot can mutate it.
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
+                client.settimeout(0.1)
+                deadline = time.monotonic() + 5
+                while True:
+                    if process.poll() is not None:
+                        raise RuntimeError(f'Benchmark server failed; inspect {path.with_suffix(".log")}')
+                    client.sendto(b'{"cmd":"hello","protocol":2}', ('127.0.0.1', 47810))
+                    try:
+                        packet, _address = client.recvfrom(65535)
+                        if json.loads(packet).get('pid') == process.pid:
+                            break
+                    except (OSError, ValueError):
+                        pass
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError('Could not verify the benchmark physics server.')
+            output = run([godot, '--path', str(ROOT / 'godot'), '--resolution', '1280x720',
+                          '--rendering-method', args.renderer, '--audio-driver', 'Dummy', '--',
+                          f'--preset={args.scenario}', f'--benchmark={path.as_posix()}',
+                          f'--benchmark_seconds={args.seconds}', f'--benchmark_seed={args.seed}'], timeout=args.seconds + 150)
+            if re.search(r'SCRIPT ERROR|Parse Error|(?:^|\n)\s*ERROR:', output) or 'Rendered benchmark complete:' not in output:
+                raise RuntimeError('Rendered benchmark did not complete successfully.')
+            data = json.loads(path.read_text(encoding='utf-8'))
+            if data.get('format') != 'gravity-render-baseline' or data.get('display') == 'headless':
+                raise RuntimeError('Invalid rendered benchmark report.')
+            print(f"Frame p95: {data['frame_intervals_ms']['p95']:.2f} ms; average {data['average_fps']:.1f} FPS")
+            print(f'Report: {path}')
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == 'benchmark-visual':
+        visual_benchmark(sys.argv[2:])
+        return
+    if len(sys.argv) > 1 and sys.argv[1] in ('benchmark', 'accuracy'):
+        if not PYTHON.is_file():
+            raise RuntimeError("Missing physics venv. Run this helper's setup command first.")
+        flags = ['--accuracy-only'] if sys.argv[1] == 'accuracy' else []
+        run([str(PYTHON), str(ROOT / 'tools/benchmark.py'), *flags, *sys.argv[2:]], timeout=1800)
+        return
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("setup", "setup-dev", "selftest", "test", "lint", "docs", "docs-check", "check", "godot-test", "godot-check", "visual-check"))
+    parser.add_argument("command", choices=("setup", "setup-dev", "selftest", "test", "lint", "docs", "docs-check", "check", "godot-test", "godot-check", "visual-check", "benchmark", "accuracy", "benchmark-visual"))
     parser.add_argument("scenario", nargs="?", choices=SCENARIOS, default="solar")
     args, extra = parser.parse_known_args()
     if extra and args.command != "visual-check":

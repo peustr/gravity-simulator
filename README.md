@@ -1,6 +1,6 @@
 # Gravity Simulator
 
-An interactive space sandbox for Windows. You start in empty space, drop in planets, stars, neutron stars and black holes, and watch real N-body gravity take over: orbits, slingshots, collisions that shatter planets, stars torn apart by black holes, supernovae, and colliding galaxies.
+An interactive space sandbox for Windows. You start in empty space, drop in planets, stars, neutron stars and black holes, and watch real N-body gravity take over: orbits, slingshots, collisions that shatter planets, stars torn apart by black holes, supernovae, and tidal encounters.
 
 ![A black hole with a lensed accretion disk](docs/black-hole.png)
 
@@ -9,7 +9,7 @@ The physics runs on **[REBOUND](https://rebound.hanno-rein.de/)**, an open-sourc
 | | |
 |---|---|
 | ![Colliding galaxies](docs/colliding-galaxies.png) | ![Supernova](docs/supernova.png) |
-| Two galaxies fly past each other and throw out tidal tails | A star goes supernova and its shock wave sweeps through the system |
+| Two illustrative disks fly past each other and throw out tidal tails | A star goes supernova and its shock wave sweeps through the system |
 
 ![Placing a planet with the gravity grid on](docs/solar-system-placement.png)
 *Placing a gas giant. The dashed line is REBOUND's forecast of the new orbit; the grid sags into the Sun's gravity well.*
@@ -47,13 +47,13 @@ The physics runs on **[REBOUND](https://rebound.hanno-rein.de/)**, an open-sourc
   - Colliding neutron stars make a kilonova.
   - Black-hole mergers radiate 5% of their mass as gravitational waves.
   - You can make any star go supernova.
-- **Live orbit forecast.** Before you place a body, REBOUND simulates where it will go and draws the path, warning you about collision courses.
+- **Live orbit forecast.** Before you place a body, REBOUND simulates where it will go and draws the path, warning you about collision courses. Forecasts stop at any predicted contact; background collisions end the path without marking the proposed body as hit.
 - **Visuals:**
   - Procedural planets and stars, with gravitational lensing around black holes.
   - Doppler-beamed accretion disks and bloom.
   - Orbit trails, a "rubber sheet" gravity grid, and impact effects.
 - **Save and restart experiments.** Save custom scenes to portable files, load them later, or return to a restart point with the original camera view.
-- **Seven built-in scenarios:** Solar system, Binary stars, Black hole feast, Planet smash, Planet formation, Colliding galaxies, and Empty space.
+- **Seven built-in scenarios:** Solar system, Binary stars, Black hole feast, Planet smash, Planet formation, Tidal encounter, and Empty space.
 
 ## 2. Quick start (5 steps)
 
@@ -218,6 +218,7 @@ Server options (add them after `server.py`, or after the `.bat` name in a termin
 | `--max-bodies 900` | Allow more bodies (default 600). More bodies means slower physics. |
 | `--port 47810` | UDP port. If you change it, also change `SERVER_PORT` in `godot/scripts/net_client.gd`. |
 | `--verbose` | Log every command Godot sends. |
+| `--seed 42` | Reproduce initial random conditions; wall-clock budgets can still change later trajectories. |
 | `--selftest` | Run the checks and exit. |
 | `--log FILE` | Also write the log to a file. Godot uses `physics_server\server.log` when it starts the server. |
 
@@ -252,9 +253,11 @@ Use the **Experiment** menu in the top bar:
 - **Set restart point** remembers the current scene and camera for this session without writing a file. Set it after building an experiment, before letting it evolve.
 - **Restart experiment...** returns to that point after confirmation. Choosing a built-in scenario also sets a restart point at its initial conditions; Clear sets an empty restart point.
 
-**Clear** asks for confirmation. Choosing a scenario asks before replacing a nonempty scene; Cancel preserves both the scene and its restart point. Each scenario sets its own starting speed: Solar system, Binary stars, Black hole feast and Empty space use x1; Planet smash uses x0.6, Planet formation x2.5, and Colliding galaxies x0.8. Switching scenarios preserves pause/resume state.
+**Clear** asks for confirmation. Choosing a scenario asks before replacing a nonempty scene; Cancel preserves both the scene and its restart point. Each scenario sets its own starting speed: Solar system, Binary stars and Empty space use x1; Black hole feast and Planet smash use x0.005 to resolve their much shorter physical timescales, Planet formation x2.5, and Tidal encounter x0.8. Switching scenarios preserves pause/resume state.
 
-Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. Trails, selection, body-follow mode and transient visual effects are cleared.
+Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation and visual enlargement. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. Trails, selection, body-follow mode and transient visual effects are cleared.
+
+New saves use version-2 JSON with an explicit unit/radius-model identifier. Version-1 scenes load automatically in **legacy sandbox units**, retaining all original values and exaggerated contact-radius rules; re-saving preserves that label. They are not silently converted to physical scenes. Clear or choose a preset to start a new physical scene.
 
 Saves use versioned JSON (maximum 4 MiB), are validated before loading, and replace existing files atomically. Success is shown only after the physics server confirms it. If confirmation times out, check the connection and file before trying again: an operation may have completed even if its reply was lost. Restart points live in the server session; save to disk to keep an experiment after closing the app.
 
@@ -278,6 +281,7 @@ Restores rebuild REBOUND from the saved physical conditions. They do not preserv
 | Delete / Backspace | Delete the selected body |
 | N | Supernova (selected star) |
 | T | Trails: off / short / long |
+| V | Cycle normal enlargement, extra enlargement, and physical body sizes (visibility markers remain) |
 | G | Gravity grid on/off (it always appears while placing) |
 | R | Reset the view to frame everything |
 | Tab | Hide the interface (for screenshots) |
@@ -288,12 +292,12 @@ Restores rebuild REBOUND from the saved physical conditions. They do not preserv
 
 | Scenario | What to watch for |
 |---|---|
-| **Solar system** | A Sun, four rocky planets (Earth has a Moon), an asteroid belt, a Jupiter with moons, a ringed Saturn and an ice giant. Try dropping a black hole through it. |
+| **Solar system** | A Sun, four rocky planets (Earth has a Moon), an asteroid belt, a Jupiter with moons, Saturn with Titan and a Neptune-like ice giant. Distances and moon separations use physical scales; phases are illustrative. Try dropping a black hole through it. |
 | **Binary stars** | Two suns in orbit, a planet around one of them on the edge of stability, and circumbinary planets. |
 | **Black hole feast** | A star on a plunging orbit is torn apart near the black hole. The debris streams in and the disk and jets flare. |
-| **Planet smash** | Two Earths collide at about 8 times their escape speed and shatter into glowing fragments. |
-| **Planet formation** | 200 planetesimals around a young Sun collide, merge and slowly build planets. Runs at 2.5x speed. |
-| **Colliding galaxies** | Two black-hole-centred galaxies make a close pass and throw out tidal tails and bridges, as in Toomre & Toomre (1972). |
+| **Planet smash** | Two Earth-like planets collide at several times their mutual escape speed and shatter into glowing fragments. |
+| **Planet formation** | 200 embryos orbit a young Sun. Physical contact is rare; this is an initial disk, not a calibrated planet-formation model. Runs at 2.5x speed. |
+| **Tidal encounter** | Two tracer disks around stellar-mass black holes make a parabolic encounter. This illustrates tidal tails; it is not a galaxy-scale mass model. The preset key remains `galaxies`. |
 | **Empty space** | Your canvas. |
 
 The top bar shows simulation time, the body count, and **"Real-time"**, which turns amber with a percentage if the physics can't keep up with the requested speed. Lower the speed or remove debris if that happens.
@@ -302,13 +306,15 @@ The top bar shows simulation time, the body count, and **"Real-time"**, which tu
 
 ### Units
 
-Gravity uses `G = 1`. Masses use real ratios: the Sun is 1000 units, Jupiter about 1, and Earth about 0.003. Time and distance are scaled so that an Earth-like orbit takes about 9 seconds at x1 speed.
+New scenes use `G = 1`, with one distance unit = 1/60 AU and 1,000 mass units = one nominal solar mass. Time is derived from these definitions (about 3.96 days per unit). At x1, ten simulation time units elapse per real second, so a one-AU orbit takes about nine seconds. The inspector reports kg, km, km/s and days.
 
-**Sizes are exaggerated**, as in every space game. A to-scale Earth would be smaller than one pixel at the distance of its orbit. Collisions use these exaggerated sizes, so impacts are more frequent than in reality.
+**Physical, displayed and selection sizes are independent.** Collisions, placement rejection, disruption and forecasts use physical radii. Godot enlarges meshes for visibility; press **V** to cycle display sizes, including physical sizes. Zooming in reduces visual enlargement to resolve close satellites. Screen-space markers and generous mouse targets remain usable even for subpixel bodies. None of these display settings changes gravity or contact.
+
+See [physical units and models](docs/physical-model.md) for constants, radius approximations, scenario assumptions and legacy-save semantics.
 
 ### Gravity and integration
 
-All bodies live in one REBOUND simulation using the **IAS15** integrator (Rein & Spiegel 2015). It is adaptive: it takes tiny steps during close encounters and big ones in quiet periods, and it is accurate to roughly machine precision. The server advances the simulation in real time (60 updates a second). Godot draws smoothly between updates using each body's velocity and acceleration.
+All bodies live in one REBOUND simulation using the **IAS15** integrator (Rein & Spiegel 2015). It is adaptive: it takes tiny steps during close encounters and big ones in quiet periods, and the controlled reference problems check its accuracy. Physical scenes allow adaptive steps below the old sandbox minimum; difficult encounters reduce achieved simulation speed. The server advances the simulation in real time (60 updates a second). Godot draws smoothly between updates using each body's velocity and acceleration.
 
 Debris (asteroids and small gas clouds) is treated as **test particles**. It feels everyone's gravity and collides normally, but doesn't pull on other bodies. This is the classic approximation (Toomre & Toomre used it for colliding galaxies) and makes debris-heavy scenes about 10 times faster. Planets, stars, neutron stars and black holes are always fully N-body.
 
@@ -324,7 +330,7 @@ Debris (asteroids and small gas clouds) is treated as **test particles**. It fee
 
 ### Tides
 
-A body of density ρ passing a heavy body of mass M is torn apart inside `r ≈ 1.1 (M / ρ)^(1/3)`, if that limit lies outside both bodies. Its fragments are laid out along the line to the heavy body (spaghettification) and then shear into a stream.
+A fluid Roche estimate uses the victim’s physical radius R and mass m: `r ≈ 2.44 R (M / m)^(1/3)`, if that limit lies outside both bodies. This is a dimensional disruption heuristic, not a material-strength or tidal-evolution model; legacy saves retain their original rule. Its fragments are laid out along the line to the heavy body (spaghettification) and then shear into a stream.
 
 ### Growing and dying
 
@@ -395,17 +401,19 @@ Commands are validated before changing the simulation. Vectors must contain exac
 - `checkpoint` — `{camera, request}`; set an in-memory restart point.
 - `restart` — `{request}`; restore the restart point.
 
-Scene-operation `request` values are unique strings (1–80 characters). The camera is `{focus: [x,y,z], distance, pitch, yaw}`. Replies are JSON `scene_result` messages with `request`, `action`, `ok`, and either an `error` or, for load/restart, the restored `camera`. The client retries once per second for up to ten seconds; the server caches the last 64 replies per server process, keyed by client address and request, so retries do not repeat writes or restores.
+Scene-operation `request` values are unique strings (1–80 characters). The camera is `{focus: [x,y,z], distance, pitch, yaw, display_scale}`; `display_scale` defaults to 1 and ranges from 0 (physical sizes) to 4. Replies are JSON `scene_result` messages with `request`, `action`, `ok`, and either an `error` or, for load/restart, the restored `camera`. The client retries once per second for up to ten seconds; the server caches the last 64 replies per server process, keyed by client address and request, so retries do not repeat writes or restores.
 - `bye`
 
+**Protocol 2** requires `"protocol": 2` on every command. Older or unversioned commands receive `protocol_error` without mutation. Update both programs together. State kind 3 and forecast kind 4 prevent old clients from interpreting physical radii as enlarged sizes.
+
 **State packets** are little-endian float32 arrays:
-- **Header**, 10 values: `[1, version, t_hi, t_lo, N, E, paused, speed, perf, max_bodies]`. The simulation time is `t_hi + t_lo`.
-- **N bodies**, 12 values each: `[id, type, x, y, z, vx, vy, vz, mass, radius, heat, age]`.
+- **Header**, 11 values: `[3, version, t_hi, t_lo, N, E, paused, speed, perf, max_bodies, units]`. `units` is 1 for physical scenes and 0 for legacy sandbox scenes. The simulation time is `t_hi + t_lo`.
+- **N bodies**, 12 values each: `[id, type, x, y, z, vx, vy, vz, mass, physical_radius, heat, age]`.
 - **E events**, 8 values each: `[kind, x, y, z, magnitude, size, id_a, id_b]`.
 
-**Forecast replies** start with `2`: `[2, req, n_points, hit, attractor_id, vx, vy, vz]`, followed by the points.
+**Forecast replies** start with `4`: `[4, req, n_points, hit, attractor_id, vx, vy, vz, physical_radius]`, followed by the points.
 
-The server also sends occasional JSON messages: `info`, `preset` (camera hints) and `notice` (text).
+The server also sends occasional JSON messages: `info` (including authoritative SI conversion factors in `physical_units` and its process `pid` for local benchmark ownership checks), `preset` (camera hints) and `notice` (text).
 
 Except for the four scene operations above, UDP commands and events have no acknowledgements or retries. Delivery and ordering are not guaranteed. The default endpoint is localhost; the protocol has no authentication. Float32 IDs lose integer precision above 2^24. Server restarts can reuse IDs and versions while the client retains views.
 
@@ -420,7 +428,7 @@ Physics knobs (top of `physics_server/world.py`):
 | `TIDAL_K` | 1.1 | Bigger values tear things apart from further away |
 | `SHATTER_MIN_MASS`, `MIN_FRAGMENT_MASS` | 1e-4, 5e-6 | How eagerly impacts make debris |
 | `LIGHT_MASS` | 0.5 | Asteroids and gas clouds lighter than this are test particles |
-| `radius_for()` | — | The size of each body type |
+| `units.physical_radius()` | — | Physical contact-radius models; Godot presentation sizes are separate |
 
 **Add a scenario:** in `world.py → load_preset()`, add a branch:
 
@@ -495,6 +503,68 @@ python3 tools/dev.py godot-check
 python3 tools/dev.py visual-check black_hole --pause_at=2 --grid
 ```
 
+**Physics accuracy and performance:** the maintained [physics roadmap](docs/physics-roadmap.md)
+tracks the realism milestones and their completion criteria. Start with:
+
+```powershell
+py -3.13 tools/dev.py accuracy
+py -3.13 tools/dev.py benchmark --profile
+py -3.13 tools/dev.py benchmark-visual solar
+py -3.13 tools/dev.py benchmark-visual galaxies
+```
+
+Use `python3` instead of `py -3.13` on Linux/macOS. These commands use the existing
+physics venv. Reports have unique names in ignored `benchmarks/`; `--output PATH`
+chooses another location. `benchmark --help` lists scenario, seed, tick-count and
+repeat options. `benchmark-visual --help` lists rendered-run options.
+
+`accuracy` checks circular/eccentric Kepler trajectories over 20 periods, a
+hyperbolic flyby, a hierarchical moon over 20 outer orbits, and an inelastic
+merger. The first three orbital cases compare against analytical solutions or
+conservation laws; the moon also has a bounded-radius check. These deliberately
+small, fully gravitating reference systems use small physical collision radii.
+The report includes measured errors and acceptance thresholds. It does not
+establish long-duration accuracy for every playable scene.
+
+`benchmark` runs six seeded scenarios, with a disposable warmup and three
+600-tick repeats by default. It records physical solver settings, body counts,
+simulation progress, tick/forecast/packing latency percentiles and versions.
+On Windows it also attempts to identify the machine model, CPU, GPU and RAM.
+Ticks are fed at a requested 1/60-second interval without sleeping, so this
+measures processing cost and throughput, not live input latency. Profile data
+comes from separate runs: inclusive phase times overlap and must not be summed.
+Gravity and collision detection share REBOUND's native integration call.
+
+Separate accounting runs measure mass, momentum, orbital angular momentum, and
+Newtonian mechanical energy. The ledger records inventory removed by the escape
+boundary and prescribed black-hole mass loss, including their effect on potential
+energy. It does **not** compute radiated gravitational-wave energy. Remaining
+changes may come from collisions, supernova prescriptions, or tracer forces and
+must not automatically be called integration error. Spin, thermal energy and
+rest-mass energy are absent. Undefined inventory measurements are reported as
+errors and fail the benchmark without preventing the physical rule from running.
+
+`benchmark-visual` opens a 1280×720 window, warms up for three seconds of live
+physics, then records ten seconds of frame intervals and observed state-delivery
+gaps. It uses a dedicated seeded server, verifies its process identity, and
+refuses to use an occupied server port or an existing report file. Close the
+simulator/server first. A display and working renderer are required; headless
+runs cannot provide rendered performance measurements. Frame intervals include
+VSync, CPU, GPU and scheduling costs; they do not isolate GPU time or measure
+input-to-display latency.
+
+Use `--renderer gl_compatibility` to measure the OpenGL renderer instead of the
+default Forward+ renderer. The report identifies the actual renderer and GPU;
+software rendering can validate the workflow but does not establish consumer GPU
+performance. Audio is disabled during these automated measurements.
+
+Keep power mode and resolution consistent, keep the benchmark window visible,
+and close other demanding applications. Retain the JSON reports and note the
+power mode when comparing runs. The roadmap defines broad consumer hardware
+classes and initial performance goals. Benchmark results describe the machine
+that produced them; physical accuracy gates apply across machines. Development
+does not depend on a particular user's computer.
+
 **Coverage policy:** Python checks require 100% statement and branch coverage across `physics_server/`, including scene persistence, command validation and server startup/error handling. This measures exercised Python paths; Godot workflows are checked separately with headless integration tests, and rendered appearance still requires a visual check. Coverage does not prove every physical outcome is correct.
 
 **Automated quality checks:** run `py -3.13 tools/dev.py setup-dev` once, then `py -3.13 tools/dev.py check` (use `python3` on Linux/macOS). This runs Ruff, regression tests with branch coverage, generated-documentation checks, Python/Godot contract comparisons, a headless startup that must receive live physics bodies, and a live save/load/restart round trip. Individual commands are `lint`, `test`, `docs-check`, `godot-test` (contracts only), and `godot-check`. Run `docs` to regenerate [the runtime reference](docs/runtime-reference.md).
@@ -525,7 +595,7 @@ Codex reads `AGENTS.md` and discovers skills under `.agents/skills/`. Tool permi
 | Godot shows a blank screen, crashes on start, or says Vulkan isn't supported | Update your graphics driver. If that doesn't help: **Project → Project Settings → Rendering → Renderer → Rendering Method → `gl_compatibility`**, then restart Godot. (Glow is slightly simpler there; everything else works.) |
 | Low frame rate | Press **T** to turn trails off, lower the body count, and make sure the laptop is plugged in and using its dedicated GPU (Windows **Settings → System → Display → Graphics**, set Godot to "High performance"). |
 | "Physics at 40%" in amber | The simulation can't keep up with the chosen speed. Press **−**, delete debris, or **Clear**. Many simultaneous close encounters force IAS15 into tiny time steps. |
-| Bodies vanish far away | Anything that gets more than 15,000 units from the centre is removed as "escaped". |
+| Bodies vanish far away | Anything that gets more than 15,000 units (250 AU in physical scenes) from the centre is removed as "escaped". |
 | Starting completely fresh | Delete `physics_server\.venv` and `godot\.godot`, then repeat [3.3](#33-set-up-the-physics-server) and [3.5](#35-open-the-project-in-godot). |
 
 ## 11. Credits and licences

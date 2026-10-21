@@ -91,7 +91,9 @@ func hide_all() -> void:
 
 func set_ghost(pos: Vector3, r: float, body_type: int) -> void:
 	_color = Palette.TYPE_COLORS[body_type]
-	_ghost.visible = true
+	_ghost.visible = r > 0.0
+	if r <= 0.0:
+		return  # physical size awaits the server; avoid a singular zero-scale mesh
 	_ghost.position = pos
 	var vis_r := r
 	if body_type == Palette.BLACK_HOLE:

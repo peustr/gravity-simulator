@@ -35,7 +35,9 @@ def test_capacity_rejection_does_not_consume_ids():
     assert add(w) == 1
     assert add(w) is None
     assert w.sim.N == 1 and w._next_id == 2
-    assert W.radius_for(-1, 1) == 1
+    assert W.legacy_radius_for(-1, 1) == 1
+    with pytest.raises(ValueError, match="Unknown body"):
+        W.radius_for(-1, 1)
 
 
 def test_invalid_placement_mode_and_nonfinite_mass():
@@ -116,6 +118,32 @@ def test_failed_deferred_collision_does_not_drop_later_records(monkeypatch, caps
     assert handler.call_count == 2 and not w._pending
     assert w.sim.did_modify_particles == 1
     assert 'bad collision' in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('indices', [(0, 1), (1, 0)])
+@pytest.mark.parametrize('star_mass', [1000, 5000])
+def test_black_hole_capture_preserves_identity_and_momentum_in_either_order(indices, star_mass):
+    w = W.World()
+    black_hole = add(w, W.BLACK_HOLE, 3000, vel=(1, 2, 3))
+    contact = W.radius_for(W.BLACK_HOLE, 3000) + W.radius_for(W.STAR, star_mass)
+    star = add(w, W.STAR, star_mass, pos=(.9 * contact, 0, 0), vel=(-2, 1, -1))
+    before = w.snapshot()
+    mass = before['m'].sum()
+    momentum = (before['m'][:, None] * before['v']).sum(axis=0)
+    center = (before['m'][:, None] * before['xyz']).sum(axis=0) / mass
+
+    # REBOUND may report either particle first, independently of their masses.
+    collision(w, *indices)
+
+    assert w.sim.N == 1 and set(w.meta) == {str(black_hole)}
+    assert w.particle(str(star)) is None
+    survivor = w.particle(str(black_hole))
+    assert w.meta[str(black_hole)]['type'] == W.BLACK_HOLE
+    assert survivor.m == pytest.approx(mass)
+    assert survivor.r == pytest.approx(W.radius_for(W.BLACK_HOLE, mass))
+    np.testing.assert_allclose(np.array([survivor.vx, survivor.vy, survivor.vz]) * survivor.m, momentum)
+    np.testing.assert_allclose([survivor.x, survivor.y, survivor.z], center)
+    assert [event[0] for event in w.events] == [W.EV_SWALLOW]
 
 
 def test_black_hole_merger_radiates_five_percent():

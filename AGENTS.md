@@ -18,6 +18,10 @@ Codex is the primary developer and maintainer. The user plays and develops on Wi
 
 ## Documentation
 
+- The user-requested `docs/physics-roadmap.md` is the maintained planning exception:
+  track acceptance criteria there, cross out a milestone only when fully complete,
+  then continue with the next. Target broad consumer hardware classes; do not make
+  progress depend on an individual's machine or confuse headless and rendered results.
 - Document only the current repository: setup, commands, architecture, behavior, contracts and relevant limitations.
 - Keep documentation concise, factual and useful to a human reader. Avoid narrative prose, change summaries, dated review reports, session notes and historical test results.
 - Update or remove outdated information in place. Use Git history and PR descriptions for change history; do not keep changelogs or completed-work reports in repository documentation.
@@ -32,6 +36,9 @@ Use `python3` on Linux/macOS or `py -3.13` on Windows to run `tools/dev.py`. The
 | Create/refresh the venv and validate physics | `python3 tools/dev.py setup` |
 | Install developer tools | `python3 tools/dev.py setup-dev` |
 | All quality checks | `python3 tools/dev.py check` |
+| Physical accuracy references | `python3 tools/dev.py accuracy` |
+| Physics performance baseline | `python3 tools/dev.py benchmark --profile` |
+| Rendered performance baseline | `python3 tools/dev.py benchmark-visual solar` |
 | Refresh generated runtime reference | `python3 tools/dev.py docs` |
 | Physics self-test | `python3 tools/dev.py selftest` |
 | Godot protocol contract tests | `python3 tools/dev.py godot-test` |
@@ -51,20 +58,26 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 |---|---|
 | `physics_server/world.py` | `World`: REBOUND sim, body types, collisions, fragmentation, tides, supernovae, scenarios (`load_preset`), orbit forecast (`predict`) |
 | `physics_server/server.py` | UDP loop (60 Hz), JSON commands, binary packing, `--selftest` |
+| `physics_server/diagnostics.py`, `validation.py` | Optional conservation accounting and physical reference problems |
+| `tools/benchmark.py` | Seeded performance workloads, profiling and JSON reports |
+| `docs/physics-roadmap.md` | Ordered realism milestones and current acceptance checklist |
 | `godot/scripts/main.gd` | Builds the scene in code, parses state packets, smooth motion, input, automation flags (`_run_auto`) |
 | `godot/scripts/net_client.gd` | UDP client; auto-starts the server from `.venv` or `server.exe` |
 | `godot/scripts/body_view.gd` | Visuals for one body (per type) |
 | `godot/scripts/hud.gd` | All UI, built in code with a code-made Theme |
-| `godot/scripts/palette.gd` | Shared constants: type ids, colours, names, radius formula |
+| `physics_server/units.py` | SI constants, conversions and physical radius models; version-1 saves keep legacy sandbox rules |
+| `godot/scripts/palette.gd` | Type ids, colours, names and artistic display sizes; never authoritative physics |
 | `godot/shaders/` | Stars, planets, black-hole lens, accretion disk, starfield, grid; helpers in `noise.gdshaderinc` |
 | `README.md` | User-facing install guide, controls, physics notes, protocol |
+
+Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse-picking size separate. Godot receives SI conversion factors from the server; do not mirror physical model formulas there.
 
 ## Things that must stay in sync
 
 | What | Where |
 |---|---|
-| Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_KILONOVA=9), `DEFAULT_MASS`, `radius_for()` | `world.py` ↔ `godot/scripts/palette.gd` |
-| Packet layout: header 10 floats, body 12, event 8; forecast reply header 8 | `server.py` `pack_state`/`pack_prediction` ↔ `main.gd` `_on_state`/`_on_prediction` |
+| Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_KILONOVA=9), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
+| Packet layout: header 11 floats, body 12, event 8; forecast reply header 9 (protocol 2, packet kinds 3/4) | `server.py` `pack_state`/`pack_prediction` ↔ `main.gd` `_on_state`/`_on_prediction` |
 | UDP port 47810 | `server.py` `DEFAULT_PORT` ↔ `net_client.gd` `SERVER_PORT` |
 | Scenario names | `world.load_preset()` ↔ `hud.gd` `PRESETS` |
 | New body type | also `TYPE_LABELS`, `TYPE_COLORS`, `TOOL_TYPES`, a builder in `body_view.gd`, an icon in `hud.gd`, trail strength in `trails.gd` |
@@ -77,7 +90,7 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 - Never add particles inside the collision callback. `_resolve_collision` merges and records; `_handle_collision` runs after `sim.steps(1)` and may shatter.
 - Collision callback return: 1 removes p1, 2 removes p2. REBOUND reports only *approaching* overlaps, so fragments may start overlapping the remnant.
 - Light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
-- IAS15 has one global timestep, so a single close encounter slows everything. `min_dt` is 1e-4. Keep debris counts in check (`SHATTER_MIN_MASS`, fragment caps).
+- IAS15 has one global timestep, so a single close encounter slows everything. `min_dt` is zero for physical scenes and 1e-4 only for legacy saves. Keep debris counts in check (`SHATTER_MIN_MASS`, fragment caps).
 - Prefer Python 3.13 on Windows (3.12 for cloud development). Check wheel availability before moving to a newer Python; do not silently introduce a compiler requirement.
 
 ## Godot conventions

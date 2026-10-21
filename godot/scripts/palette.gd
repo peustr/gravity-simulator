@@ -61,8 +61,8 @@ static func body_name(id: int, body_type: int) -> String:
 	return n
 
 
-static func radius_for(body_type: int, m: float) -> float:
-	## Mirror of world.radius_for (used for the placement ghost).
+static func illustrative_radius(body_type: int, m: float) -> float:
+	## Artistic size only; never used to calculate physical behaviour.
 	m = maxf(m, 1e-12)
 	match body_type:
 		ROCKY, ASTEROID:
@@ -78,6 +78,13 @@ static func radius_for(body_type: int, m: float) -> float:
 		PLASMA:
 			return clampf(0.35 * pow(m, 1.0 / 3.0), 0.08, 4.0)
 	return 1.0
+
+
+static func rendered_radius(kind: int, mass: float, physical: float, enlargement: float, world_per_px: float) -> float:
+	# Zooming in resolves small systems without enlarged meshes hiding satellites.
+	if enlargement == 0.0:
+		return physical
+	return maxf(physical, minf(illustrative_radius(kind, mass) * enlargement, world_per_px * 10.0 * enlargement))
 
 
 static func star_temperature(m: float) -> float:
@@ -128,6 +135,8 @@ static func friendly_mass(m: float, body_type: int) -> String:
 
 
 static func _sig(v: float) -> String:
+	if v >= 1e6:
+		return _scientific(v)
 	if v >= 100.0:
 		return "%d" % int(round(v))
 	if v >= 10.0:
@@ -136,7 +145,12 @@ static func _sig(v: float) -> String:
 		return "%.2f" % v
 	if v >= 0.001:
 		return "%.3f" % v
-	return "%.1e" % v
+	return "0" if v == 0.0 else _scientific(v)
+
+
+static func _scientific(v: float) -> String:
+	var exponent := int(floor(log(absf(v)) / log(10.0)))
+	return "%.3fe%d" % [v / pow(10.0, exponent), exponent]
 
 
 static func describe_mass(body_type: int, mult: float) -> String:

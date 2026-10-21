@@ -29,8 +29,10 @@ def test_full_spawn_is_atomic():
 
 
 @pytest.mark.parametrize('mode', ['orbit', 'launch'])
-@pytest.mark.parametrize('position', [(0, 0, 0), (5.5, 0, 0), (6, 0, 0)])
-def test_overlapping_placement_is_rejected_without_corrupting_world(mode, position):
+@pytest.mark.parametrize('fraction', [0, 0.5, 1.0])
+def test_overlapping_placement_is_rejected_without_corrupting_world(mode, fraction):
+    contact = W.radius_for(W.STAR, 1000) + W.radius_for(W.ROCKY, .003)
+    position = (fraction * contact, 0, 0)
     w = W.World(seed=1)
     w.add_body(W.STAR, 1000, (0, 0, 0), (0, 0, 0))
     before = w.snapshot()
@@ -50,18 +52,19 @@ def test_overlap_check_includes_other_bodies_and_precedes_velocity_kick():
     w.add_body(W.ROCKY, .003, (0, 0, 0), (1, 2, 3))
     before = w.snapshot()['v'].copy()
     # A new star would kick this planet into a mutual orbit if accepted.
-    assert w.spawn(W.STAR, (4, 0, 0)) is None
+    assert w.spawn(W.STAR, (.1, 0, 0)) is None
     np.testing.assert_array_equal(w.snapshot()['v'], before)
     w.add_body(W.STAR, 1000, (20, 0, 0), (0, 0, 0))
-    # The star dominates the pull here, but the overlap is with the planet.
-    assert w._dominant((1, 0, 0), w.snapshot()) == 1
-    assert w.spawn(W.ROCKY, (1, 0, 0)) is None
+    # A physical overlap must be rejected even when a different body dominates.
+    w.sim.particles[1].m = 1e12
+    assert w._dominant((.004, 0, 0), w.snapshot()) == 1
+    assert w.spawn(W.ROCKY, (.004, 0, 0)) is None
     assert w.spawn(W.ROCKY, (10, 0, 0)) is not None
 
 
 @pytest.mark.parametrize('paused', [False, True])
 @pytest.mark.parametrize('preset, expected', [
-    ('solar', 10), ('binary', 10), ('black_hole', 10), ('smash', 6),
+    ('solar', 10), ('binary', 10), ('black_hole', .05), ('smash', .05),
     ('formation', 25), ('galaxies', 8), ('empty', 10),
 ])
 def test_preset_speed_is_independent_of_previous_scene(preset, expected, paused):
