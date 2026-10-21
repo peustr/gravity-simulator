@@ -9,6 +9,7 @@ const SceneFiles = preload("res://scripts/scene_files.gd")
 const Benchmark = preload("res://scripts/benchmark.gd")
 const Palette = preload("res://scripts/palette.gd")
 const BodyView = preload("res://scripts/body_view.gd")
+const MotionHistory = preload("res://scripts/motion_history.gd")
 const NetClient = preload("res://scripts/net_client.gd")
 const CameraRig = preload("res://scripts/camera_rig.gd")
 const Hud = preload("res://scripts/hud.gd")
@@ -79,6 +80,8 @@ var _light_timer := 0.0
 var _stats_timer := 0.0
 var _welcome_shown := false
 var _first_state := true
+var motion = MotionHistory.new()
+var _motion_wall_time := -1.0
 var _auto := {}
 var _auto_time := 0.0
 var _auto_done := false
@@ -218,6 +221,7 @@ func _on_connection(is_connected: bool) -> void:
 			_load_preset(_auto["preset"])
 			_auto.erase("preset")
 	else:
+		_first_state = true
 		hud.set_connection("offline", "Physics offline")
 		hud.show_overlay(true, net.launch_status)
 
@@ -238,10 +242,6 @@ func _on_message(msg: Dictionary) -> void:
 			hud.push_event(str(msg.get("text", "")), Color(1.0, 0.85, 0.5))
 
 
-func _max_tau() -> float:
-	return maxf(server_speed * 0.35, 0.05)
-
-
 func _on_state(f: PackedFloat32Array) -> void:
 	if not NetClient.valid_packet(f) or f[0] != NetClient.STATE_KIND:
 		return
@@ -249,6 +249,12 @@ func _on_state(f: PackedFloat32Array) -> void:
 	var ne := int(f[5])
 	if f.size() < HEADER + n * BODY + ne * EVENT:
 		return
+	var version := int(f[1])
+	var t := float(f[2]) + float(f[3])
+	if not _first_state and (version < sim_version or (version == sim_version and t < packet_time)):
+		return
+	var was_paused := paused
+	var was_first_state := _first_state
 	paused = f[6] > 0.5
 	server_speed = f[7]
 	perf = f[8]
@@ -267,22 +273,20 @@ func _on_state(f: PackedFloat32Array) -> void:
 			hud.show_welcome(true)
 
 	# Header time can advance even when there are no particle changes.
-	var t := float(f[2]) + float(f[3])
-	if _first_state or t < packet_time - 1.0:
+	var previous_time := packet_time
+	if _first_state or t < packet_time or paused != was_paused:
+		motion.clear()
 		display_time = t
 		if _first_state:
 			print("Physics state received.")
 		_first_state = false
 	packet_time = t
-	display_time = clampf(display_time, t, t + _max_tau())
-	var version := int(f[1])
-	if version == sim_version:
+	if not was_first_state and version == sim_version and t == previous_time and paused == was_paused:
 		return
 	sim_version = version
-	var tau := display_time - packet_time
 
 	var seen := {}
-	var heavy: Array = []
+	var positions := {}
 	for i in range(n):
 		var o := HEADER + i * BODY
 		var id := int(f[o])
@@ -298,44 +302,18 @@ func _on_state(f: PackedFloat32Array) -> void:
 			views[id] = view
 		elif view.body_type != btype:
 			view.set_type(btype)
-		view.set_meta("old_render", view.position)
-		view.set_meta("is_new", is_new)
 		view.base_pos = pos
 		view.vel = Vector3(f[o + 5], f[o + 6], f[o + 7])
 		view.set_physical(f[o + 8], f[o + 9], f[o + 10], f[o + 11])
 		seen[id] = true
-		if view.mass > 0.0:
-			heavy.append(view)
+		positions[id] = pos
 
 	# Bodies the server no longer reports have merged, broken up or escaped.
 	for id in views.keys():
 		if not seen.has(id):
 			_remove_view(id)
 
-	# Accelerations from the heaviest bodies let us draw smooth curved motion
-	# between physics updates (x + v t + a t^2 / 2).
-	heavy.sort_custom(func(a, b): return a.mass > b.mass)
-	if heavy.size() > 10:
-		heavy.resize(10)
-	var max_jump: float = rig.distance * 0.15
-	for id in views:
-		var v = views[id]
-		var acc := Vector3.ZERO
-		for h in heavy:
-			if h == v:
-				continue
-			var d: Vector3 = h.base_pos - v.base_pos
-			var soft: float = h.physical_radius * h.physical_radius
-			var r2 := d.length_squared() + soft
-			acc += d * (G * h.mass / (r2 * sqrt(r2)))
-		v.acc = acc
-		var predicted: Vector3 = v.base_pos + v.vel * tau + 0.5 * acc * tau * tau
-		if v.get_meta("is_new"):
-			v.offset = Vector3.ZERO
-			v.position = predicted
-		else:
-			var off: Vector3 = v.get_meta("old_render") - predicted
-			v.offset = off if off.length() < max_jump else Vector3.ZERO
+	motion.push(t, positions, Time.get_ticks_usec() / 1000000.0)
 
 
 
@@ -446,16 +424,7 @@ func _on_prediction(f: PackedFloat32Array) -> void:
 # =================================================================== frame loop
 func _process(delta: float) -> void:
 	_alive += delta
-	if not paused and net.connected:
-		display_time += delta * server_speed
-	display_time = clampf(display_time, packet_time, packet_time + _max_tau())
-	var tau := display_time - packet_time
-	var decay := exp(-delta / 0.12)
-	for id in views:
-		var v = views[id]
-		v.set_display_size(display_scale, _world_per_px(v.position))
-		v.offset *= decay
-		v.position = v.base_pos + v.vel * tau + 0.5 * v.acc * tau * tau + v.offset
+	_update_motion(delta)
 
 	if follow_id >= 0 and views.has(follow_id):
 		rig.target_focus = views[follow_id].position
@@ -487,6 +456,20 @@ func _process(delta: float) -> void:
 			hud.show_welcome(false)
 
 	_run_auto(delta)
+
+
+func _update_motion(delta: float) -> void:
+	# Godot caps delta during very slow frames. The snapshot receipt clock is
+	# real time, so use that same clock for playback instead of accumulating lag.
+	var now := Time.get_ticks_usec() / 1000000.0
+	var elapsed := delta if _motion_wall_time < 0.0 else maxf(0.0, now - _motion_wall_time)
+	_motion_wall_time = now
+	motion.advance(elapsed, server_speed, paused, net.connected)
+	display_time = motion.time
+	for id in views:
+		var v = views[id]
+		v.position = motion.position_for(id, v.base_pos)
+		v.set_display_size(display_scale, _world_per_px(v.position))
 
 
 func _assign_lights() -> void:
@@ -847,6 +830,7 @@ func restore_scene_view(cam: Dictionary) -> void:
 	placement.hide_all()
 	sim_version = -1
 	_first_state = true
+	motion.clear()
 	var f: Array = cam.focus
 	rig.frame(Vector3(f[0], f[1], f[2]), cam.distance, cam.pitch)
 	rig.focus = rig.target_focus

@@ -41,7 +41,7 @@ warnings.filterwarnings("ignore", message=".*hash table.*")
 G = 1.0  # units.G is unity to floating-point precision
 MAX_BODIES = 1321  # 11 + 12*N + 8*64 float32 values must fit IPv4 UDP (65507 bytes).
 SCENARIOS = ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty")
-PRESET_SPEEDS = dict(solar=10.0, binary=10.0, black_hole=0.05, smash=0.05,
+PRESET_SPEEDS = dict(solar=1.0, binary=10.0, black_hole=0.05, smash=0.05,
                     formation=25.0, galaxies=8.0, empty=10.0)
 
 # --- Body types (must match godot/scripts/palette.gd) -------------------------
@@ -367,6 +367,10 @@ class World:
                     sim.t = self._target_t
                     break
                 try:
+                    # An adaptive step may span several display ticks. Stop at
+                    # this tick's target instead of publishing a future state
+                    # followed by repeated frozen states while time catches up.
+                    sim.dt = min(sim.dt, self._target_t - sim.t)
                     sim.steps(1)
                 except rebound.NoParticles:
                     sim.t = self._target_t

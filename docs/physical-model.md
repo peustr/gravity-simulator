@@ -57,9 +57,11 @@ The solar preset uses approximate planetary masses and orbital distances, a
 Satellite pairs start with circular relative velocities and preserve their
 parent's centre-of-mass position and momentum. Orbital phases are illustrative;
 this is not an ephemeris. Saturn's ring material is not resolved; statistical
-ring models belong to the specialised-mode milestone. The belt uses low-mass
-tracers; they have no gravitational back-reaction. The formation preset is an embryo disk, not a calibrated
-accretion model.
+ring models belong to the specialised-mode milestone. Solar playback starts at
+x0.1 (one simulation unit per real second); Io then takes about 0.45 seconds per
+orbit rather than 0.045 seconds at x1. The belt uses low-mass tracers; they have
+no gravitational back-reaction. The formation preset is an embryo disk, not a
+calibrated accretion model.
 
 The black-hole preset uses a stellar-mass hole and a star passing inside its
 physical Roche estimate. The impact preset launches two Earth-like bodies at
@@ -80,6 +82,14 @@ compact-object captures can still produce IAS15 convergence warnings; passing
 outcome checks do not establish accuracy for those encounters.
 
 ## Presentation and compatibility
+
+Godot linearly interpolates authoritative position snapshots with a small
+buffer (target 50 ms) and an achieved-speed estimate. Convex interpolation keeps
+relative positions within their sampled bounds even when updates are sparse.
+The display never advances beyond its newest snapshot, including during a
+physics stall or disconnect. Pausing, restarting or replacing a scene resets
+the timeline. This presentation interpolation does not solve gravity; sparse
+samples cannot recover unresolved fast orbits.
 
 Godot keeps `physical_radius`, `rendered_radius` and mouse-picking extent separate.
 **V** cycles display enlargement 1, 2 and 0 (physical mesh sizes). Enlarged meshes

@@ -64,7 +64,7 @@ def test_overlap_check_includes_other_bodies_and_precedes_velocity_kick():
 
 @pytest.mark.parametrize('paused', [False, True])
 @pytest.mark.parametrize('preset, expected', [
-    ('solar', 10), ('binary', 10), ('black_hole', .05), ('smash', .05),
+    ('solar', 1), ('binary', 10), ('black_hole', .05), ('smash', .05),
     ('formation', 25), ('galaxies', 8), ('empty', 10),
 ])
 def test_preset_speed_is_independent_of_previous_scene(preset, expected, paused):
@@ -182,6 +182,29 @@ def test_pause_and_resume():
     w.paused = False
     w.advance(.01, time.perf_counter() + 1)
     assert w.sim.t == pytest.approx(.1)
+
+
+@pytest.mark.parametrize('speed', [0.05, 10.0, 640.0])
+def test_large_adaptive_step_cannot_publish_a_future_tick(speed):
+    w = W.World()
+    w.add_body(W.ROCKY, .003, (0, 0, 0), (1, 2, 3))
+    w.speed = speed
+    w.sim.dt = 100.0
+    for tick in range(1, 61):
+        w.advance(1 / 60, time.perf_counter() + 1)
+        expected = speed * tick / 60
+        assert w.sim.t == pytest.approx(expected, rel=1e-12, abs=1e-12)
+        np.testing.assert_allclose(w.snapshot()['xyz'][0], np.array([1, 2, 3]) * expected, rtol=1e-12)
+
+
+def test_solar_snapshots_progress_every_display_tick():
+    w = W.World(seed=42)
+    w.load_preset('solar')
+    for tick in range(1, 61):
+        before = w.sim.t
+        w.advance(1 / 60, time.perf_counter() + 1)
+        assert w.sim.t > before
+        assert w.sim.t == pytest.approx(tick / 60, rel=1e-12)
 
 
 def test_physics_selftest(monkeypatch):
