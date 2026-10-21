@@ -34,8 +34,6 @@ var display_name := ""
 # Motion (filled in by main.gd)
 var base_pos := Vector3.ZERO
 var vel := Vector3.ZERO
-var acc := Vector3.ZERO
-var offset := Vector3.ZERO
 
 var light: OmniLight3D
 var flare := 0.0

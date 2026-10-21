@@ -160,7 +160,7 @@ If it prints `Python 3.13.x`, skip to [3.3](#33-set-up-the-physics-server). If i
 
      [ok] scenario 'solar' loads and runs - 112 bodies, 18 ms
      ...
-     [ok] solar system runs faster than real time at the default speed
+     [ok] solar system advances 100 time units within 10 seconds
 
    Self-test PASSED - you're ready to go!
    ```
@@ -253,7 +253,7 @@ Use the **Experiment** menu in the top bar:
 - **Set restart point** remembers the current scene and camera for this session without writing a file. Set it after building an experiment, before letting it evolve.
 - **Restart experiment...** returns to that point after confirmation. Choosing a built-in scenario also sets a restart point at its initial conditions; Clear sets an empty restart point.
 
-**Clear** asks for confirmation. Choosing a scenario asks before replacing a nonempty scene; Cancel preserves both the scene and its restart point. Each scenario sets its own starting speed: Solar system, Binary stars and Empty space use x1; Black hole feast and Planet smash use x0.005 to resolve their much shorter physical timescales, Planet formation x2.5, and Tidal encounter x0.8. Switching scenarios preserves pause/resume state.
+**Clear** asks for confirmation. Choosing a scenario asks before replacing a nonempty scene; Cancel preserves both the scene and its restart point. Each scenario sets its own starting speed: Solar system uses x0.1 so its short moon orbits remain readable; Binary stars and Empty space use x1; Black hole feast and Planet smash use x0.005 to resolve their much shorter physical timescales, Planet formation x2.5, and Tidal encounter x0.8. Switching scenarios preserves pause/resume state.
 
 Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation and visual enlargement. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. Trails, selection, body-follow mode and transient visual effects are cleared.
 
@@ -306,7 +306,7 @@ The top bar shows simulation time, the body count, and **"Real-time"**, which tu
 
 ### Units
 
-New scenes use `G = 1`, with one distance unit = 1/60 AU and 1,000 mass units = one nominal solar mass. Time is derived from these definitions (about 3.96 days per unit). At x1, ten simulation time units elapse per real second, so a one-AU orbit takes about nine seconds. The inspector reports kg, km, km/s and days.
+New scenes use `G = 1`, with one distance unit = 1/60 AU and 1,000 mass units = one nominal solar mass. Time is derived from these definitions (about 3.96 days per unit). At x1, ten simulation time units elapse per real second, so a one-AU orbit takes about nine seconds (about 91 seconds at the Solar system's default x0.1). The inspector reports kg, km, km/s and days.
 
 **Physical, displayed and selection sizes are independent.** Collisions, placement rejection, disruption and forecasts use physical radii. Godot enlarges meshes for visibility; press **V** to cycle display sizes, including physical sizes. Zooming in reduces visual enlargement to resolve close satellites. Screen-space markers and generous mouse targets remain usable even for subpixel bodies. None of these display settings changes gravity or contact.
 
@@ -314,7 +314,7 @@ See [physical units and models](docs/physical-model.md) for constants, radius ap
 
 ### Gravity and integration
 
-All bodies live in one REBOUND simulation using the **IAS15** integrator (Rein & Spiegel 2015). It is adaptive: it takes tiny steps during close encounters and big ones in quiet periods, and the controlled reference problems check its accuracy. Physical scenes allow adaptive steps below the old sandbox minimum; difficult encounters reduce achieved simulation speed. The server advances the simulation in real time (60 updates a second). Godot draws smoothly between updates using each body's velocity and acceleration.
+All bodies live in one REBOUND simulation using the **IAS15** integrator (Rein & Spiegel 2015). It is adaptive: it takes tiny steps during close encounters and big ones in quiet periods, and the controlled reference problems check its accuracy. Physical scenes allow adaptive steps below the old sandbox minimum; difficult encounters reduce achieved simulation speed. The server targets 60 updates a second and limits each advance to the requested simulation time. Godot buffers about 50 ms of authoritative positions, then interpolates between them. Playback follows achieved simulation speed and stops at the last received state if updates stall; the renderer does not calculate gravitational forces. Very fast moon orbits still require slower playback when zoomed in to resolve them at your display's frame rate.
 
 Debris (asteroids and small gas clouds) is treated as **test particles**. It feels everyone's gravity and collides normally, but doesn't pull on other bodies. This is the classic approximation (Toomre & Toomre used it for colliding galaxies) and makes debris-heavy scenes about 10 times faster. Planets, stars, neutron stars and black holes are always fully N-body.
 

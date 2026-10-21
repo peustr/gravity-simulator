@@ -24,7 +24,7 @@ def test_seeded_workload_and_separate_accounting():
     assert first['initial_tracers'] == 60
     assert 'accounting' not in first and 'accounting' in second
     assert second['accounting']['initial']['tracers'] == 60
-    assert first['requested_simulated_time'] == pytest.approx(1 / 3)
+    assert first['requested_simulated_time'] == pytest.approx(1 / 30)
 
 
 def test_profile_reports_native_integration_and_forecast():

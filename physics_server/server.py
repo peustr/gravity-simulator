@@ -415,7 +415,7 @@ def selftest() -> int:
     t0 = time.perf_counter()
     run(w, 100)
     el = time.perf_counter() - t0
-    check("solar system runs faster than real time at the default speed", el < 10.0,
+    check("solar system advances 100 time units within 10 seconds", el < 10.0,
           f"100 time units in {el:.2f} s (needs < 10 s)")
 
     print("\nSelf-test", "PASSED - you're ready to go!" if ok else "FAILED - see the lines marked FAIL above.")

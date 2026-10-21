@@ -5,8 +5,12 @@ const Net = preload("res://scripts/net_client.gd")
 const Main = preload("res://scripts/main.gd")
 const Hud = preload("res://scripts/hud.gd")
 const Benchmark = preload("res://scripts/benchmark.gd")
+const MotionTests = preload("res://tests/motion.gd")
 
 func _initialize() -> void:
+	if not MotionTests.run():
+		quit(1)
+		return
 	var timing := Benchmark.distribution([1.0, 2.0, 3.0, 100.0])
 	if timing.p95 != 100.0 or timing.mean != 26.5 or Benchmark.distribution([]).count != 0:
 		push_error("Frame timing statistics discarded outliers or mishandled empty data")
@@ -34,6 +38,9 @@ func _initialize() -> void:
 		quit(1)
 		return
 	main.free()
+	if not _check_motion_reset():
+		quit(1)
+		return
 	if not Net.valid_packet(PackedFloat32Array([4, 1, 0, 0, -1, 0, 0, 0, 0.0025])):
 		quit(1)
 		return
@@ -72,3 +79,36 @@ func _initialize() -> void:
 		"kinds": [Net.STATE_KIND, Net.PREDICTION_KIND],
 		"layout": [Main.HEADER, Main.BODY, Main.EVENT]}))
 	quit()
+
+
+func _state(version: int, t: float, x: float, paused: bool) -> PackedFloat32Array:
+	return PackedFloat32Array([3, version, 0, t, 1, 0, 1 if paused else 0, 10, 1, 600, 1,
+		1, 0, x, 0, 0, 1, 0, 0, 0.003, 0.0025, 0, 0])
+
+
+func _check_motion_reset() -> bool:
+	var main := Main.new()
+	main.net = Net.new()
+	main._welcome_shown = true
+	main.bodies_root = Node3D.new()
+	main.add_child(main.bodies_root)
+	main._on_state(_state(20, 0.3, 3.0, false))
+	main._on_state(_state(19, 0.2, 999.0, false))
+	var ok: bool = main.views[1].base_pos.x == 3.0
+	# A scene reset can rewind by less than one simulation time unit.
+	main._on_state(_state(21, 0.1, 1.0, true))
+	main.motion.advance(0.0, 10.0, true, true)
+	ok = ok and main.motion.position_for(1, Vector3.ZERO).x == 1.0
+	main._on_state(_state(22, 0.1, 1.0, false))
+	main.motion.advance(0.0, 10.0, false, true)
+	ok = ok and main.motion.position_for(1, Vector3.ZERO).x == 1.0
+	# Reconnecting to an unchanged paused state must repopulate the buffer.
+	main._first_state = true
+	main._on_state(_state(22, 0.1, 1.0, false))
+	main.motion.advance(0.0, 10.0, false, true)
+	ok = ok and main.motion.position_for(1, Vector3.ZERO).x == 1.0
+	main.net.free()
+	main.free()
+	if not ok:
+		push_error("Stale packets, scene reset or reconnection corrupted motion history")
+	return ok
