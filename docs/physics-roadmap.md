@@ -35,8 +35,8 @@ and make the next milestone active. Store generated measurements in ignored
 
 - [x] ~~1. Accuracy and performance baseline~~
 - [x] ~~2. Physical units and independent display sizes~~
-- [x] ~~3. Trustworthy orbital dynamics~~
-- [ ] **4. Credible impact outcomes — active**
+- [ ] **3. Trustworthy orbital dynamics — active**
+- [ ] **4. Credible impact outcomes**
 - [ ] **5. Rotation and tidal evolution**
 - [ ] **6. Composition and thermal history**
 - [ ] **7. Stellar evolution and compact objects**
@@ -102,9 +102,10 @@ Implementation reference for units, radii, scenarios and compatibility:
 - [x] Validate forecast accuracy limits beyond the isolated two-body case,
   including omitted perturbers, tracer forces and contact timing.
 - [x] Define configurable removal boundaries and account for their losses.
-- [x] Meet the existing self-test runtime limits with coverage enabled. The
-  tidal-disruption case must reach 60 simulation units within its 20-second
-  cutoff without relaxing contact error bounds or solver tolerances.
+- [ ] Pass the Python 3.10–3.14 Linux/Windows CI matrix, including standalone
+  and covered self-tests. The tidal-disruption case must reliably reach 60
+  simulation units within its 20-second cutoff on supported runners, without
+  relaxing contact error bounds or solver tolerances.
 - [x] Measure default/full-gravity costs and forecast p95 latency against the
   33 ms target; pass `tools/dev.py check`.
 
