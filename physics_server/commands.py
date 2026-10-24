@@ -2,6 +2,7 @@
 import math
 
 import world as W
+import configuration
 
 COMMANDS = {
     "hello": "heartbeat (send twice per second)",
@@ -15,6 +16,7 @@ COMMANDS = {
     "speed": "value (clamped to 0.05–2000)",
     "clear": "no fields",
     "preset": "name",
+    "physics": "settings (gravity, epsilon, forecast_limit, escape_distance; partial updates allowed)",
     "save_scene": "path, camera, request",
     "load_scene": "path, request",
     "checkpoint": "camera, request",
@@ -75,3 +77,5 @@ def validate(msg):
         number(msg.get("value", 10.0), -1e6, 1e6)
     elif cmd == "preset" and msg.get("name", "empty") not in W.SCENARIOS:
         raise ValueError("Unknown scenario")
+    elif cmd == "physics":
+        configuration.settings(msg.get('settings'), partial=True)
