@@ -119,5 +119,6 @@ def test_accuracy_rejects_bad_results_and_stalled_world(monkeypatch):
 def test_reference_suite_is_complete():
     results = V.run_accuracy()
     assert {item['name'] for item in results} == {
-        'kepler_circular', 'kepler_eccentric', 'hyperbolic_scattering', 'hierarchical_moon', 'inelastic_merger'}
+        'kepler_circular', 'kepler_eccentric', 'hyperbolic_scattering', 'hierarchical_moon', 'inelastic_merger',
+        'long_duration_and_convergence', 'contact_detection', 'symplectic_planetary_evaluation', 'forecast_force_consistency'}
     assert all(item['passed'] for item in results)

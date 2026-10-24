@@ -125,7 +125,7 @@ def test_version_one_save_keeps_original_values_and_future_radius_rules():
         legacy._promote(p.name, p)
         assert p.r == W.legacy_radius_for(legacy.meta[p.name]['type'], p.m)
     current = E.capture(legacy, camera)
-    assert current['version'] == 2 and current['units'] == U.LEGACY
+    assert current['version'] == 3 and current['units'] == U.LEGACY
     loaded, _ = E.restore(current)
     assert loaded.units == U.LEGACY
     assert np.frombuffer(S.pack_state(loaded), dtype='<f4')[10] == 0

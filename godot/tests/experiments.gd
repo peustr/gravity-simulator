@@ -70,6 +70,18 @@ func _run() -> void:
 	if not await _until(func(): return main.views.size() == 6 and main.paused):
 		_fail("Scene test: initial scene did not arrive")
 		return
+	main.hud.physics_menu.id_pressed.emit(10)
+	if not await _until(func(): return main.hud.physics_settings.get("gravity") == "full"):
+		_fail("Full gravity control did not reach the server")
+		return
+	main.hud.physics_menu.id_pressed.emit(11)
+	if not await _until(func(): return main.hud.physics_settings.get("forecast_limit") == 0):
+		_fail("All-body forecast control did not reach the server")
+		return
+	main.hud.physics_menu.id_pressed.emit(12)
+	if not await _until(func(): return main.hud.physics_settings.get("escape_distance") == null):
+		_fail("Removal boundary control did not reach the server")
+		return
 	if not await _request({"cmd": "checkpoint"}):
 		_fail("Could not set paused restart point for cancellation test")
 		return
@@ -108,11 +120,18 @@ func _run() -> void:
 	if not await _until(func(): return main.views.size() == 5):
 		_fail("Scene test: body removal failed")
 		return
+	main.hud.physics_menu.id_pressed.emit(10)
+	if not await _until(func(): return main.hud.physics_settings.get("gravity") == "tracers"):
+		_fail("Tracer mode control did not reach the server")
+		return
 	if not await _request({"cmd": "restart"}):
 		_fail("Scene test: restart failed")
 		return
 	if not await _until(func(): return main.views.size() == 6):
 		_fail("Scene test: restart did not restore bodies")
+		return
+	if not await _until(func(): return main.hud.physics_settings.get("gravity") == "full"):
+		_fail("Restart did not restore gravity settings")
 		return
 	main.hud.clear_requested.emit()
 	main.scene_files.confirm.get_ok_button().pressed.emit()
@@ -127,6 +146,9 @@ func _run() -> void:
 	if not await _until(func(): return main.views.size() == 6 and main.paused):
 		_fail("Scene test: load did not restore bodies and pause state")
 		return
+	if not await _until(func(): return main.hud.physics_settings.get("forecast_limit") == 0 and main.hud.physics_settings.get("escape_distance") == null):
+		_fail("Load did not restore forecast and boundary settings")
+		return
 	if main.display_scale != 2.0 or main.legacy_units or not main._physical_value(1000, "mass_kg", "kg").contains("e30 kg"):
 		_fail("Physical units or display size setting did not round trip")
 		return
@@ -138,7 +160,7 @@ func _run() -> void:
 	if not main.hud.insp_values["Physical radius"].text.ends_with(" km") or main.hud.insp_values["Display"].text != "Enlarged x2":
 		_fail("Physical inspector fields did not reach the HUD")
 		return
-	var legacy := FileAccess.get_file_as_string(path).replace('"version":2', '"version":1')
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":3', '"version":1')
 	var migration_file := FileAccess.open(path, FileAccess.WRITE)
 	migration_file.store_string(legacy)
 	migration_file.close()

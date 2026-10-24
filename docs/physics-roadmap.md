@@ -26,13 +26,10 @@ requirements or measured simulation performance.
   accuracy by reducing simulated speed or explicitly selecting a cheaper valid
   model; graphics settings and body population are separate controls.
 
-Hardware compatibility/performance qualification is ongoing across machines.
-No individual's hardware or personal benchmark is a prerequisite for development.
-
 Work in order. A milestone is complete only when its acceptance criteria and
 required checks pass. Mark its checklist entry `[x]`, strike through its title,
-and make the next milestone active. Keep this document as the current plan;
-store generated measurements in ignored `benchmarks/`, not in this document.
+and make the next milestone active. Store generated measurements in ignored
+`benchmarks/`.
 
 ## Milestones
 
@@ -90,24 +87,50 @@ Implementation reference for units, radii, scenarios and compatibility:
 
 ## 3. Trustworthy orbital dynamics
 
-Validate close encounters and collision detection; revisit the IAS15 minimum
-timestep; evaluate symplectic integration for eligible long-lived planetary
-systems. Investigate IAS15 convergence warnings during radial compact-object
-capture, and bound forecast work between native integration calls to meet the
-forecast latency target without loosening accuracy. Make tracer/full gravity
-choices explicit, considering collective
-debris mass. Define removal boundaries and forecast accuracy limits.
+- [x] Validate long-duration circular/eccentric orbits and hierarchical systems;
+  document error targets and convergence as IAS15 tolerances tighten.
+- [x] Validate fast, grazing and compact-object contacts across timestep and
+  tolerance changes. Resolve radial-capture convergence warnings without hiding
+  them or imposing an inaccurate minimum timestep.
+- [x] Evaluate symplectic integration on eligible planetary systems against
+  IAS15, including runtime, drift and close-encounter limitations. Keep solver
+  switching disabled until independently validated.
+- [x] Make full gravity and tracer approximations explicit and persistent;
+  quantify omitted collective debris mass and gravitational back-reaction.
+- [x] Check forecast deadlines between individual native steps, preserve solver
+  tolerances, sample in forward time, and test interruption inside one sample.
+- [x] Validate forecast accuracy limits beyond the isolated two-body case,
+  including omitted perturbers, tracer forces and contact timing.
+- [x] Define configurable removal boundaries and account for their losses.
+- [ ] Pass the Python 3.10–3.14 Linux/Windows CI matrix, including standalone
+  and covered self-tests. The tidal-disruption case must reliably reach 60
+  simulation units within its 20-second cutoff on supported runners, without
+  relaxing contact error bounds or solver tolerances.
+- [x] Measure default/full-gravity costs and forecast p95 latency against the
+  33 ms target; pass `tools/dev.py check`.
 
 Acceptance: documented long-duration error targets and convergence under tighter
 tolerances; no missed benchmark contacts; explicit approximation settings and
 measured runtime cost. Solver switching requires its own validation.
 
+Reference problems, numerical bounds and model limitations:
+[orbital dynamics](orbital-dynamics.md).
+
 ## 4. Credible impact outcomes
 
-Model accretion, erosion, disruption, and hit-and-run encounters using calibrated
-impact laws. Include geometry, material, spin, and energy partition. Preserve
-unresolved debris in an accounted reservoir/statistical model when particle
-limits prevent explicit fragments.
+Start after Milestone 3's contact-detection checks pass: impact speed and geometry
+must be measured reliably before choosing the physical outcome.
+
+- [ ] Select and document calibrated impact laws and their mass, velocity,
+  material and geometry domains.
+- [ ] Distinguish accretion, erosion, disruption and hit-and-run outcomes using
+  impact geometry and material properties.
+- [ ] Track impact angular momentum, remnant spin and energy partition;
+  preserve physical budgets across outcome generation.
+- [ ] Preserve unresolved debris in an accounted reservoir/statistical model
+  when particle limits prevent explicit fragments.
+- [ ] Validate reference impacts, grazing encounters and particle-cap changes;
+  measure runtime and migrate saved scenes as new physical state is introduced.
 
 Acceptance: representative impacts match reference outcomes and close their
 mass, momentum, angular-momentum, and energy budgets within documented errors;

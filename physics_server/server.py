@@ -196,6 +196,7 @@ class Server:
                 "type": "info", "protocol": PROTOCOL_VERSION, "rebound": rebound.__version__,
                 "integrator": "IAS15", "max_bodies": w.max_bodies, "pid": os.getpid(),
                 "physical_units": units.metadata(),
+                "physics": w.gravity_summary(),
             }, addr)
         elif cmd == "bye":
             if self.client == addr:
@@ -221,6 +222,9 @@ class Server:
             w.version += 1
         elif cmd == "speed":
             w.speed = min(2000.0, max(0.05, float(msg.get("value", 10.0))))
+        elif cmd == "physics":
+            w.configure(msg['settings'])
+            self.send_json(dict(type='physics', **w.gravity_summary()), addr)
         elif cmd == "clear":
             w.clear()
             self.checkpoint = experiments.capture(w, experiments.DEFAULT_CAMERA)

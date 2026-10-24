@@ -65,14 +65,16 @@ def metadata():
     return data
 
 
-def workload(name, ticks, seed, audit=False):
+def workload(name, ticks, seed, audit=False, settings=None):
     world = W.World(seed=seed)
     world.load_preset(name)
+    if settings is not None:
+        world.configure(settings)
     initial = totals(world)
     solver = dict(integrator=str(world.sim.integrator), epsilon=world.sim.integrator.epsilon,
                   minimum_timestep=world.sim.integrator.min_dt, collision=world.sim.collision,
                   gravity_constant=world.sim.G, max_bodies=world.max_bodies,
-                  units=units.metadata(), radius_model=world.units)
+                  units=units.metadata(), radius_model=world.units, physics=world.gravity_summary())
     if audit:
         world.ledger = Ledger()
     advance, packing, forecast, tick_times, point_counts = [], [], [], [], []
@@ -110,10 +112,11 @@ def workload(name, ticks, seed, audit=False):
     return report
 
 
-def profile_workload(name, ticks, seed):
+def profile_workload(name, ticks, seed, settings=None):
     profiler = cProfile.Profile()
-    profiler.runcall(workload, name, ticks, seed)
+    profiler.runcall(workload, name, ticks, seed, settings=settings)
     phases = {'steps': 'integration_including_collision_callbacks',
+              'contact_step_limit': 'contact_step_checks',
               '_resolve_collision': 'collision_callbacks', '_process_collisions': 'collision_outcomes',
               '_tidal_check': 'tides', 'predict': 'forecast', 'pack_state': 'packing'}
     entries = []
@@ -141,15 +144,19 @@ def main(argv=None):
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--scenario', choices=SCENARIOS, action='append')
     parser.add_argument('--profile', action='store_true')
+    parser.add_argument('--gravity', choices=('tracers', 'full'), default='tracers')
+    parser.add_argument('--forecast-limit', type=bounded_int(0, W.MAX_BODIES), default=20,
+                        help='0 includes all bodies; otherwise select this many plus the attractor')
     parser.add_argument('--accuracy-only', action='store_true')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args(argv)
+    settings = dict(gravity=args.gravity, forecast_limit=args.forecast_limit)
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     path = args.output or ROOT / 'benchmarks' / f'physics-{stamp}.json'
     report = dict(format='gravity-baseline', version=1, created_at_utc=stamp, machine=metadata(),
                   settings=dict(ticks=args.ticks, repeats=args.repeats, seed=args.seed,
                                 tick_hz=TICK_HZ, physics_budget_seconds=PHYSICS_BUDGET,
-                                forecast_every_ticks=30, forecast_position=[400, 50, 0]),
+                                forecast_every_ticks=30, forecast_position=[400, 50, 0], physics=settings),
                   accuracy=run_accuracy(), runs=[], accounting_runs=[], profiles=[],
                   rendering='Not measured by this command; use benchmark-visual with a working display.',
                   performance_targets=dict(advance_p95_ms=11.0, forecast_p95_ms=33.0,
@@ -165,16 +172,16 @@ def main(argv=None):
     if not args.accuracy_only:
         for name in args.scenario or SCENARIOS:
             # One warmup on a disposable world; measured repeats start afresh.
-            workload(name, min(60, args.ticks), args.seed)
+            workload(name, min(60, args.ticks), args.seed, settings=settings)
             for repeat in range(args.repeats):
-                run = workload(name, args.ticks, args.seed)
+                run = workload(name, args.ticks, args.seed, settings=settings)
                 run['repeat'] = repeat + 1
                 report['runs'].append(run)
                 print(f"{name} #{repeat + 1}: tick p95 {run['tick']['p95_ms']:.2f} ms, "
                       f"{run['simulated_time']:.2f}/{run['requested_simulated_time']:.2f} simulated units", flush=True)
-            report['accounting_runs'].append(workload(name, args.ticks, args.seed, audit=True))
+            report['accounting_runs'].append(workload(name, args.ticks, args.seed, audit=True, settings=settings))
             if args.profile:
-                report['profiles'].append(profile_workload(name, args.ticks, args.seed))
+                report['profiles'].append(profile_workload(name, args.ticks, args.seed, settings=settings))
     report['accuracy_passed'] = all(case['passed'] for case in report['accuracy'])
     report['accounting_complete'] = all(not run['accounting']['errors'] for run in report['accounting_runs'])
     path.parent.mkdir(parents=True, exist_ok=True)
