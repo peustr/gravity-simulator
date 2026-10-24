@@ -35,8 +35,8 @@ and make the next milestone active. Store generated measurements in ignored
 
 - [x] ~~1. Accuracy and performance baseline~~
 - [x] ~~2. Physical units and independent display sizes~~
-- [ ] **3. Trustworthy orbital dynamics — active**
-- [ ] **4. Credible impact outcomes**
+- [x] ~~3. Trustworthy orbital dynamics~~
+- [ ] **4. Credible impact outcomes — active**
 - [ ] **5. Rotation and tidal evolution**
 - [ ] **6. Composition and thermal history**
 - [ ] **7. Stellar evolution and compact objects**
@@ -102,20 +102,18 @@ Implementation reference for units, radii, scenarios and compatibility:
 - [x] Validate forecast accuracy limits beyond the isolated two-body case,
   including omitted perturbers, tracer forces and contact timing.
 - [x] Define configurable removal boundaries and account for their losses.
-- [ ] Meet the existing self-test runtime limits with coverage enabled. The
+- [x] Meet the existing self-test runtime limits with coverage enabled. The
   tidal-disruption case must reach 60 simulation units within its 20-second
-  cutoff. Profile native integration, contact checks and tidal checks; preserve
-  the contact error bounds and solver tolerances when reducing overhead.
-- [ ] After the runtime fix, measure default/full-gravity costs and forecast
-  p95 latency against the 33 ms target, then pass `tools/dev.py check`.
+  cutoff without relaxing contact error bounds or solver tolerances.
+- [x] Measure default/full-gravity costs and forecast p95 latency against the
+  33 ms target; pass `tools/dev.py check`.
 
 Acceptance: documented long-duration error targets and convergence under tighter
 tolerances; no missed benchmark contacts; explicit approximation settings and
 measured runtime cost. Solver switching requires its own validation.
 
 Reference problems, numerical bounds and model limitations:
-[orbital dynamics](orbital-dynamics.md). Milestone 4 begins after these remaining
-runtime and validation gates pass.
+[orbital dynamics](orbital-dynamics.md).
 
 ## 4. Credible impact outcomes
 

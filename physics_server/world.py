@@ -781,29 +781,32 @@ class World:
         if n < 2:
             return
         names = snap["names"]
-        types = np.array([self.meta.get(nm, {}).get("type", ASTEROID) for nm in names])
-        heavy = np.nonzero(np.isin(types, HEAVY_TYPES))[0]
-        victims = np.nonzero(np.isin(types, list(TIDAL_DENSITY.keys())))[0]
+        types = [self.meta.get(nm, {}).get("type", ASTEROID) for nm in names]
+        heavy = np.array([i for i, kind in enumerate(types) if kind in HEAVY_TYPES], dtype=int)
+        victims = np.array([i for i, kind in enumerate(types) if kind in TIDAL_DENSITY], dtype=int)
         if len(heavy) == 0 or len(victims) == 0:
             return
         m, r, xyz = snap["m"], snap["r"], snap["xyz"]
-        for h in heavy:
-            cand = victims[(victims != h) & (m[victims] * 10.0 < m[h]) & (m[victims] >= TIDAL_MIN_MASS)]
-            if len(cand) == 0:
-                continue
-            if self.units == units.LEGACY:
-                dens = np.array([TIDAL_DENSITY[int(t)] for t in types[cand]])
-                r_t = TIDAL_K * np.cbrt(m[h] / dens)
-            else:
-                # Fluid Roche estimate using the victim's actual bulk radius.
-                r_t = 2.44 * r[cand] * np.cbrt(m[h] / m[cand])
-            valid = r_t > (r[h] + r[cand]) * 1.05
-            d = np.linalg.norm(xyz[cand] - xyz[h], axis=1)
-            hit = np.nonzero(valid & (d < r_t))[0]
-            if len(hit):
-                v = int(cand[hit[0]])
-                self._disrupt(names[v], names[h])
-                return  # one disruption per tick keeps things readable
+        # Batch eligible pairs in heavy-body then victim order, preserving the
+        # first-disruption rule without a Python loop over gravitating bodies.
+        hi, vi = np.nonzero((victims[None, :] != heavy[:, None])
+                            & (m[victims][None, :] * 10.0 < m[heavy][:, None])
+                            & (m[victims][None, :] >= TIDAL_MIN_MASS))
+        if len(hi) == 0:
+            return
+        h, cand = heavy[hi], victims[vi]
+        if self.units == units.LEGACY:
+            dens = np.array([TIDAL_DENSITY[types[i]] for i in cand])
+            r_t = TIDAL_K * np.cbrt(m[h] / dens)
+        else:
+            # Fluid Roche estimate using the victim's actual bulk radius.
+            r_t = 2.44 * r[cand] * np.cbrt(m[h] / m[cand])
+        valid = r_t > (r[h] + r[cand]) * 1.05
+        d = np.linalg.norm(xyz[cand] - xyz[h], axis=1)
+        hit = np.nonzero(valid & (d < r_t))[0]
+        if len(hit):
+            first = hit[0]
+            self._disrupt(names[cand[first]], names[h[first]])
 
     def _disrupt(self, victim_name, heavy_name):
         pv = self.particle(victim_name)
