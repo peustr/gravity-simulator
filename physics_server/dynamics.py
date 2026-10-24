@@ -76,7 +76,10 @@ class ContactGuard:
         self.check_at = -1.0
 
     def limit(self, sim, maximum):
-        if self.check_at <= sim.t:
+        # Refresh before a proposed step crosses the cached interval. Splitting
+        # at its old end can leave a tiny remainder that repeatedly shrinks
+        # IAS15's next proposed step, even when every surface is still distant.
+        if self.check_at <= sim.t + maximum:
             # Without a finite constraint, recheck on the next native call;
             # never cache an unbounded interval across changing trajectories.
             interval = contact_step_limit(sim, math.inf)

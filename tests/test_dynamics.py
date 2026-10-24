@@ -170,6 +170,23 @@ def test_separating_surface_pair_is_rechecked_before_turnaround():
     assert .01 < limit < .1 * (1 + 1e-8)**2 / 2
 
 
+def test_safe_step_does_not_stop_at_a_stale_guard_boundary():
+    sim = rebound.Simulation()
+    sim.G = 0
+    sim.dt = .1
+    sim.add(m=1, r=.01, x=-1, vx=1)
+    sim.add(m=1, r=.01, x=1, vx=-1)
+    guard = D.ContactGuard()
+    for _ in range(4):
+        D.step(sim, .1, guard)
+    sim.dt = .2
+    D.step(sim, .2, guard)
+    # Contact is at t=.99: a fresh check permits this whole step, without
+    # splitting at the first cached bound and shrinking the native timestep.
+    assert sim.t == pytest.approx(.6)
+    assert sim.particles[1].x - sim.particles[0].x == pytest.approx(.8)
+
+
 def test_forecast_matches_live_gravity_and_reports_omissions():
     outcome = V.forecast_accuracy()
     assert outcome['passed'], outcome
