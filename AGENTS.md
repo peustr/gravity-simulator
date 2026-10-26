@@ -60,6 +60,7 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 | `physics_server/server.py` | UDP loop (60 Hz), JSON commands, binary packing, `--selftest` |
 | `physics_server/diagnostics.py`, `validation.py` | Optional conservation accounting and physical reference problems |
 | `physics_server/dynamics.py`, `configuration.py` | Contact step guards and validated solver/approximation settings |
+| `physics_server/impacts.py` | Immutable pre-merge pair state and impact geometry/energy/angular-momentum measurements |
 | `docs/orbital-dynamics.md` | Accuracy targets, gravity/forecast options, removal boundaries and save migration |
 | `tools/benchmark.py` | Seeded performance workloads, profiling and JSON reports |
 | `docs/physics-roadmap.md` | Ordered realism milestones and current acceptance checklist |

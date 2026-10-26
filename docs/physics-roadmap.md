@@ -118,19 +118,25 @@ Reference problems, numerical bounds and model limitations:
 
 ## 4. Credible impact outcomes
 
-Start after Milestone 3's contact-detection checks pass: impact speed and geometry
-must be measured reliably before choosing the physical outcome.
+Complete these checkpoints in order:
 
-- [ ] Select and document calibrated impact laws and their mass, velocity,
-  material and geometry domains.
-- [ ] Distinguish accretion, erosion, disruption and hit-and-run outcomes using
-  impact geometry and material properties.
-- [ ] Track impact angular momentum, remnant spin and energy partition;
-  preserve physical budgets across outcome generation.
-- [ ] Preserve unresolved debris in an accounted reservoir/statistical model
-  when particle limits prevent explicit fragments.
-- [ ] Validate reference impacts, grazing encounters and particle-cap changes;
-  measure runtime and migrate saved scenes as new physical state is introduced.
+- [x] **4.1 Contact measurements:** capture immutable pre-merge state, contact
+  angle, relative kinetic energy and orbital angular momentum. Check analytic
+  values, coordinate/body-order invariance and capture through native merging.
+- [ ] **4.2 Calibrated classification:** select and document impact laws and
+  their mass, velocity, material and geometry domains. Compute accretion,
+  erosion, disruption and hit-and-run classifications and remnant masses
+  independently of particle capacity; validate reference and boundary cases.
+- [ ] **4.3 Conserved outcomes:** generate remnants and fragments with accounted
+  mass, momentum, orbital/remnant spin angular momentum and energy partition.
+- [ ] **4.4 Unresolved debris:** preserve material and its physical budgets in
+  an accounted reservoir/statistical model when explicit particle capacity runs
+  out; verify capacity changes cannot change the selected collision regime.
+- [ ] **4.5 Integration and validation:** apply the validated laws in their
+  supported domains, migrate persistent physical state, validate grazing and
+  reference impacts, and measure runtime on the representative workloads.
+
+Current measurement contract and model limits: [impact measurements](impact-measurements.md).
 
 Acceptance: representative impacts match reference outcomes and close their
 mass, momentum, angular-momentum, and energy budgets within documented errors;

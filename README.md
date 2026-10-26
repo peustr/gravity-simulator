@@ -324,6 +324,11 @@ A shared contact step guard limits approach to physical surfaces before collisio
 
 ### Collisions (`world.py → _handle_collision`)
 
+Contacts retain pre-merge [impact measurements](docs/impact-measurements.md),
+including encounter angle, relative kinetic energy and pair angular momentum.
+The outcomes below use heuristic disruption and fragment prescriptions; these
+are not calibrated material models.
+
 | Situation | Outcome |
 |---|---|
 | Anything touches a **black hole** | Swallowed. The black hole gains the mass and momentum and its disk flares. |

@@ -35,6 +35,7 @@ import rebound
 
 import units
 import configuration
+from impacts import capture as capture_impact
 from diagnostics import totals
 from dynamics import ContactGuard, step
 
@@ -497,6 +498,7 @@ class World:
             M = ms + mr
             rec = {
                 "s": s.name, "r": r.name, "ts": ts, "tr": tr,
+                "impact": capture_impact(s, r, sim.G),
                 "ms": ms, "mr": mr, "rs": s.r, "rr": r.r,
                 "vrel": (r.vx - s.vx, r.vy - s.vy, r.vz - s.vz),
                 "normal": _unit((r.x - s.x, r.y - s.y, r.z - s.z)),
@@ -597,7 +599,7 @@ class World:
         self._promote(rec["s"], self.particle(rec["s"]))
 
     def _try_shatter(self, p, rec, frag_type) -> bool:
-        """Simplified Leinhardt & Stewart (2012) catastrophic disruption.
+        """Disruption heuristic inspired by Leinhardt & Stewart (2012).
 
         Q_R  = specific impact energy (reduced-mass kinetic energy / total mass)
         Q*   = energy needed to disperse half the mass  (~ escape speed^2)
