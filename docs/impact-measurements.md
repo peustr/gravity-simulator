@@ -41,6 +41,9 @@ prescription are not a calibrated material model, and available particle slots
 can still turn fragmentation into a merger. The captured measurements do not
 classify hit-and-run events or assign remnant spin.
 
+The standalone [head-on disruption curves](impact-scaling.md) require SI inputs
+and explicit material selection; they are not connected to these contact records.
+
 `tests/test_impacts.py` checks hand-calculated oblique impacts, head-on and
 tangential geometry, body exchange, translation, velocity boosts, rotation,
 degenerate states and capture before native merging/fragmentation.

@@ -138,6 +138,18 @@ Complete these checkpoints in order:
 
 Current measurement contract and model limits: [impact measurements](impact-measurements.md).
 
+Checkpoint 4.2 implementation steps:
+
+- [x] **4.2a Head-on disruption curves:** explicit material calibrations and SI
+  inputs, mass-ratio scaling, largest-remnant mass and super-catastrophic branch;
+  published curve references, dimensional checks and boundary tests.
+- [ ] **4.2b Contact classification:** define enforced applicability and unit
+  conversion, handle oblique interacting mass, merging and hit-and-run boundaries,
+  and compute remnant masses without consulting particle capacity. Validate
+  supported domains and reject unsupported cases explicitly.
+
+Numerical model and API: [impact scaling](impact-scaling.md).
+
 Acceptance: representative impacts match reference outcomes and close their
 mass, momentum, angular-momentum, and energy budgets within documented errors;
 particle limits do not silently change the collision regime.

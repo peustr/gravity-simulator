@@ -38,7 +38,7 @@ The physics runs on **[REBOUND](https://rebound.hanno-rein.de/)**, an open-sourc
 - **Seven kinds of body:** rocky planets, gas giants, stars (coloured by temperature), neutron stars (pulsars), black holes, asteroids, and hot gas clouds.
 - **Collisions with consequences:**
   - Gentle impacts merge, conserving mass and momentum. The survivor glows molten for a while.
-  - Violent impacts shatter planets into fragments, using a simplified version of the Leinhardt & Stewart (2012) law that planetary scientists use.
+  - Violent impacts shatter planets into fragments using an energy-based heuristic inspired by Leinhardt & Stewart (2012).
   - Black holes swallow anything that crosses their event horizon, and their accretion disks flare up and fire jets while they feed.
   - Bodies that pass inside a heavier body's Roche limit are torn apart by tides ("spaghettification").
 - **Stellar life cycle:**
