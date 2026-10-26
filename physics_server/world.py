@@ -212,6 +212,7 @@ class World:
         sim.collision_resolve = self._resolve_collision
         self.sim = sim
         self._contact_guard = ContactGuard()
+        self._tidal_pairs = None
         self.events.clear()
         self.notices.clear()
         self._partition_dirty = True
@@ -308,6 +309,7 @@ class World:
             return
         self._partition_dirty = False
         self._contact_guard.reset()
+        self._tidal_pairs = None
         sim = self.sim
         n = sim.N
         if n == 0:
@@ -776,37 +778,41 @@ class World:
 
     # ------------------------------------------------------- tidal disruption
     def _tidal_check(self):
-        snap = self.snapshot()
-        n = snap["n"]
-        if n < 2:
+        if self.sim.N < 2:
             return
-        names = snap["names"]
-        types = [self.meta.get(nm, {}).get("type", ASTEROID) for nm in names]
-        heavy = np.array([i for i, kind in enumerate(types) if kind in HEAVY_TYPES], dtype=int)
-        victims = np.array([i for i, kind in enumerate(types) if kind in TIDAL_DENSITY], dtype=int)
-        if len(heavy) == 0 or len(victims) == 0:
+        if self._tidal_pairs is None or self._partition_dirty:
+            # Masses, radii, types and array order stay fixed between body
+            # edits. Repartitioning invalidates these pairs after every edit;
+            # direct checks before repartitioning also rebuild the cache.
+            snap = self.snapshot()
+            types = [self.meta.get(nm, {}).get("type", ASTEROID) for nm in snap["names"]]
+            heavy = np.array([i for i, kind in enumerate(types) if kind in HEAVY_TYPES], dtype=int)
+            victims = np.array([i for i, kind in enumerate(types) if kind in TIDAL_DENSITY], dtype=int)
+            m, r = snap["m"], snap["r"]
+            # Row-major pair order preserves the first-disruption rule.
+            hi, vi = np.nonzero((victims[None, :] != heavy[:, None])
+                                & (m[victims][None, :] * 10.0 < m[heavy][:, None])
+                                & (m[victims][None, :] >= TIDAL_MIN_MASS))
+            h, cand = heavy[hi], victims[vi]
+            if self.units == units.LEGACY:
+                dens = np.array([TIDAL_DENSITY[types[i]] for i in cand])
+                r_t = TIDAL_K * np.cbrt(m[h] / dens)
+            else:
+                # Fluid Roche estimate using the victim's actual bulk radius.
+                r_t = 2.44 * r[cand] * np.cbrt(m[h] / m[cand])
+            valid = r_t > (r[h] + r[cand]) * 1.05
+            self._tidal_pairs = h[valid], cand[valid], r_t[valid] ** 2
+            self._tidal_xyz = np.empty(3 * self.sim.N)
+        h, cand, radius2 = self._tidal_pairs
+        if len(h) == 0:
             return
-        m, r, xyz = snap["m"], snap["r"], snap["xyz"]
-        # Batch eligible pairs in heavy-body then victim order, preserving the
-        # first-disruption rule without a Python loop over gravitating bodies.
-        hi, vi = np.nonzero((victims[None, :] != heavy[:, None])
-                            & (m[victims][None, :] * 10.0 < m[heavy][:, None])
-                            & (m[victims][None, :] >= TIDAL_MIN_MASS))
-        if len(hi) == 0:
-            return
-        h, cand = heavy[hi], victims[vi]
-        if self.units == units.LEGACY:
-            dens = np.array([TIDAL_DENSITY[types[i]] for i in cand])
-            r_t = TIDAL_K * np.cbrt(m[h] / dens)
-        else:
-            # Fluid Roche estimate using the victim's actual bulk radius.
-            r_t = 2.44 * r[cand] * np.cbrt(m[h] / m[cand])
-        valid = r_t > (r[h] + r[cand]) * 1.05
-        d = np.linalg.norm(xyz[cand] - xyz[h], axis=1)
-        hit = np.nonzero(valid & (d < r_t))[0]
+        self.sim.serialize_particle_data(xyz=self._tidal_xyz)
+        xyz = self._tidal_xyz.reshape(-1, 3)
+        delta = xyz[cand] - xyz[h]
+        hit = np.nonzero(np.einsum('ij,ij->i', delta, delta) < radius2)[0]
         if len(hit):
             first = hit[0]
-            self._disrupt(names[cand[first]], names[h[first]])
+            self._disrupt(self._names[cand[first]], self._names[h[first]])
 
     def _disrupt(self, victim_name, heavy_name):
         pv = self.particle(victim_name)

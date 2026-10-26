@@ -33,7 +33,7 @@ def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION):
     i, j = _pairs(sim.N)
     dx = x.reshape(-1, 3)[j] - x.reshape(-1, 3)[i]
     dv = v.reshape(-1, 3)[j] - v.reshape(-1, 3)[i]
-    distance = np.linalg.norm(dx, axis=1)
+    distance = np.sqrt(np.einsum('ij,ij->i', dx, dx))
     radius = r[i] + r[j]
     radial = np.einsum('ij,ij->i', dx, dv) / np.maximum(distance, 1e-300)
     # Outside surfaces, gravity can turn an initially receding pair around
@@ -49,17 +49,16 @@ def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION):
     speed = np.maximum(-radial, 0) + np.sqrt(2 * mu / np.maximum(distance, 1e-300))
     scale = np.maximum(distance - radius, fraction * radius)
     candidates = eligible & (radius > 0) & (speed > 0)
-    if not np.any(candidates):
-        return maximum
-    interval = 0.5 * scale[candidates] / speed[candidates]
+    interval = np.full(len(i), math.inf)
+    np.divide(0.5 * scale, speed, out=interval, where=candidates)
     # An outgoing pair must turn around before closing its gap. While it is
     # separating, its mutual inward acceleration is at most mu / distance**2;
     # tangential motion only delays the turn. Half that minimum turnaround
     # time avoids tiny steps for ejecta just outside a surface, while still
     # rechecking bound outgoing trajectories before they approach again.
-    outgoing = (radial[candidates] > 0) & (mu[candidates] > 0)
-    interval[outgoing] += (0.5 * radial[candidates][outgoing] * distance[candidates][outgoing]**2
-                           / mu[candidates][outgoing])
+    delay = np.zeros(len(i))
+    np.divide(0.5 * np.maximum(radial, 0) * distance**2, mu, out=delay, where=mu > 0)
+    interval += delay
     return min(maximum, float(np.min(interval)))
 
 
