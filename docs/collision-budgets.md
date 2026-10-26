@@ -55,15 +55,71 @@ where equatorial centrifugal acceleration reaches surface gravity. This is a
 necessary retention screen, not a demonstration of fluid-shape stability.
 Neither rejection selects a different collision regime automatically.
 
-This is a conditional outcome constructor, not a merger criterion. It assumes a
-fixed spherical shape and no material strength, pressure-driven expansion, radiation, mass loss,
-external gravitational work, composition changes or equation of state. Internal
-energy therefore records an accounted reservoir without predicting temperature.
+## Multiple-remnant allocation
+
+`allocate_remnants(a, b, layout, expansion_fraction=...)` accepts two touching,
+approaching or stationary spheres and at least two immutable `RemnantSpec` entries.
+Each entry prescribes a mass, radius and relative position offset. Mass and total
+volume must match the incoming inventory to 10⁻¹² relative tolerance; overlapping
+layouts are rejected. Masses and radii are never adjusted to make a layout fit.
+The allocator recentres the offsets at the incoming centre of mass and preserves
+their relative spacing. Returned states follow the layout's order.
+
+For centred offsets **rᵢ**, spherical moments Iᵢ and incoming angular momentum **L**
+in the centre-of-mass frame, the combined inertia tensor determines a common
+angular velocity:
+
+```text
+J = Σ [mᵢ (|rᵢ|² identity − rᵢ rᵢᵀ) + Iᵢ identity]
+J ω = L
+v_rotation,i = ω × rᵢ
+Sᵢ = Iᵢ ω
+```
+
+This is the minimum kinetic energy needed to carry **L** for the prescribed
+layout, allowing both orbital motion and spin. Intrinsic spherical moments allow
+collinear layouts to carry angular momentum along their axis. Inertia condition
+numbers above 10¹² are rejected as numerically unresolved. Each remnant must also
+pass the same spherical spin screen as a single remnant.
+
+Subtract the final self-binding, mutual potential and minimum kinetic energy from
+the incoming centre-of-mass energy to obtain the excess energy E. Negative E
+rejects the layout. For an explicitly supplied fraction f between zero and one:
+
+```text
+H = sqrt(2 f E / Σ mᵢ |rᵢ|²)
+vᵢ = v_centre + ω × rᵢ + H rᵢ
+internal_energyᵢ = (mᵢ / M) (1 − f) E
+```
+
+Radial expansion adds no net momentum or angular momentum and is perpendicular
+to the rotational velocity. It assigns f E to outward motion; the remainder is
+shared as uniform specific internal energy. Pair separations are initially
+nondecreasing, but fragments may remain gravitationally bound and reaccrete.
+No particle-capacity limit enters this calculation.
+
+Masses, radii, spacing and f are caller choices, not a calibrated ejecta model.
+In particular, supplying classified runner/debris masses does not establish a
+hit-and-run escape trajectory. Spin rejection excludes this common-rotation
+allocation; it does not prove that every angular-momentum partition is infeasible.
+Neither an allocation nor its rejection selects a different collision regime.
+
+## Applicability and validation
+
+These are conditional constructors, not collision-selection criteria. They assume
+fixed spherical shapes and no material strength, pressure-driven expansion,
+radiation, external gravitational work, composition changes or equation of state.
+Internal energy records an accounted reservoir without predicting temperature.
 Input spins are accounted mathematically; the classifier still assumes nonrotating
-bodies. Shallow native overlaps need contact reconstruction before use. Remnant
-stability, multiple remnants, fragments and full-scene integration require further
-models.
+bodies. Shallow native overlaps need contact reconstruction before use. Regime-specific
+layouts, escape and stability checks, and full-scene integration require further models.
 
 Tests check analytic binding-energy release, incoming/orbital spin transfer,
 mass/momentum/angular-momentum/energy closure, body exchange, inertial-frame
-changes, energy and spin exclusions, immutable state and invalid inputs.
+changes, energy and spin exclusions, immutable state and invalid inputs. Multiple
+remnants include unequal and collinear layouts, classified intact/eroded runner
+masses, and zero/partial/full expansion-energy allocation. Their conservation
+residuals are bounded by 10⁻¹² times the sums of the corresponding physical term
+magnitudes before cancellation, rather than by a potentially zero net budget.
+These are numerical closure bounds for the test cases, not accuracy claims for
+fragment sizes, directions or internal-energy fractions.

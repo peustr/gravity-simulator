@@ -166,14 +166,16 @@ Checkpoint 4.3 implementation steps:
   translational, rotational, self-binding, mutual and internal energy; construct
   feasible isolated mergers preserving mass, momentum and angular momentum.
   Check analytic cases, inertial-frame invariance, energy deficits and spin limits.
-- [ ] **4.3b Multiple remnants and fragments:** allocate positions, velocities,
+- [x] **~~4.3b Multiple remnants and fragments~~:** allocate positions, velocities,
   spin and internal energy for classified runner/debris masses. Close all budgets
-  and reject infeasible allocations without silently changing the regime.
+  for prescribed layouts and reject infeasible allocations without silently changing
+  the regime. Layout and expansion-energy parameters remain uncalibrated.
 - [ ] **4.3c Outcome validation:** connect classification to supported outcome
-  constructors, define handling for approximate contact states and check reference
-  impacts and conservation across regimes. Live application remains in 4.5.
+  constructors, define handling for approximate contact states, and validate
+  regime-specific layouts, runner escape and reference impacts with conservation
+  across regimes. Live application remains in 4.5.
 
-State, inventory and merger contract: [collision budgets](collision-budgets.md).
+State, inventory and outcome contracts: [collision budgets](collision-budgets.md).
 
 Acceptance: representative impacts match reference outcomes and close their
 mass, momentum, angular-momentum, and energy budgets within documented errors;
