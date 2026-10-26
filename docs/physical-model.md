@@ -56,11 +56,10 @@ The solar preset uses approximate planetary masses and orbital distances, a
 384,400 km Earth–Moon separation, three Jovian moon distances, and Titan.
 Satellite pairs start with circular relative velocities and preserve their
 parent's centre-of-mass position and momentum. Orbital phases are illustrative;
-this is not an ephemeris. Saturn's ring material is not resolved; statistical
-ring models belong to the specialised-mode milestone. Solar playback starts at
+this is not an ephemeris. Saturn's ring material is not resolved. Solar playback starts at
 x0.1 (one simulation unit per real second); Io then takes about 0.45 seconds per
-orbit rather than 0.045 seconds at x1. The belt uses low-mass tracers; they have
-no gravitational back-reaction. The formation preset is an embryo disk, not a
+orbit rather than 0.045 seconds at x1. The belt uses low-mass tracers by default;
+full gravity enables their back-reaction. The formation preset is an embryo disk, not a
 calibrated accretion model.
 
 The black-hole preset uses a stellar-mass hole and a star passing inside its
@@ -73,13 +72,16 @@ parabolic encounter.
 
 Physical scenes allow IAS15 to choose timesteps without a minimum floor. The
 server's wall-clock budget limits progress, not accuracy tolerance. One native
-step can exceed the budget. Direct collision detection and the truncated
-20-body forecast still need the convergence/contact validation in Milestone 3;
-compact-object dynamics are Newtonian, not relativistic. Forecasts end at the
-first contact between any bodies; only contact with the proposed body receives
-an impact marker. The preview does not invent post-collision outcomes. Radial
-compact-object captures can still produce IAS15 convergence warnings; passing
-outcome checks do not establish accuracy for those encounters.
+step can exceed the budget. Forecasts check their deadline before each native
+step and cap that step at the next sampling time. An expired budget returns
+the finite path reached so far, including an unfinished sample when possible;
+it never increases the solver tolerance. This bounds work between deadline
+checks to one step, not a hard wall-time guarantee for that step or setup.
+A shared contact step guard resolves approaching surfaces before direct overlap
+detection. Compact-object dynamics remain Newtonian, not relativistic. Forecasts
+end at first contact; only contact with the proposed body receives an impact
+marker. See [orbital dynamics](orbital-dynamics.md) for accuracy gates, contact
+limits, full/tracer gravity, forecast scope and removal accounting.
 
 ## Presentation and compatibility
 
@@ -99,12 +101,14 @@ Selection uses generous pixel targets. The placement ghost uses the contact
 radius returned by Python plus the selected display enlargement. Forecasts and
 placement commands never contain display enlargement.
 
-Version-2 scene files store the unit/radius model and a camera `display_scale`.
+Version-3 scene files store the unit/radius model, physics settings, removal
+inventory and a camera `display_scale`. Version-2 files receive the previous
+default physics settings when loaded.
 Changing these unit or model definitions requires a new identifier.
 Version-1 files load as `legacy-sandbox-v1`, preserving masses, radii, coordinates,
 velocities, times, speeds, random state and the old radius/disruption rules.
 They retain the old minimum timestep of 1e-4 and are labelled **legacy units** in
-the HUD. Re-saving writes version 2 with the legacy identifier; it does not
+the HUD. Re-saving writes version 3 with the legacy identifier; it does not
 reinterpret sandbox values as measured SI quantities. Clear or load a preset to
 start a physical scene. Unknown unit identifiers are rejected before replacement.
 

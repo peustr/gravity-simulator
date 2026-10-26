@@ -245,6 +245,57 @@ def test_tidal_disruption_requires_existing_bodies_and_room():
     assert not w.events
 
 
+@pytest.mark.parametrize('model', [W.units.SYSTEM, W.units.LEGACY])
+def test_tides_preserve_first_heavy_then_first_victim_order(model):
+    w = W.World()
+    w.units = model
+    roche = (W.TIDAL_K * np.cbrt(1000 / W.TIDAL_DENSITY[W.ROCKY])
+             if model == W.units.LEGACY else 2.44 * .1 * np.cbrt(1000))
+    add(w, W.BLACK_HOLE, 1000)
+    add(w, W.ROCKY, 1, pos=(100.5 * roche, 0, 0))
+    add(w, W.BLACK_HOLE, 1000, pos=(100 * roche, 0, 0))
+    add(w, W.ROCKY, 1, pos=(.5 * roche, 0, 0))
+    add(w, W.ROCKY, 1, pos=(.75 * roche, 0, 0))
+    for name in ('2', '4', '5'):
+        w.particle(name).r = .1
+    w._disrupt = Mock()
+    # Both attractors can disrupt bodies. Resolve only one per check, keeping
+    # the original attractor priority even when its victim has a later ID.
+    for victim, attractor in (('4', '1'), ('5', '1'), ('2', '3')):
+        w._disrupt.reset_mock()
+        w._tidal_check()
+        w._disrupt.assert_called_once_with(victim, attractor)
+        w.remove_body(int(victim))
+
+
+def test_tidal_candidates_follow_motion_removal_and_promotion():
+    w = W.World()
+    debris = add(w, W.ASTEROID, .01, pos=(100, 0, 0))
+    primary = add(w, W.BLACK_HOLE, 20000)
+    victim = add(w, W.ROCKY, 1, pos=(100, 0, 0))
+    w.particle(str(victim)).r = .1
+    w._repartition()  # Move the passive debris behind the active bodies.
+    w._disrupt = Mock()
+    w._tidal_check()
+    w._disrupt.assert_not_called()
+
+    w.particle(str(victim)).x = 1
+    w._tidal_check()  # Reused candidates still check the current position.
+    w._disrupt.assert_called_once_with(str(victim), str(primary))
+    w._disrupt.reset_mock()
+    w.remove_body(victim)
+    w._repartition()
+    w._tidal_check()
+    w._disrupt.assert_not_called()
+
+    particle = w.particle(str(debris))
+    particle.m, particle.x = 1, .001
+    w._promote(str(debris), particle)
+    w._repartition()
+    w._tidal_check()  # A newly eligible body must replace the empty candidates.
+    w._disrupt.assert_called_once_with(str(debris), str(primary))
+
+
 def test_placement_velocities_for_empty_polar_and_interior_positions():
     w = W.World()
     vel, attractor, kick = w.initial_velocity((0, 0, 0), .003, 'launch', (2, 0, 0), w.snapshot())

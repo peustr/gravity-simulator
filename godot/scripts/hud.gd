@@ -7,6 +7,7 @@ signal pause_toggled
 signal speed_step(direction: int)
 signal preset_chosen(preset: String)
 signal scene_action(action: String)
+signal physics_changed(settings: Dictionary)
 signal clear_requested
 signal follow_requested
 signal delete_requested
@@ -33,6 +34,8 @@ const C_WARN := Color(1.0, 0.75, 0.35)
 const C_BAD := Color(1.0, 0.45, 0.4)
 
 var root: Control
+var physics_menu: PopupMenu
+var physics_settings := {}
 var ui_visible := true
 var tool_buttons := {}
 var _tool_group := ButtonGroup.new()
@@ -279,9 +282,16 @@ func _build_top_bar() -> void:
 	files.focus_mode = Control.FOCUS_NONE
 	files.flat = false
 	var file_menu := files.get_popup()
+	physics_menu = file_menu
 	for label in ["Save scene...", "Load scene...", "Set restart point", "Restart experiment..."]:
 		file_menu.add_item(label)
-	file_menu.id_pressed.connect(func(i: int): scene_action.emit(["save_scene", "load_scene", "checkpoint", "restart"][i]))
+	file_menu.add_separator("Physics")
+	file_menu.add_check_item("Full gravity, including debris", 10)
+	file_menu.add_check_item("Include all bodies in forecasts", 11)
+	file_menu.add_check_item("Remove bodies beyond the boundary", 12)
+	file_menu.add_item("Waiting for physics settings...", 13)
+	file_menu.set_item_disabled(file_menu.get_item_index(13), true)
+	file_menu.id_pressed.connect(_experiment_action)
 	h.add_child(files)
 	var clear := _button("Clear", "Remove everything")
 	clear.pressed.connect(func(): clear_requested.emit())
@@ -289,6 +299,33 @@ func _build_top_bar() -> void:
 	var help_btn := _button("Help", "Controls and tips  (H)")
 	help_btn.pressed.connect(toggle_help)
 	h.add_child(help_btn)
+
+
+func _experiment_action(id: int) -> void:
+	if id < 4:
+		scene_action.emit(["save_scene", "load_scene", "checkpoint", "restart"][id])
+	elif not physics_settings.is_empty():
+		match id:
+			10:
+				physics_changed.emit({"gravity": "tracers" if physics_settings.gravity == "full" else "full"})
+			11:
+				physics_changed.emit({"forecast_limit": 20 if physics_settings.forecast_limit == 0 else 0})
+			12:
+				physics_changed.emit({"escape_distance": 15000.0 if physics_settings.escape_distance == null else null})
+
+
+func set_physics(info: Dictionary) -> void:
+	physics_settings = info.get("settings", {})
+	if physics_settings.is_empty():
+		return
+	physics_menu.set_item_checked(physics_menu.get_item_index(10), physics_settings.gravity == "full")
+	physics_menu.set_item_checked(physics_menu.get_item_index(11), physics_settings.forecast_limit == 0)
+	physics_menu.set_item_checked(physics_menu.get_item_index(12), physics_settings.escape_distance != null)
+	physics_menu.set_item_text(physics_menu.get_item_index(13), "Tracers: %d · %.6f%% of total mass" % [int(info.get("tracers", 0)), 100.0 * float(info.get("tracer_mass_fraction", 0.0))])
+	physics_menu.set_item_tooltip(physics_menu.get_item_index(10), "Full gravity includes all mutual forces and costs more for large debris clouds. Tracers feel gravity but exert none; their collective mass can matter.")
+	physics_menu.set_item_tooltip(physics_menu.get_item_index(11), "All-body forecasts use the scene's gravity model. The time budget can shorten the path. Limited forecasts omit weaker perturbers and have no general error bound.")
+	var removed: Dictionary = info.get("removed", {})
+	physics_menu.set_item_tooltip(physics_menu.get_item_index(12), "Removal uses distance from the fixed scene origin, regardless of binding energy. Boundary: %s simulation units; removed bodies: %d. Re-enabling uses 15000 units (250 AU in physical scenes)." % [str(physics_settings.escape_distance), int(removed.get("bodies", 0))])
 
 
 # ------------------------------------------------------------------ toolbar

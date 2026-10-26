@@ -34,6 +34,9 @@ import numpy as np
 import rebound
 
 import units
+import configuration
+from diagnostics import totals
+from dynamics import ContactGuard, step
 
 # REBOUND rebuilds its name lookup table on its own; the warning is just noise.
 warnings.filterwarnings("ignore", message=".*hash table.*")
@@ -172,6 +175,7 @@ class World:
             raise ValueError(f"max_bodies must be an integer from 1 to {MAX_BODIES}")
         self.max_bodies = max_bodies
         self.units = units.SYSTEM
+        self.settings = configuration.DEFAULTS.copy()
         self.rng = random.Random(seed)
         self.speed = 10.0          # simulation time units per real second
         self.paused = False
@@ -196,14 +200,19 @@ class World:
     # ------------------------------------------------------------------ setup
     def _new_simulation(self):
         self.ledger = None  # opt-in accounting applies to one world history
+        self.removed = dict(bodies=0, mass=0.0, momentum=[0.0] * 3, angular_momentum=[0.0] * 3,
+                            energy=0.0, energy_defined=True)
         sim = rebound.Simulation()
         sim.G = G
         sim.integrator = "ias15"
         # Physical compact objects need timesteps below the old sandbox floor.
         sim.integrator.min_dt = 1e-4 if self.units == units.LEGACY else 0.0
+        sim.integrator.epsilon = self.settings['epsilon']
         sim.collision = "direct"
         sim.collision_resolve = self._resolve_collision
         self.sim = sim
+        self._contact_guard = ContactGuard()
+        self._tidal_pairs = None
         self.events.clear()
         self.notices.clear()
         self._partition_dirty = True
@@ -219,6 +228,24 @@ class World:
     def clear(self):
         self.units = units.SYSTEM
         self._new_simulation()
+
+    def configure(self, changes):
+        configuration.settings(changes, partial=True)
+        self.settings = configuration.settings(self.settings | changes)
+        self.sim.integrator.epsilon = self.settings['epsilon']
+        self._partition_dirty = True
+        self._repartition()
+        self.sim.did_modify_particles = 1
+        self.version += 1
+
+    def gravity_summary(self):
+        snap = self.snapshot()
+        passive = [self.is_light(self.meta[n]['type'], mass)
+                   for n, mass in zip(snap['names'], snap['m'], strict=True)]
+        omitted = float(snap['m'][passive].sum())
+        total = float(snap['m'].sum())
+        return dict(settings=self.settings.copy(), tracers=sum(passive), tracer_mass=omitted,
+                    tracer_mass_fraction=omitted / total if total else 0.0, removed=self.removed.copy())
 
     def radius_for(self, btype, mass):
         model = legacy_radius_for if self.units == units.LEGACY else radius_for
@@ -264,9 +291,8 @@ class World:
         return bid
 
     # ------------------------------------------------- massive vs test particles
-    @staticmethod
-    def is_light(btype, mass) -> bool:
-        return btype in LIGHT_TYPES and mass < LIGHT_MASS
+    def is_light(self, btype, mass) -> bool:
+        return bool(self.settings['gravity'] == 'tracers' and btype in LIGHT_TYPES and mass < LIGHT_MASS)
 
     def _swap(self, i, j):
         ps = self.sim.particles
@@ -282,6 +308,8 @@ class World:
         if not self._partition_dirty:
             return
         self._partition_dirty = False
+        self._contact_guard.reset()
+        self._tidal_pairs = None
         sim = self.sim
         n = sim.N
         if n == 0:
@@ -370,8 +398,7 @@ class World:
                     # An adaptive step may span several display ticks. Stop at
                     # this tick's target instead of publishing a future state
                     # followed by repeated frozen states while time catches up.
-                    sim.dt = min(sim.dt, self._target_t - sim.t)
-                    sim.steps(1)
+                    step(sim, self._target_t - sim.t, self._contact_guard)
                 except rebound.NoParticles:
                     sim.t = self._target_t
                     break
@@ -411,14 +438,30 @@ class World:
             self.supernova(self._supernova_queue.pop(), natural=True)
 
     def _cull_escapers(self):
+        boundary = self.settings['escape_distance']
+        if boundary is None:
+            return
         snap = self.snapshot()
         if snap["n"] == 0:
             return
         d2 = np.einsum("ij,ij->i", snap["xyz"], snap["xyz"])
-        far = np.nonzero(d2 > ESCAPE_DISTANCE ** 2)[0]
+        far = np.nonzero(d2 > boundary ** 2)[0]
         before = self.ledger.capture(self) if self.ledger is not None and len(far) else None
+        energy = None
+        if len(far):
+            mass, pos, vel = snap['m'][far], snap['xyz'][far], snap['v'][far]
+            self.removed['bodies'] += len(far)
+            self.removed['mass'] += float(mass.sum())
+            for key, vectors in (('momentum', vel), ('angular_momentum', np.cross(pos, vel))):
+                self.removed[key] = (np.asarray(self.removed[key]) + (mass[:, None] * vectors).sum(axis=0)).tolist()
+            try:
+                energy = totals(self)['energy']
+            except ValueError:
+                self.removed['energy_defined'] = False
         for i in sorted(far, reverse=True):
             self.remove_body(int(snap["names"][i]))
+        if energy is not None:
+            self.removed['energy'] += energy - totals(self)['energy']
         if before is not None:
             self.ledger.record('escape_boundary', before, self.ledger.capture(self))
 
@@ -735,34 +778,41 @@ class World:
 
     # ------------------------------------------------------- tidal disruption
     def _tidal_check(self):
-        snap = self.snapshot()
-        n = snap["n"]
-        if n < 2:
+        if self.sim.N < 2:
             return
-        names = snap["names"]
-        types = np.array([self.meta.get(nm, {}).get("type", ASTEROID) for nm in names])
-        heavy = np.nonzero(np.isin(types, HEAVY_TYPES))[0]
-        victims = np.nonzero(np.isin(types, list(TIDAL_DENSITY.keys())))[0]
-        if len(heavy) == 0 or len(victims) == 0:
-            return
-        m, r, xyz = snap["m"], snap["r"], snap["xyz"]
-        for h in heavy:
-            cand = victims[(victims != h) & (m[victims] * 10.0 < m[h]) & (m[victims] >= TIDAL_MIN_MASS)]
-            if len(cand) == 0:
-                continue
+        if self._tidal_pairs is None or self._partition_dirty:
+            # Masses, radii, types and array order stay fixed between body
+            # edits. Repartitioning invalidates these pairs after every edit;
+            # direct checks before repartitioning also rebuild the cache.
+            snap = self.snapshot()
+            types = [self.meta.get(nm, {}).get("type", ASTEROID) for nm in snap["names"]]
+            heavy = np.array([i for i, kind in enumerate(types) if kind in HEAVY_TYPES], dtype=int)
+            victims = np.array([i for i, kind in enumerate(types) if kind in TIDAL_DENSITY], dtype=int)
+            m, r = snap["m"], snap["r"]
+            # Row-major pair order preserves the first-disruption rule.
+            hi, vi = np.nonzero((victims[None, :] != heavy[:, None])
+                                & (m[victims][None, :] * 10.0 < m[heavy][:, None])
+                                & (m[victims][None, :] >= TIDAL_MIN_MASS))
+            h, cand = heavy[hi], victims[vi]
             if self.units == units.LEGACY:
-                dens = np.array([TIDAL_DENSITY[int(t)] for t in types[cand]])
+                dens = np.array([TIDAL_DENSITY[types[i]] for i in cand])
                 r_t = TIDAL_K * np.cbrt(m[h] / dens)
             else:
                 # Fluid Roche estimate using the victim's actual bulk radius.
                 r_t = 2.44 * r[cand] * np.cbrt(m[h] / m[cand])
             valid = r_t > (r[h] + r[cand]) * 1.05
-            d = np.linalg.norm(xyz[cand] - xyz[h], axis=1)
-            hit = np.nonzero(valid & (d < r_t))[0]
-            if len(hit):
-                v = int(cand[hit[0]])
-                self._disrupt(names[v], names[h])
-                return  # one disruption per tick keeps things readable
+            self._tidal_pairs = h[valid], cand[valid], r_t[valid] ** 2
+            self._tidal_xyz = np.empty(3 * self.sim.N)
+        h, cand, radius2 = self._tidal_pairs
+        if len(h) == 0:
+            return
+        self.sim.serialize_particle_data(xyz=self._tidal_xyz)
+        xyz = self._tidal_xyz.reshape(-1, 3)
+        delta = xyz[cand] - xyz[h]
+        hit = np.nonzero(np.einsum('ij,ij->i', delta, delta) < radius2)[0]
+        if len(hit):
+            first = hit[0]
+            self._disrupt(self._names[cand[first]], self._names[h[first]])
 
     def _disrupt(self, victim_name, heavy_name):
         pv = self.particle(victim_name)
@@ -808,12 +858,15 @@ class World:
         d = snap["xyz"] - np.asarray(pos)
         d2 = np.einsum("ij,ij->i", d, d) + snap["r"] ** 2
         score = snap["m"] / d2
+        for k, name in enumerate(snap['names']):
+            if self.is_light(self.meta[name]['type'], snap['m'][k]):
+                score[k] = 0
         if exclude is not None:
             score[exclude] = -1
         i = int(np.argmax(score))
         return i if score[i] > 0 else None
 
-    def initial_velocity(self, pos, mass, mode, drag, snap):
+    def initial_velocity(self, pos, mass, mode, drag, snap, tracer=False):
         """Velocity for a new body plus the attractor index and its velocity kick.
 
         orbit  - a circular, prograde orbit around the strongest attractor. If
@@ -832,7 +885,7 @@ class World:
         ma = float(snap["m"][a])
         rel = _sub(tuple(pos), xa)
         d = max(_norm(rel), 1e-6)
-        v_circ = math.sqrt(G * (ma + mass) / d)
+        v_circ = math.sqrt(G * (ma + (0 if tracer else mass)) / d)
         if d < float(snap["r"][a]):
             return va, a, (0.0, 0.0, 0.0)   # inside the attractor: just match its motion
         if mode == "launch":
@@ -842,7 +895,7 @@ class World:
         if _norm(t) < 1e-6 * d:
             t = _cross((1.0, 0.0, 0.0), rel)
         t = _unit(t)
-        if mass > ma:
+        if mass > ma and not tracer:
             v_new = _add(va, _mul(t, v_circ * ma / (ma + mass)))
             kick = _mul(t, -v_circ * mass / (ma + mass))
             return v_new, a, kick
@@ -861,7 +914,7 @@ class World:
         if np.any(touching):
             self.notice("Cannot place a body overlapping another body. Move it farther away.")
             return None
-        vel, a, kick = self.initial_velocity(pos, mass, mode, drag, snap)
+        vel, a, kick = self.initial_velocity(pos, mass, mode, drag, snap, tracer=self.is_light(btype, mass))
         if a is not None and _norm(kick) > 0:
             pa = self.sim.particles[a]
             pa.vx += kick[0]
@@ -909,7 +962,7 @@ class World:
         t0 = time.perf_counter()
         mass = DEFAULT_MASS[btype] * mass_mult
         snap = self.snapshot()
-        vel, a, kick = self.initial_velocity(pos, mass, mode, drag, snap)
+        vel, a, kick = self.initial_velocity(pos, mass, mode, drag, snap, tracer=self.is_light(btype, mass))
         if snap["n"] == 0:
             return {"points": [], "hit": False, "attractor": -1, "vel": vel, "radius": self.radius_for(btype, mass)}
         gap = np.linalg.norm(snap["xyz"] - np.asarray(pos), axis=1)
@@ -918,15 +971,34 @@ class World:
             return {"points": [tuple(pos)], "hit": True, "attractor": aid, "vel": vel, "radius": self.radius_for(btype, mass)}
         d = snap["xyz"] - np.asarray(pos)
         score = snap["m"] / (np.einsum("ij,ij->i", d, d) + snap["r"] ** 2)
-        order = list(np.argsort(-score)[:20])
+        for i, name in enumerate(snap['names']):
+            if self.is_light(self.meta[name]['type'], snap['m'][i]):
+                score[i] = 0
+        limit = self.settings['forecast_limit'] or snap['n']
+        order = list(np.argsort(-score)[:limit])
         if a is not None and a not in order:
             order.append(a)
+        included = set(order)
+        omitted_mass = float(sum(snap['m'][i] for i in range(snap['n']) if i not in included
+                                 and not self.is_light(self.meta[snap['names'][i]]['type'], snap['m'][i])))
+        # Match the live force model: active bodies first, then passive tracers.
+        # The proposed body also belongs to the correct partition.
+        def passive(i):
+            return self.is_light(btype, mass) if i == -1 else self.is_light(self.meta[snap['names'][i]]['type'], snap['m'][i])
+        order.append(-1)
+        order.sort(key=passive)
         mini = rebound.Simulation()
         mini.G = G
         mini.integrator = "ias15"
         mini.integrator.min_dt = self.sim.integrator.min_dt
+        mini.integrator.epsilon = self.sim.integrator.epsilon
         a_local = None
+        r_new = self.radius_for(btype, mass)
         for k, i in enumerate(order):
+            if i == -1:
+                test = k
+                mini.add(m=mass, r=r_new, x=pos[0], y=pos[1], z=pos[2], vx=vel[0], vy=vel[1], vz=vel[2])
+                continue
             vx, vy, vz = snap["v"][i]
             if a is not None and i == a:
                 vx, vy, vz = vx + kick[0], vy + kick[1], vz + kick[2]
@@ -934,9 +1006,7 @@ class World:
             x, y, z = snap["xyz"][i]
             mini.add(m=float(snap["m"][i]), r=float(snap["r"][i]),
                      x=float(x), y=float(y), z=float(z), vx=float(vx), vy=float(vy), vz=float(vz))
-        test = mini.N
-        r_new = self.radius_for(btype, mass)
-        mini.add(m=mass, r=r_new, x=pos[0], y=pos[1], z=pos[2], vx=vel[0], vy=vel[1], vz=vel[2])
+        mini.N_active = sum(not passive(i) for i in order)
         hit = {"flag": False, "stop": False}
 
         def on_collision(sim_ptr, c):
@@ -959,7 +1029,7 @@ class World:
             rel = (pos[0] - pa.x, pos[1] - pa.y, pos[2] - pa.z)
             vrel = (vel[0] - pa.vx, vel[1] - pa.vy, vel[2] - pa.vz)
             dist = max(_norm(rel), 1e-6)
-            mu = G * (ma + mass)
+            mu = G * (ma + (0 if self.is_light(btype, mass) else mass))
             energy = 0.5 * _dot(vrel, vrel) - mu / dist
             if energy < 0:
                 sma = -mu / (2 * energy)
@@ -971,23 +1041,48 @@ class World:
             pa = mini.particles[a_local]
             a0 = (pa.x, pa.y, pa.z)
         points = [tuple(pos)]
+        times = [0.0]
+        guard = ContactGuard()
+        failed = False
         try:
             for k in range(1, samples + 1):
-                mini.integrate(horizon * k / samples, exact_finish_time=0)
-                pt = mini.particles[test]
-                if not (math.isfinite(pt.x) and math.isfinite(pt.y) and math.isfinite(pt.z)):
+                target = horizon * k / samples
+                start = mini.t
+                exhausted = False
+                while mini.t < target:
+                    # integrate(target) can take arbitrarily many native steps
+                    # before returning. Yield between steps without relaxing
+                    # IAS15's tolerance or minimum timestep.
+                    if time.perf_counter() - t0 >= wall_budget:
+                        exhausted = True
+                        break
+                    # Sample at the requested time, never overshoot it and
+                    # accidentally integrate backwards to the next sample.
+                    previous = mini.t
+                    step(mini, target - mini.t, guard)
+                    pt = mini.particles[test]
+                    if mini.t <= previous or not all(math.isfinite(value) for value in (mini.t, pt.x, pt.y, pt.z)):
+                        raise ArithmeticError("Forecast step did not produce a finite advancing state")
+                    if hit["stop"]:
+                        break
+                if mini.t == start:
                     break
+                pt = mini.particles[test]
                 if a0 is not None:
                     pa = mini.particles[a_local]
                     points.append((pt.x - pa.x + a0[0], pt.y - pa.y + a0[1], pt.z - pa.z + a0[2]))
                 else:
                     points.append((pt.x, pt.y, pt.z))
-                if hit["stop"] or time.perf_counter() - t0 > wall_budget:
+                times.append(mini.t)
+                if hit["stop"] or exhausted:
                     break
         except Exception:
-            pass
+            failed = True
         aid = int(snap["names"][a]) if a is not None else -1
-        return {"points": points, "hit": hit["flag"], "attractor": aid, "vel": vel, "radius": self.radius_for(btype, mass)}
+        return {"points": points, "hit": hit["flag"], "attractor": aid, "vel": vel, "radius": r_new,
+                "times": times, "horizon": horizon, "complete": not failed and not hit['stop'] and mini.t >= horizon,
+                "included_bodies": len(order) - 1, "omitted_bodies": snap['n'] - len(order) + 1,
+                "omitted_active_mass": omitted_mass}
 
     # --------------------------------------------------------------- helpers
     def _rand_unit(self):

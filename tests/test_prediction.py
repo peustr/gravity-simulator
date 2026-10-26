@@ -40,23 +40,26 @@ def test_escape_trajectory_and_future_collision():
     assert w.sim.N == 1 and w.sim.t == 0  # preview never advances the live world
 
 
-@pytest.mark.parametrize('failure', ['exception', 'nonfinite'])
+@pytest.mark.parametrize('failure', ['exception', 'nonfinite', 'stalled'])
 def test_failed_forecast_returns_only_finite_partial_path(monkeypatch, failure):
     w = star_world()
-    original = rebound.Simulation.integrate
+    original = rebound.Simulation.steps
     calls = 0
-    def integrate(sim, *args, **kwargs):
+    def step(sim, *args, **kwargs):
         nonlocal calls
         calls += 1
         if calls == 2:
             if failure == 'exception':
                 raise RuntimeError('forecast integration failed')
-            sim.particles[-1].x = float('nan')
+            if failure == 'nonfinite':
+                sim.particles[-1].x = float('nan')
+                sim.t += sim.dt
         else:
             original(sim, *args, **kwargs)
-    monkeypatch.setattr(rebound.Simulation, 'integrate', integrate)
+    monkeypatch.setattr(rebound.Simulation, 'steps', step)
     result = predict(w, samples=10, wall_budget=1)
-    assert calls == 2 and len(result['points']) == 2
+    assert calls == 2 and len(result['points']) == 1
+    assert not result['complete']
     assert np.isfinite(result['points']).all()
     assert w.sim.t == 0 and np.isfinite(w.snapshot()['xyz']).all()
 
@@ -74,10 +77,11 @@ def test_forecast_without_gravitating_attractor():
 def test_background_collision_does_not_flag_preview_as_impact(monkeypatch):
     w = star_world()
     w.add_body(W.ROCKY, .003, (50, 0, 0), (0, 0, 0))
-    def integrate(sim, *args, **kwargs):
+    def step(sim, *args, **kwargs):
+        sim.t += sim.dt
         contact = rebound.CollisionS(p1=0, p2=1)
         assert sim._collision_resolve(ctypes.pointer(sim), contact) == 0
-    monkeypatch.setattr(rebound.Simulation, 'integrate', integrate)
+    monkeypatch.setattr(rebound.Simulation, 'steps', step)
     result = predict(w, samples=2, wall_budget=1)
     assert len(result['points']) == 2 and not result['hit']
 
@@ -124,8 +128,47 @@ def test_tied_attractor_is_kept_even_when_sort_places_it_outside_top_twenty(monk
 def test_forecast_budget_stops_further_integration(monkeypatch):
     w = star_world()
     integration = Mock()
-    monkeypatch.setattr(rebound.Simulation, 'integrate', integration)
+    monkeypatch.setattr(rebound.Simulation, 'steps', integration)
     monkeypatch.setattr(W.time, 'perf_counter', Mock(side_effect=[0, 1]))
     result = predict(w, samples=100, wall_budget=.025)
-    integration.assert_called_once()
+    integration.assert_not_called()
+    assert len(result['points']) == 1
+
+
+def test_forecast_budget_interrupts_an_unfinished_sample(monkeypatch):
+    w = star_world()
+    original = rebound.Simulation.steps
+    calls = []
+
+    def step(sim, count):
+        calls.append(count)
+        original(sim, count)
+
+    monkeypatch.setattr(rebound.Simulation, 'steps', step)
+    monkeypatch.setattr(W.time, 'perf_counter', Mock(side_effect=[0, .001, .026]))
+    # One distant sample would normally require many adaptive native steps.
+    result = predict(w, samples=1, wall_budget=.025)
+    assert calls == [1]
     assert len(result['points']) == 2
+    assert result['points'][0] != result['points'][1]
+    assert not result['hit'] and w.sim.t == 0
+
+
+def test_forecast_samples_a_complete_kepler_orbit_without_time_reversal(monkeypatch):
+    w = star_world()
+    original = rebound.Simulation.steps
+    times = []
+
+    def step(sim, count):
+        original(sim, count)
+        times.append(sim.t)
+
+    monkeypatch.setattr(rebound.Simulation, 'steps', step)
+    # Eliminate host timing from this numerical accuracy test.
+    monkeypatch.setattr(W.time, 'perf_counter', lambda: 0)
+    result = predict(w, samples=220)
+    assert len(result['points']) == 221
+    assert np.all(np.diff(times) > 0)
+    theta = np.linspace(0, 2 * np.pi * 1.02, 221)
+    expected = np.column_stack([100 * np.cos(theta), np.zeros_like(theta), -100 * np.sin(theta)])
+    np.testing.assert_allclose(result['points'], expected, rtol=0, atol=1e-7)

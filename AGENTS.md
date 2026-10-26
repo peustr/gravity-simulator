@@ -5,7 +5,7 @@ Interactive N-body space sandbox for Windows. Two programs talk over UDP on `127
 - `physics_server/` — Python 3.10–3.14 + REBOUND 5 (IAS15 integrator) + NumPy. **All physics lives here.**
 - `godot/` — Godot 4.7.2 project (GDScript, Forward+ renderer). Rendering, input and UI only. Never put physics in GDScript.
 
-Codex is the primary developer and maintainer. The user plays and develops on Windows 11; cloud development runs on Linux. The physics venv is `physics_server/.venv` (Python 3.13 on Windows; Python 3.12 for cloud development). The user is learning: explain changes in plain language, and keep physics claims honest (see README "What is *not* simulated").
+Development supports Windows and Linux. The physics venv is `physics_server/.venv` (Python 3.13 on Windows; Python 3.12 on Linux). Keep physics claims consistent with the documented model (see README "What is *not* simulated").
 
 ## Working practices
 
@@ -18,10 +18,10 @@ Codex is the primary developer and maintainer. The user plays and develops on Wi
 
 ## Documentation
 
-- The user-requested `docs/physics-roadmap.md` is the maintained planning exception:
+- `docs/physics-roadmap.md` tracks planned development:
   track acceptance criteria there, cross out a milestone only when fully complete,
-  then continue with the next. Target broad consumer hardware classes; do not make
-  progress depend on an individual's machine or confuse headless and rendered results.
+  then continue with the next. Target broad consumer hardware classes and
+  distinguish headless timings from rendered performance.
 - Document only the current repository: setup, commands, architecture, behavior, contracts and relevant limitations.
 - Keep documentation concise, factual and useful to a human reader. Avoid narrative prose, change summaries, dated review reports, session notes and historical test results.
 - Update or remove outdated information in place. Use Git history and PR descriptions for change history; do not keep changelogs or completed-work reports in repository documentation.
@@ -59,6 +59,8 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 | `physics_server/world.py` | `World`: REBOUND sim, body types, collisions, fragmentation, tides, supernovae, scenarios (`load_preset`), orbit forecast (`predict`) |
 | `physics_server/server.py` | UDP loop (60 Hz), JSON commands, binary packing, `--selftest` |
 | `physics_server/diagnostics.py`, `validation.py` | Optional conservation accounting and physical reference problems |
+| `physics_server/dynamics.py`, `configuration.py` | Contact step guards and validated solver/approximation settings |
+| `docs/orbital-dynamics.md` | Accuracy targets, gravity/forecast options, removal boundaries and save migration |
 | `tools/benchmark.py` | Seeded performance workloads, profiling and JSON reports |
 | `docs/physics-roadmap.md` | Ordered realism milestones and current acceptance checklist |
 | `godot/scripts/main.gd` | Builds the scene in code, parses state packets, smooth motion, input, automation flags (`_run_auto`) |
@@ -90,6 +92,7 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 - Never add particles inside the collision callback. `_resolve_collision` merges and records; `_handle_collision` runs after `sim.steps(1)` and may shatter.
 - Collision callback return: 1 removes p1, 2 removes p2. REBOUND reports only *approaching* overlaps, so fragments may start overlapping the remnant.
 - Light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
+- Changes to masses, physical radii, types or particle order must set `_partition_dirty`; `_repartition()` also invalidates the contact and tidal caches.
 - IAS15 has one global timestep, so a single close encounter slows everything. `min_dt` is zero for physical scenes and 1e-4 only for legacy saves. Keep debris counts in check (`SHATTER_MIN_MASS`, fragment caps).
 - Prefer Python 3.13 on Windows (3.12 for cloud development). Check wheel availability before moving to a newer Python; do not silently introduce a compiler requirement.
 

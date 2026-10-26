@@ -211,14 +211,14 @@ def test_physics_selftest(monkeypatch):
     from server import selftest
     original = W.World.predict
 
-    def slow_forecast(self, *args, **kwargs):
-        # Model 1 ms per forecast sample without sleeping or replacing physics.
-        # The interactive 25 ms budget truncates this otherwise valid orbit.
-        from itertools import count
-        clock = count(step=.001)
+    def reference_forecast(self, *args, **kwargs):
+        # The self-test requests a longer budget than interactive forecasts.
+        # Validate its orbit independently of runner speed; deadline handling
+        # is tested separately with a controlled clock in test_prediction.py.
+        assert kwargs['wall_budget'] == 1.0
         with monkeypatch.context() as context:
-            context.setattr(W.time, 'perf_counter', lambda: next(clock))
+            context.setattr(W.time, 'perf_counter', lambda: 0)
             return original(self, *args, **kwargs)
 
-    monkeypatch.setattr(W.World, 'predict', slow_forecast)
+    monkeypatch.setattr(W.World, 'predict', reference_forecast)
     assert selftest() == 0

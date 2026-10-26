@@ -257,7 +257,9 @@ Use the **Experiment** menu in the top bar:
 
 Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation and visual enlargement. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. Trails, selection, body-follow mode and transient visual effects are cleared.
 
-New saves use version-2 JSON with an explicit unit/radius-model identifier. Version-1 scenes load automatically in **legacy sandbox units**, retaining all original values and exaggerated contact-radius rules; re-saving preserves that label. They are not silently converted to physical scenes. Clear or choose a preset to start a new physical scene.
+The **Experiment** menu also controls full gravity for debris, inclusion of all bodies in forecasts, and distant-body removal. It shows the collective tracer mass fraction. These choices and cumulative removal losses are stored in version-3 saves and restart points; older saves retain their previous approximation defaults. See [orbital dynamics and accuracy controls](docs/orbital-dynamics.md).
+
+New saves use version-3 JSON with an explicit unit/radius-model identifier, physics settings and removal inventory. Version-1 scenes load automatically in **legacy sandbox units**, retaining all original values and exaggerated contact-radius rules; re-saving preserves that label. They are not silently converted to physical scenes. Clear or choose a preset to start a new physical scene.
 
 Saves use versioned JSON (maximum 4 MiB), are validated before loading, and replace existing files atomically. Success is shown only after the physics server confirms it. If confirmation times out, check the connection and file before trying again: an operation may have completed even if its reply was lost. Restart points live in the server session; save to disk to keep an experiment after closing the app.
 
@@ -316,7 +318,9 @@ See [physical units and models](docs/physical-model.md) for constants, radius ap
 
 All bodies live in one REBOUND simulation using the **IAS15** integrator (Rein & Spiegel 2015). It is adaptive: it takes tiny steps during close encounters and big ones in quiet periods, and the controlled reference problems check its accuracy. Physical scenes allow adaptive steps below the old sandbox minimum; difficult encounters reduce achieved simulation speed. The server targets 60 updates a second and limits each advance to the requested simulation time. Godot buffers about 50 ms of authoritative positions, then interpolates between them. Playback follows achieved simulation speed and stops at the last received state if updates stall; the renderer does not calculate gravitational forces. Very fast moon orbits still require slower playback when zoomed in to resolve them at your display's frame rate.
 
-Debris (asteroids and small gas clouds) is treated as **test particles**. It feels everyone's gravity and collides normally, but doesn't pull on other bodies. This is the classic approximation (Toomre & Toomre used it for colliding galaxies) and makes debris-heavy scenes about 10 times faster. Planets, stars, neutron stars and black holes are always fully N-body.
+By default, debris below 0.5 mass units (asteroids and small gas clouds) is treated as **test particles**. It feels active bodies' gravity and collides normally, but exerts no gravitational pull. Enable **Experiment → Full gravity, including debris** for mutual forces. This costs more for large debris clouds; a large collective tracer mass can make the approximation inaccurate. Planets, stars, neutron stars and black holes always exert gravity.
+
+A shared contact step guard limits approach to physical surfaces before collision detection. Long-duration orbit, grazing-contact, capture and forecast checks have documented [accuracy targets and limitations](docs/orbital-dynamics.md). Bodies beyond 15,000 length units (250 AU) are removed by default regardless of binding energy; removal can be disabled and its inventory losses are recorded.
 
 ### Collisions (`world.py → _handle_collision`)
 
@@ -355,7 +359,13 @@ None of these affect the physics:
 - Rotation and tidal locking.
 - Stellar evolution over time.
 
-The forecast line uses the 20 most influential bodies, so in crowded scenes it is a very good approximation rather than exact.
+The forecast line defaults to up to 20 influential bodies plus the selected attractor;
+**Experiment → Include all bodies in forecasts** includes the entire scene with
+the chosen full/tracer force model.
+It is an approximation with no general error bound in crowded scenes; omitted
+bodies can matter. It stops at the first contact or its computation budget, so
+a short line does not imply a collision. The budget is checked between solver
+steps and may shorten the preview without reducing integration accuracy.
 
 ## 6. How the project is built
 
@@ -476,7 +486,7 @@ Two caveats:
 
 ## 9. Developing with Codex
 
-[Codex](https://developers.openai.com/codex/) is the primary coding assistant for this project. Open the repository in Codex, or run the Codex CLI from this folder. The same instructions work for Windows development and Linux cloud tasks.
+Development commands support Windows and Linux. [Codex](https://developers.openai.com/codex/) can use the repository guidance and validation skills below.
 
 | File | Purpose |
 |---|---|
@@ -518,13 +528,12 @@ physics venv. Reports have unique names in ignored `benchmarks/`; `--output PATH
 chooses another location. `benchmark --help` lists scenario, seed, tick-count and
 repeat options. `benchmark-visual --help` lists rendered-run options.
 
-`accuracy` checks circular/eccentric Kepler trajectories over 20 periods, a
-hyperbolic flyby, a hierarchical moon over 20 outer orbits, and an inelastic
-merger. The first three orbital cases compare against analytical solutions or
-conservation laws; the moon also has a bounded-radius check. These deliberately
-small, fully gravitating reference systems use small physical collision radii.
-The report includes measured errors and acceptance thresholds. It does not
-establish long-duration accuracy for every playable scene.
+`accuracy` checks Kepler trajectories over up to 1,000 periods, hierarchical
+orbits, scattering, contact timing, merger conservation and forecast consistency.
+It also compares IAS15 and WHFast on a conservative planetary reference system.
+The report includes measured errors and acceptance thresholds; see the
+[accuracy gates](docs/orbital-dynamics.md#repeatable-accuracy-gates) for each
+problem's horizon and limits.
 
 `benchmark` runs six seeded scenarios, with a disposable warmup and three
 600-tick repeats by default. It records physical solver settings, body counts,
