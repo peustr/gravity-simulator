@@ -127,7 +127,7 @@ Complete these checkpoints in order:
   their mass, velocity, material and geometry domains. Compute accretion,
   erosion, disruption and hit-and-run classifications and remnant masses
   independently of particle capacity; validate reference and boundary cases.
-- [ ] **4.3 Conserved outcomes — next:** generate remnants and fragments with accounted
+- [ ] **4.3 Conserved outcomes — active:** generate remnants and fragments with accounted
   mass, momentum, orbital/remnant spin angular momentum and energy partition.
 - [ ] **4.4 Unresolved debris:** preserve material and its physical budgets in
   an accounted reservoir/statistical model when explicit particle capacity runs
@@ -159,6 +159,21 @@ separate calibrated merging law. Creating particles and closing momentum,
 angular-momentum and energy budgets belong to 4.3–4.5.
 
 Numerical model and API: [impact scaling](impact-scaling.md).
+
+Checkpoint 4.3 implementation steps:
+
+- [x] **4.3a Single-remnant budgets:** immutable SI spherical states; explicit
+  translational, rotational, self-binding, mutual and internal energy; construct
+  feasible isolated mergers preserving mass, momentum and angular momentum.
+  Check analytic cases, inertial-frame invariance, energy deficits and spin limits.
+- [ ] **4.3b Multiple remnants and fragments:** allocate positions, velocities,
+  spin and internal energy for classified runner/debris masses. Close all budgets
+  and reject infeasible allocations without silently changing the regime.
+- [ ] **4.3c Outcome validation:** connect classification to supported outcome
+  constructors, define handling for approximate contact states and check reference
+  impacts and conservation across regimes. Live application remains in 4.5.
+
+State, inventory and merger contract: [collision budgets](collision-budgets.md).
 
 Acceptance: representative impacts match reference outcomes and close their
 mass, momentum, angular-momentum, and energy budgets within documented errors;

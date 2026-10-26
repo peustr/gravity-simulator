@@ -182,6 +182,8 @@ non-grazing contacts and the Genda boundary for grazing contacts. All masses
 are in kg and their sum equals the incoming inventory within floating-point
 rounding. Runner mass is zero outside hit-and-run; it does not estimate the
 second-largest fragment of a disruptive event. Such fragments remain unassigned.
-Spin, velocities, thermal energy, fragment distributions and live application
-require separate models. Mass closure alone does not establish momentum,
-angular-momentum or energy conservation.
+The separate [spherical merger constructor](collision-budgets.md) accounts for
+spin and energy when a single remnant is feasible; it is not connected to this
+classifier. Runner/fragment velocities, energy partitions and live application
+require further models. Classification's mass closure alone does not establish
+momentum, angular-momentum or energy conservation.
