@@ -123,11 +123,11 @@ Complete these checkpoints in order:
 - [x] **4.1 Contact measurements:** capture immutable pre-merge state, contact
   angle, relative kinetic energy and orbital angular momentum. Check analytic
   values, coordinate/body-order invariance and capture through native merging.
-- [ ] **4.2 Calibrated classification:** select and document impact laws and
+- [x] **~~4.2 Calibrated classification~~:** select and document impact laws and
   their mass, velocity, material and geometry domains. Compute accretion,
   erosion, disruption and hit-and-run classifications and remnant masses
   independently of particle capacity; validate reference and boundary cases.
-- [ ] **4.3 Conserved outcomes:** generate remnants and fragments with accounted
+- [ ] **4.3 Conserved outcomes — next:** generate remnants and fragments with accounted
   mass, momentum, orbital/remnant spin angular momentum and energy partition.
 - [ ] **4.4 Unresolved debris:** preserve material and its physical budgets in
   an accounted reservoir/statistical model when explicit particle capacity runs
@@ -147,9 +147,16 @@ Checkpoint 4.2 implementation steps:
   conversion, account for oblique interacting mass, and distinguish merging,
   partial accretion, erosion and disruption independently of particle capacity.
   Check reference geometry, regime boundaries and unsupported inputs.
-- [ ] **4.2c Grazing classification:** distinguish graze-and-merge from
+- [x] **4.2c Grazing classification:** distinguish graze-and-merge from
   hit-and-run, estimate both surviving remnants and unassigned mass, and validate
   reference encounters and boundaries without consulting particle capacity.
+
+Classification acceptance: the documented solid-body domains have explicit
+rejection outside their limits, published curve/geometry and grazing references,
+boundary and invariance checks, and closed remnant/unassigned mass inventories.
+Grazing support is limited to rocky protoplanets; grazing planetesimals need a
+separate calibrated merging law. Creating particles and closing momentum,
+angular-momentum and energy budgets belong to 4.3–4.5.
 
 Numerical model and API: [impact scaling](impact-scaling.md).
 

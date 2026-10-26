@@ -1,10 +1,11 @@
-"""Non-grazing classification: references, boundaries, units and exclusions."""
-from dataclasses import asdict, replace
+"""Contact classification: references, boundaries, units and exclusions."""
+from dataclasses import asdict, FrozenInstanceError, replace
 import math
 
 import pytest
 
-from disruption import classify_non_grazing, estimate_head_on_disruption
+from disruption import (_grazing_merging_ratio, _reverse_interacting_mass,
+                        classify_contact, classify_non_grazing, estimate_head_on_disruption)
 from impacts import Impact
 import units
 
@@ -161,3 +162,146 @@ def test_model_selection_and_non_solid_types_are_rejected(kwargs, message):
     options.update(kwargs)
     with pytest.raises(ValueError, match=message):
         classify_non_grazing(contact(), **options)
+
+
+def rocky_contact(*, gamma=1, b=.7, speed_ratio=1.5, target=.5 * 5.9722e24):
+    impact = contact(target=target, gamma=gamma, density=5514, b=b)
+    return with_speed(impact, speed_ratio * impact.escape_speed)
+
+
+def classify_rocky(impact):
+    return classify_contact(impact, unit_system='si', material='fluid_planets', body_types=(0, 0))
+
+
+@pytest.mark.parametrize('gamma,angle,critical', [(1, 30, 1.39), (1, 45, 1.19), (1, 60, 1.11),
+                                               (.5, 45, 1.19), (.5, 60, 1.09)])
+def test_genda_reported_transition_speeds(gamma, angle, critical):
+    # Genda et al. section 4; allow 0.04 vesc fit error, distinct from their
+    # +/-0.01 numerical transition sampling. All cases are geometrically grazing.
+    impact = rocky_contact(gamma=gamma, b=math.sin(math.radians(angle)))
+    result = classify_rocky(impact)
+    assert result.merging_speed_m_s / impact.escape_speed == pytest.approx(critical, abs=.04)
+    assert classify_rocky(with_speed(impact, (critical - .05) * impact.escape_speed)).regime == 'graze_and_merge'
+    assert classify_rocky(with_speed(impact, (critical + .05) * impact.escape_speed)).regime == 'hit_and_run'
+
+
+def test_genda_equation_16_mass_asymmetry_is_linear():
+    # gamma=1/3 -> Gamma=1/2; b=3/4 -> Theta^(5/2)=1/32.
+    # This distinguishes the original equation from later squared-Gamma variants.
+    assert _grazing_merging_ratio(1 / 3, .75) == pytest.approx(1.15569375, rel=1e-12)
+
+
+@pytest.mark.parametrize('speed_ratio,regime', [(1.3, 'graze_and_merge'), (1.5, 'hit_and_run')])
+def test_genda_figure_two_equal_mass_reference_events(speed_ratio, regime):
+    impact = rocky_contact(target=.1 * 5.9722e24, b=.5, speed_ratio=speed_ratio)
+    outcome = classify_rocky(impact)
+    assert outcome.regime == regime
+    if regime == 'graze_and_merge':
+        assert outcome.largest_remnant_mass_kg == impact.total_mass
+        assert outcome.runner_mass_kg == outcome.remaining_mass_kg == 0
+    else:
+        assert outcome.largest_remnant_mass_kg == impact.mass_a
+        assert 0 < outcome.runner_mass_kg <= impact.mass_b
+
+
+@pytest.mark.parametrize('b,fraction', [(.5, 3 * math.sqrt(3) / 8),
+                                      (.75, 3 * math.sqrt(7) / (8 * math.pi) * (math.pi / 3 - math.sqrt(3) / 4))])
+def test_reverse_interaction_has_analytic_volume_and_density(b, fraction):
+    # Unit equal spheres; circle segments and chords have closed-form volumes.
+    assert _reverse_interacting_mass(7, 1, 1, b) == pytest.approx(7 * fraction, rel=1e-12)
+    # Rescaling lengths with constant mass cannot change the participating mass.
+    assert _reverse_interacting_mass(7, 20, 20, b) == pytest.approx(7 * fraction, rel=1e-12)
+
+
+def test_runner_intact_and_eroded_mass_are_accounted_without_double_counting():
+    intact = rocky_contact(b=.9, speed_ratio=1.5)
+    outcome = classify_rocky(intact)
+    assert outcome.regime == 'hit_and_run'
+    assert outcome.runner_mass_kg == intact.mass_b
+    assert outcome.remaining_mass_kg == 0
+    eroded = rocky_contact(b=.7, speed_ratio=3)
+    outcome = classify_rocky(eroded)
+    assert outcome.regime == 'hit_and_run'
+    assert 0 < outcome.runner_mass_kg < eroded.mass_b
+    assert outcome.largest_remnant_mass_kg == eroded.mass_a
+    assert outcome.remaining_mass_kg == eroded.mass_b - outcome.runner_mass_kg
+    # Reverse impact: equal spheres, b=.7 gives l/r=.6. Independent numeric
+    # quadrature of the circle segment checks the chord-volume construction.
+    import numpy as np
+    nodes, weights = np.polynomial.legendre.leggauss(128)
+    y = .4 + .3 * (nodes + 1)
+    area = .3 * float(weights @ (2 * np.sqrt(1 - y * y)))
+    chord = 2 * math.sqrt(.6 - .6**2 / 4)
+    participating_mass = eroded.mass_a * area * chord / (4 * math.pi / 3)
+    reverse = estimate_head_on_disruption(eroded.mass_b, participating_mass, eroded.speed, material='fluid_planets')
+    assert outcome.runner_mass_kg == pytest.approx(reverse.largest_remnant_mass_kg, rel=1e-6)
+
+
+def test_grazing_merging_and_target_erosion_boundaries():
+    impact = rocky_contact(gamma=.25, b=.7)
+    base = classify_rocky(impact)
+    for scale, regime in [(1 - 1e-8, 'graze_and_merge'), (1 + 1e-8, 'hit_and_run')]:
+        assert classify_rocky(with_speed(impact, base.merging_speed_m_s * scale)).regime == regime
+    # Q_R/Qprime=2Mp/Mtot is the onset of target erosion, even for grazing events.
+    critical_q = base.disruption_energy_j_kg * 2 * impact.mass_b / impact.total_mass
+    critical_v = math.sqrt(2 * critical_q * impact.total_mass / impact.reduced_mass)
+    before = classify_rocky(with_speed(impact, critical_v * (1 - 1e-8)))
+    after = classify_rocky(with_speed(impact, critical_v * (1 + 1e-8)))
+    assert before.regime == 'hit_and_run' and before.runner_mass_kg > 0
+    assert after.regime == 'erosion' and after.runner_mass_kg == 0
+    assert after.largest_remnant_mass_kg < impact.mass_a
+    assert after.largest_remnant_mass_kg == pytest.approx(before.largest_remnant_mass_kg, rel=1e-7)
+
+
+def test_grazing_results_invariant_under_body_exchange_and_scene_conversion():
+    impact = rocky_contact(gamma=.25, b=.8, speed_ratio=2)
+    original = classify_rocky(impact)
+    exchanged = replace(impact, mass_a=impact.mass_b, mass_b=impact.mass_a,
+                        radius_a=impact.radius_b, radius_b=impact.radius_a,
+                        relative_position=tuple(-x for x in impact.relative_position),
+                        relative_velocity=tuple(-v for v in impact.relative_velocity))
+    assert classify_rocky(exchanged) == original
+    scene = Impact(impact.mass_a / units.MASS_KG, impact.mass_b / units.MASS_KG,
+                   impact.radius_a / units.LENGTH_M, impact.radius_b / units.LENGTH_M,
+                   tuple(x / units.LENGTH_M for x in impact.relative_position),
+                   tuple(v / units.VELOCITY_M_S for v in impact.relative_velocity), units.G)
+    result = classify_contact(scene, unit_system=units.SYSTEM, material='fluid_planets', body_types=(0, 0))
+    assert asdict(result) == pytest.approx(asdict(original), rel=1e-12)
+    with pytest.raises(FrozenInstanceError):
+        result.runner_mass_kg = 0
+
+
+def test_general_entry_point_matches_restricted_classifier_for_non_grazing():
+    impact = contact(b=.35)
+    assert classify_contact(impact, unit_system='si', material='planetesimals', body_types=(0, 5)) == classify(impact)
+
+
+@pytest.mark.parametrize('gamma', [1 / 9, .25, 1])
+def test_supported_grazing_grid_has_finite_nonnegative_complete_mass_inventory(gamma):
+    for b in (1 / (1 + gamma**(1 / 3)), .8, math.sin(math.radians(75))):
+        for speed_ratio in (.5, 1.2, 2, 4, 7):
+            impact = rocky_contact(gamma=gamma, b=b, speed_ratio=speed_ratio)
+            result = classify_rocky(impact)
+            masses = [result.largest_remnant_mass_kg, result.runner_mass_kg, result.remaining_mass_kg]
+            assert all(math.isfinite(m) and m >= 0 for m in masses)
+            assert sum(masses) == pytest.approx(impact.total_mass, rel=1e-15)
+            assert result.runner_mass_kg <= impact.mass_b
+
+
+@pytest.mark.parametrize('changes,options,message', [
+    ({'gamma': .1, 'b': .8}, {}, 'mass ratio or angle'),
+    ({'b': math.sin(math.radians(75)) + 1e-8}, {}, 'mass ratio or angle'),
+    ({'target': .1 * 5.9722e24, 'gamma': .5}, {}, 'total mass'),
+    ({'target': 1.01 * 5.9722e24}, {}, 'total mass'),
+    ({}, {'body_types': (0, 5)}, 'rocky protoplanets'),
+])
+def test_grazing_extrapolation_is_rejected(changes, options, message):
+    settings = dict(unit_system='si', material='fluid_planets', body_types=(0, 0))
+    settings.update(options)
+    with pytest.raises(ValueError, match=message):
+        classify_contact(rocky_contact(**changes), **settings)
+
+
+def test_grazing_planetesimals_remain_explicitly_unsupported():
+    with pytest.raises(ValueError, match='rocky protoplanets'):
+        classify_contact(contact(b=.8), unit_system='si', material='planetesimals', body_types=(5, 5))

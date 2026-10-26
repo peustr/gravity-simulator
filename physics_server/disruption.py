@@ -1,7 +1,7 @@
-"""LS12 disruption curves and restricted non-grazing contact classification.
+"""LS12 disruption curves and restricted solid-body contact classification.
 
-The scalar curves are numerical primitives. Only classify_non_grazing enforces
-the implementation envelope documented in docs/impact-scaling.md.
+The scalar curves are numerical primitives. Contact classifiers enforce the
+implementation envelopes documented in docs/impact-scaling.md.
 """
 from dataclasses import dataclass
 import math
@@ -79,6 +79,7 @@ class ContactOutcome:
     specific_energy_j_kg: float
     interacting_fraction: float
     merging_speed_m_s: float
+    runner_mass_kg: float = 0.0
 
 
 def _contact_in_si(impact, unit_system):
@@ -134,22 +135,47 @@ def _supported_contact(impact, material, body_types):
         raise ValueError('Contact must be sampled at the physical surfaces')
     if impact.radial_speed >= 0:
         raise ValueError('Contact must be approaching')
-    b = impact.impact_parameter
-    if b >= rt / (rt + rp):
-        raise ValueError('Grazing contacts require a separate outcome model')
-    return mt, rt, mp, rp, b
+    return mt, rt, mp, rp, impact.impact_parameter
 
 
-def classify_non_grazing(impact: Impact, *, unit_system: str, material: str,
-                         body_types: tuple[int, int]) -> ContactOutcome:
-    """Classify a supported, nonrotating solid pair; return SI mass estimates.
+def _grazing_merging_ratio(gamma, b):
+    """Genda et al. (2012), equation 16, relative to mutual surface escape.
 
-    Body types follow World IDs, in A/B order. Unsupported geometry, units or
-    material envelopes raise ValueError; there is no fallback to merging.
-    This function neither mutates particles nor consults fragment capacity.
+    Gamma is NOT squared, and the 1.86 term has no Gamma factor in the original.
     """
+    asymmetry = (1 - gamma) / (1 + gamma)
+    return (2.43 * asymmetry + 1.86) * (1 - b)**2.5 - .0408 * asymmetry + 1.08
+
+
+def _reverse_interacting_mass(mt, rt, rp, b):
+    """LS12 equations 46–48: cross-sectional area times chord times density."""
+    length = (rt + rp) * (1 - b)
+    cap = min(1.0, length / rp)  # grazing: at most one projectile radius
+    area = rp**2 * (math.acos(1 - cap) - (1 - cap) * math.sqrt(cap * (2 - cap)))
+    chord = 2 * math.sqrt(rt * length - length**2 / 4)
+    density = mt / ((4 / 3) * math.pi * rt**3)
+    return density * area * chord
+
+
+def _check_grazing_domain(mt, mp, b, material, body_types):
+    # Genda's fit concerns nonspinning rocky protoplanets, not small aggregates.
+    if material != 'fluid_planets' or tuple(body_types) != (0, 0):
+        raise ValueError('Grazing classification requires rocky protoplanets')
+    if not .2 * (1 - 1e-12) <= (mt + mp) / 5.9722e24 <= 2 * (1 + 1e-12):
+        raise ValueError('Grazing total mass is outside the implementation envelope')
+    if mp / mt < (1 / 9) * (1 - 1e-12) or b > math.sin(math.radians(75)) + 1e-12:
+        raise ValueError('Grazing mass ratio or angle is outside the implementation envelope')
+
+
+def _classify_contact(impact, unit_system, material, body_types, *, allow_grazing):
     impact = _contact_in_si(impact, unit_system)
     mt, rt, mp, rp, b = _supported_contact(impact, material, body_types)
+    critical_b = rt / (rt + rp)
+    grazing = b >= critical_b or math.isclose(b, critical_b, rel_tol=0, abs_tol=1e-12)
+    if grazing:
+        if not allow_grazing:
+            raise ValueError('Grazing contacts require a separate outcome model')
+        _check_grazing_domain(mt, mp, b, material, body_types)
     # LS12 equations 11, 12 and 15. The clipped spherical cap is a fraction
     # of the projectile, not the geometric intersection volume of two spheres.
     cap_height = min(2.0, (rt + rp) * (1 - b) / rp)
@@ -164,7 +190,22 @@ def classify_non_grazing(impact: Impact, *, unit_system: str, material: str,
     # common bulk density, NOT the sum of the two original surface radii.
     interacting_radius = (rt**3 + alpha * rp**3)**(1 / 3)
     merging_speed = math.sqrt(2 * G_SI * (mt + alpha * mp) / interacting_radius)
-    if impact.speed < merging_speed:
+    runner = 0.0
+    if grazing:
+        # Use Genda's surface-escape normalization, not the LS12 interacting
+        # escape scale: those two merging boundaries are different models.
+        merging_speed = _grazing_merging_ratio(mp / mt, b) * impact.escape_speed
+    if grazing and ratio < 2 * mp / (mt + mp):
+        if impact.speed < merging_speed:
+            regime, fraction = 'graze_and_merge', 1.0
+        else:
+            regime, fraction = 'hit_and_run', mt / (mt + mp)
+            interacting_mass = _reverse_interacting_mass(mt, rt, rp, b)
+            reverse = estimate_head_on_disruption(mp, interacting_mass, impact.speed, material=material)
+            # The idealized target stays intact. Cap the reverse estimate at
+            # the original projectile inventory to avoid counting target mass twice.
+            runner = min(mp, reverse.largest_remnant_mass_kg)
+    elif not grazing and impact.speed < merging_speed:
         regime, fraction = 'merging', 1.0
     else:
         fraction = largest_remnant_fraction(ratio)
@@ -176,6 +217,26 @@ def classify_non_grazing(impact: Impact, *, unit_system: str, material: str,
             regime = 'erosion'
         else:
             regime = 'partial_accretion'
-    largest = (mt + mp) * fraction
-    return ContactOutcome(regime, largest, mt + mp - largest, threshold,
-                          head_on.specific_energy_j_kg, alpha, merging_speed)
+    if regime == 'hit_and_run':
+        largest, remaining = mt, mp - runner
+    else:
+        largest = (mt + mp) * fraction
+        remaining = mt + mp - largest
+    return ContactOutcome(regime, largest, remaining, threshold,
+                          head_on.specific_energy_j_kg, alpha, merging_speed, runner)
+
+
+def classify_contact(impact: Impact, *, unit_system: str, material: str,
+                     body_types: tuple[int, int]) -> ContactOutcome:
+    """Classify supported nonrotating solids, including rocky grazing impacts.
+
+    Returns SI remnant masses without particle creation or capacity limits.
+    Unsupported units, materials and encounter domains raise ValueError.
+    """
+    return _classify_contact(impact, unit_system, material, body_types, allow_grazing=True)
+
+
+def classify_non_grazing(impact: Impact, *, unit_system: str, material: str,
+                         body_types: tuple[int, int]) -> ContactOutcome:
+    """Restricted entry point retaining explicit rejection of grazing contacts."""
+    return _classify_contact(impact, unit_system, material, body_types, allow_grazing=False)

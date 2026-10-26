@@ -329,6 +329,10 @@ including encounter angle, relative kinetic energy and pair angular momentum.
 The outcomes below use heuristic disruption and fragment prescriptions; these
 are not calibrated material models.
 
+A separate [impact classification API](docs/impact-scaling.md) estimates outcomes
+for supported solid contacts, including rocky hit-and-run events. It is not yet
+connected to the live collision handler.
+
 | Situation | Outcome |
 |---|---|
 | Anything touches a **black hole** | Swallowed. The black hole gains the mass and momentum and its disk flares. |

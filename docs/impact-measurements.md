@@ -42,7 +42,8 @@ can still turn fragmentation into a merger. The captured measurements do not
 classify hit-and-run events or assign remnant spin.
 
 The standalone [impact scaling API](impact-scaling.md) provides SI head-on curves
-and a restricted non-grazing classifier with explicit scene-unit conversion.
+and solid-body classification, including supported rocky grazing contacts, with
+explicit scene-unit conversion.
 The live collision handler does not call either calculation.
 
 `tests/test_impacts.py` checks hand-calculated oblique impacts, head-on and
