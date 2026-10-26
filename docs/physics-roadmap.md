@@ -143,10 +143,13 @@ Checkpoint 4.2 implementation steps:
 - [x] **4.2a Head-on disruption curves:** explicit material calibrations and SI
   inputs, mass-ratio scaling, largest-remnant mass and super-catastrophic branch;
   published curve references, dimensional checks and boundary tests.
-- [ ] **4.2b Contact classification:** define enforced applicability and unit
-  conversion, handle oblique interacting mass, merging and hit-and-run boundaries,
-  and compute remnant masses without consulting particle capacity. Validate
-  supported domains and reject unsupported cases explicitly.
+- [x] **4.2b Non-grazing classification:** enforce applicability and unit
+  conversion, account for oblique interacting mass, and distinguish merging,
+  partial accretion, erosion and disruption independently of particle capacity.
+  Check reference geometry, regime boundaries and unsupported inputs.
+- [ ] **4.2c Grazing classification:** distinguish graze-and-merge from
+  hit-and-run, estimate both surviving remnants and unassigned mass, and validate
+  reference encounters and boundaries without consulting particle capacity.
 
 Numerical model and API: [impact scaling](impact-scaling.md).
 
