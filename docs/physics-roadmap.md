@@ -127,9 +127,9 @@ Complete these checkpoints in order:
   their mass, velocity, material and geometry domains. Compute accretion,
   erosion, disruption and hit-and-run classifications and remnant masses
   independently of particle capacity; validate reference and boundary cases.
-- [ ] **4.3 Conserved outcomes — active:** generate remnants and fragments with accounted
+- [x] **~~4.3 Conserved outcomes~~:** generate remnants and fragments with accounted
   mass, momentum, orbital/remnant spin angular momentum and energy partition.
-- [ ] **4.4 Unresolved debris:** preserve material and its physical budgets in
+- [ ] **4.4 Unresolved debris — next:** preserve material and its physical budgets in
   an accounted reservoir/statistical model when explicit particle capacity runs
   out; verify capacity changes cannot change the selected collision regime.
 - [ ] **4.5 Integration and validation:** apply the validated laws in their
@@ -162,7 +162,7 @@ Numerical model and API: [impact scaling](impact-scaling.md).
 
 Checkpoint 4.3 implementation steps:
 
-- [x] **4.3a Single-remnant budgets:** immutable SI spherical states; explicit
+- [x] **~~4.3a Single-remnant budgets~~:** immutable SI spherical states; explicit
   translational, rotational, self-binding, mutual and internal energy; construct
   feasible isolated mergers preserving mass, momentum and angular momentum.
   Check analytic cases, inertial-frame invariance, energy deficits and spin limits.
@@ -170,12 +170,16 @@ Checkpoint 4.3 implementation steps:
   spin and internal energy for classified runner/debris masses. Close all budgets
   for prescribed layouts and reject infeasible allocations without silently changing
   the regime. Layout and expansion-energy parameters remain uncalibrated.
-- [ ] **4.3c Outcome validation:** connect classification to supported outcome
+- [x] **~~4.3c Outcome validation~~:** connect classification to supported outcome
   constructors, define handling for approximate contact states, and validate
-  regime-specific layouts, runner escape and reference impacts with conservation
+  regime-compatible layouts, remnant escape and reference impacts with conservation
   across regimes. Live application remains in 4.5.
 
 State, inventory and outcome contracts: [collision budgets](collision-budgets.md).
+Supported construction uses isolated spheres, prescribed layouts/energy splits
+and conservative escape checks. Bound debris, empirical ejecta distributions and
+fluid-shape stability remain outside this model; an inconclusive allocation is
+rejected without changing its classified regime.
 
 Acceptance: representative impacts match reference outcomes and close their
 mass, momentum, angular-momentum, and energy budgets within documented errors;
