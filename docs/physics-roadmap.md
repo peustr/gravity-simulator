@@ -193,7 +193,19 @@ Checkpoint 4.4 implementation steps:
   collisions, and validate material transfers against resolved reference
   simulations. Persistent-state migration and live application remain in 4.5.
 
-Snapshot API, invariants and time/storage limits:
+4.4b acceptance steps:
+
+- [x] **Far-field gravity exchange:** equal/opposite reservoir–body impulses,
+  explicit kinetic-work accounting, force/potential/tidal truncation bounds,
+  accuracy rejection and resolved-fragment reference checks at fixed positions.
+- [ ] **Cloud transport:** evolve cloud position, extent and the required internal
+  moments; account for changing gravitational potentials and validate a complete
+  timestep against resolved trajectories with convergence tests.
+- [ ] **Bounded lifecycle and transfers:** bound storage across repeated events
+  and verify transfer/coalescence accounting without silently deleting material
+  or changing the collision regime. Define behavior outside approximation limits.
+
+Snapshot and gravity-exchange APIs, invariants and time/storage limits:
 [unresolved debris](unresolved-debris.md).
 
 Acceptance: representative impacts match reference outcomes and close their

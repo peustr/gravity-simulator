@@ -65,6 +65,7 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 | `physics_server/collision_outcomes.py` | SI spherical inventories, isolated mergers and prescribed remnant allocations; contract in `docs/collision-budgets.md` |
 | `physics_server/collision_models.py` | Classified construction, shallow-contact correction and isolated remnant escape certificates |
 | `physics_server/debris.py` | Creation-time debris capacity partition and compact reservoirs; limits in `docs/unresolved-debris.md` |
+| `physics_server/debris_gravity.py` | Far-field reservoir/body gravity estimates and momentum substeps with explicit accuracy bounds |
 | `docs/orbital-dynamics.md` | Accuracy targets, gravity/forecast options, removal boundaries and save migration |
 | `tools/benchmark.py` | Seeded performance workloads, profiling and JSON reports |
 | `docs/physics-roadmap.md` | Ordered realism milestones and current acceptance checklist |

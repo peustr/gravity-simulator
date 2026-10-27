@@ -66,13 +66,69 @@ is not approximated by placing the reservoir mass at its centre. The quantities
 are evaluated in a common inertial frame; extreme absolute coordinates or boosts
 can lose floating-point precision just as for individual spherical states.
 
+## Far-field gravity exchange
+
+`physics_server/debris_gravity.py` supplies an instantaneous gravity estimate and
+a momentum substep between a reservoir and a resolved `SphereState`. Neither
+operation moves bodies or advances a debris cloud through time.
+
+`estimate_gravity(reservoir, body)` treats each distribution as a monopole at
+its centre of mass. The two enclosing supports must not overlap. Let M and m
+be their masses, d their centre separation, a the reservoir extent, and
+R = a + body.radius_m. Conservative bounds on the instantaneous approximation are:
+
+```text
+|force error| ≤ 12 G M m R² / (d − R)⁴
+|potential error| ≤ G M m R² / (d − R)³
+omitted internal tidal acceleration ≤ 2 G m a / (d − R)³
+omitted tidal torque ≤ M a × tidal_acceleration_bound
+```
+
+The mass-weighted first-order terms vanish at the centres of mass. Taylor
+remainder bounds use a force second directional derivative no larger than
+24/r⁴ and a potential Hessian norm no larger than 2/r³, before multiplying by
+G and the masses. The tidal bound follows from the force gradient norm 2/r³.
+These are geometric bounds for fixed spherical constituents; they exclude
+roundoff and do not bound a future trajectory or changing support.
+
+`gravity_kick(reservoir, body, duration_s, max_relative_force_error=...,
+max_tidal_velocity_change_m_s=...)` rejects estimates beyond the supplied
+accuracy limits. Relative force error is measured against the monopole force
+magnitude. The tidal limit bounds the omitted velocity change over the
+**frozen-position substep**, not over a complete physical timestep.
+
+An accepted kick applies impulse **J** to the reservoir and −**J** to the body,
+preserving linear and orbital-plus-intrinsic angular momentum analytically.
+Mass, volume, shape extent, spin, dispersion and internal energies are unchanged.
+Its `GravityKick` result includes updated immutable states, the estimate, impulse,
+omitted tidal velocity/angular-momentum bounds, and the pair's kinetic increment:
+
+```text
+kinetic_work = J · (V_reservoir − V_body) + ½ |J|² (1/M + 1/m)
+```
+
+Work can be negative. It is not heat and must not be added to internal energy.
+A kick alone does not conserve isolated total energy; a complete integrator must
+also evolve positions and gravitational potential, with a separate error test.
+The monopole potential estimate never replaces the stored exact snapshot cross
+potential. Small impulses can be quantized when added to large absolute stored
+velocities; an audit-frame change cannot recover that lost precision.
+
+Tests compare force, potential, tidal acceleration and torque bounds against
+fully resolved fragment calculations, check quadratic far-field convergence,
+and verify paired momentum/angular-momentum identities, work, inertial-frame
+transformations and rejection at inadequate accuracy. These are substep checks,
+not long-term cloud evolution validation.
+
 ## Time and storage limits
 
 These inventories describe **one instant**. Stored potentials cannot be reused
 after moving resolved bodies, and aggregate moments cannot recover individual
-trajectories or resample uniquely when capacity increases. There is no reservoir
-advection, force coupling, accretion, expiry or persistence integration yet.
-An explicit evolution and transfer model is required before live use.
+trajectories or resample uniquely when capacity increases. The gravity substep
+does not supply cloud advection, extent evolution, self-gravity, tidal deformation,
+accretion, expiry or persistence integration. Transport needs additional shape
+and position–velocity information; a complete evolution and transfer model is
+required before live use.
 
 Each collision retains O(k) explicit states plus O(1) reservoir data, where k is
 the retained particle count. Creation still examines the full proposed fragment
