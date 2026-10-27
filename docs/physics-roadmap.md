@@ -129,7 +129,7 @@ Complete these checkpoints in order:
   independently of particle capacity; validate reference and boundary cases.
 - [x] **~~4.3 Conserved outcomes~~:** generate remnants and fragments with accounted
   mass, momentum, orbital/remnant spin angular momentum and energy partition.
-- [ ] **4.4 Unresolved debris — next:** preserve material and its physical budgets in
+- [ ] **4.4 Unresolved debris — active:** preserve material and its physical budgets in
   an accounted reservoir/statistical model when explicit particle capacity runs
   out; verify capacity changes cannot change the selected collision regime.
 - [ ] **4.5 Integration and validation:** apply the validated laws in their
@@ -180,6 +180,21 @@ Supported construction uses isolated spheres, prescribed layouts/energy splits
 and conservative escape checks. Bound debris, empirical ejecta distributions and
 fluid-shape stability remain outside this model; an inconclusive allocation is
 rejected without changing its classified regime.
+
+Checkpoint 4.4 implementation steps:
+
+- [x] **~~4.4a Capacity partition and inventories~~:** retain primary remnants,
+  select explicit debris deterministically, and summarize the remainder without
+  keeping hidden fragment states. Preserve mass, volume, momentum, orbital/spin
+  angular momentum and all energy components, including cross potential. Verify
+  that capacity cannot change classification, primary states or inventories.
+- [ ] **4.4b Reservoir evolution and lifecycle:** define motion and gravity
+  coupling with explicit energy/work accounting, bound storage across repeated
+  collisions, and validate material transfers against resolved reference
+  simulations. Persistent-state migration and live application remain in 4.5.
+
+Snapshot API, invariants and time/storage limits:
+[unresolved debris](unresolved-debris.md).
 
 Acceptance: representative impacts match reference outcomes and close their
 mass, momentum, angular-momentum, and energy budgets within documented errors;
