@@ -118,151 +118,88 @@ Reference problems, numerical bounds and model limitations:
 
 ## 4. Credible impact outcomes
 
-Complete these checkpoints in order:
+**Incomplete.** Completion requires calibrated solid-body impacts in the running
+sandbox, conserved physical inventories, useful unresolved-debris evolution at
+particle limits, and measured accuracy/performance. Standalone model tests and
+isolated-merger support do not satisfy that goal.
 
-- [x] **4.1 Contact measurements:** capture immutable pre-merge state, contact
-  angle, relative kinetic energy and orbital angular momentum. Check analytic
-  values, coordinate/body-order invariance and capture through native merging.
-- [x] **~~4.2 Calibrated classification~~:** select and document impact laws and
-  their mass, velocity, material and geometry domains. Compute accretion,
-  erosion, disruption and hit-and-run classifications and remnant masses
-  independently of particle capacity; validate reference and boundary cases.
-- [x] **~~4.3 Conserved outcomes~~:** generate remnants and fragments with accounted
-  mass, momentum, orbital/remnant spin angular momentum and energy partition.
-- [x] **~~4.4 Unresolved debris~~:** preserve material and its physical budgets in
-  an accounted reservoir/statistical model when explicit particle capacity runs
-  out; verify capacity changes cannot change the selected collision regime.
-- [ ] **4.5 Integration and validation — active:** apply the validated laws in their
-  supported domains, migrate persistent physical state, validate grazing and
-  reference impacts, and measure runtime on the representative workloads.
+### Current implementation
 
-Current measurement contract and model limits: [impact measurements](impact-measurements.md).
+| Component | Available behavior | Remaining limitation |
+|---|---|---|
+| Contact state and saves | Immutable pre-impact measurements; version-4 body spin/internal-energy inventories | Older or heuristically transformed bodies have unknown inventories |
+| Classification | Calibrated solid-body regimes and remnant masses within documented domains | Most classified outcomes are not applied live |
+| Outcome construction | Conserved spherical remnants; live opt-in isolated rocky mergers | Other outcomes require caller-supplied layouts/energy splits; live mode rejects a third body and spinning inputs |
+| Unresolved material | Snapshot inventories, restricted cloud transport and bounded ownership APIs | No live coupling or persistence; transport cannot represent debris surrounding its remnant or general multi-body interactions |
+| Diagnostics | Orbital quantities and removal accounting | No complete live spin, internal-energy and reservoir ledger |
 
-Checkpoint 4.2 implementation steps:
+### Remaining requirements
 
-- [x] **4.2a Head-on disruption curves:** explicit material calibrations and SI
-  inputs, mass-ratio scaling, largest-remnant mass and super-catastrophic branch;
-  published curve references, dimensional checks and boundary tests.
-- [x] **4.2b Non-grazing classification:** enforce applicability and unit
-  conversion, account for oblique interacting mass, and distinguish merging,
-  partial accretion, erosion and disruption independently of particle capacity.
-  Check reference geometry, regime boundaries and unsupported inputs.
-- [x] **4.2c Grazing classification:** distinguish graze-and-merge from
-  hit-and-run, estimate both surviving remnants and unassigned mass, and validate
-  reference encounters and boundaries without consulting particle capacity.
+This is the complete delivery checklist for Milestone 4. Implementation batches
+may address part of an item; they do not create additional numbered milestones.
+An item closes only when its runtime behavior and acceptance checks are delivered.
+Changing these requirements or supported domains requires an explicit scope decision.
 
-Classification acceptance: the documented solid-body domains have explicit
-rejection outside their limits, published curve/geometry and grazing references,
-boundary and invariance checks, and closed remnant/unassigned mass inventories.
-Grazing support is limited to rocky protoplanets; grazing planetesimals need a
-separate calibrated merging law. Creating particles and closing momentum,
-angular-momentum and energy budgets belong to 4.3–4.5.
+- [ ] **Live calibrated outcomes.** Apply merging, graze-and-merge, partial
+  accretion, erosion, disruption and hit-and-run in the existing calibrated
+  solid-body domains. Supply a bounded, documented remnant-layout and energy-split
+  policy so callers do not have to invent fragment states. Label prescribed ejecta
+  parameters honestly. Provide an application control and runnable reference
+  scenes. Validate before mutation; unsupported encounters remain intact with a
+  useful explanation, without silently reverting to heuristic outcomes.
+- [ ] **Encounters in populated scenes.** Account for surrounding bodies and
+  changes in their interaction potential, with a quantitative bound on the
+  isolated-impact approximation. Apply supported outcomes outside the native
+  callback, update particle/forecast/contact caches, and handle successive
+  encounters without losing inventories. Demonstrate supported impacts with a
+  third gravitating body and repeated supported contacts; explicitly reject
+  encounters outside the calibration, including unsupported incoming spin.
+- [ ] **Operational unresolved debris.** Choose and implement a representation
+  that can evolve the ejecta produced by the live outcome policy, including its
+  interaction with remnants and other bodies. Coordinate shared-body updates,
+  ownership and bounded storage; preserve complete inventories through transfers.
+  Changing explicit-particle capacity must not change the classified regime or
+  discard material. Demonstrate the same impact with resolved and unresolved
+  debris and bounded error against a resolved reference. Full storage or exceeded
+  model limits must leave the encounter unapplied. The existing far-field,
+  outward-cloud solver is insufficient for this requirement; resolve that
+  representation mismatch before extending its lifecycle machinery.
+- [ ] **Complete accounting and persistence.** Report mass, linear momentum,
+  orbital plus spin angular momentum, and kinetic, binding, mutual and internal
+  energies across bodies and unresolved material. Separate numerical error,
+  approximation error and explicit losses. Save/restart must retain reservoirs,
+  model parameters, error history and ownership without changing future behavior
+  beyond documented integrator restart differences. Preserve old-save migration
+  and clearly expose the active collision model and unsupported states.
+- [ ] **Release validation and maintenance.** Exercise every supported regime,
+  grazing boundaries, populated scenes, successive contacts, capacity changes and
+  save/restart through the live path. Require reference agreement and complete
+  budget closure within documented numerical/model tolerances. Measure the
+  existing representative workloads against the performance targets above and
+  verify rendered Solar System smoothness. Pass repository checks, self-tests
+  and CI. Consolidate superseded or unused implementations and duplicate prose;
+  keep one documented runtime path per supported model.
 
-Numerical model and API: [impact scaling](impact-scaling.md).
+### Scope and completion boundary
 
-Checkpoint 4.3 implementation steps:
+Mass-outcome calibrations retain their published applicability limits. Ejecta
+layouts and energy fractions remain explicit modelling prescriptions unless
+independently calibrated. General rotating-impact laws, tidal evolution,
+thermodynamic/composition models, gas/stellar/compact-object collision laws and
+hydrodynamics belong to later milestones. Research extensions such as general
+cloud coalescence or resampling are optional unless the chosen live debris model
+needs them to meet the requirements above.
 
-- [x] **~~4.3a Single-remnant budgets~~:** immutable SI spherical states; explicit
-  translational, rotational, self-binding, mutual and internal energy; construct
-  feasible isolated mergers preserving mass, momentum and angular momentum.
-  Check analytic cases, inertial-frame invariance, energy deficits and spin limits.
-- [x] **~~4.3b Multiple remnants and fragments~~:** allocate positions, velocities,
-  spin and internal energy for classified runner/debris masses. Close all budgets
-  for prescribed layouts and reject infeasible allocations without silently changing
-  the regime. Layout and expansion-energy parameters remain uncalibrated.
-- [x] **~~4.3c Outcome validation~~:** connect classification to supported outcome
-  constructors, define handling for approximate contact states, and validate
-  regime-compatible layouts, remnant escape and reference impacts with conservation
-  across regimes. Live application remains in 4.5.
+Milestone 4 closes when users can enable the calibrated model in the application,
+run the supported reference encounters in populated scenes, retain material and
+budgets across capacity limits and restart, and meet the validation gates.
+The isolated two-body demo alone is insufficient. General-purpose impact support
+outside the stated domains is not claimed.
 
-State, inventory and outcome contracts: [collision budgets](collision-budgets.md).
-Supported construction uses isolated spheres, prescribed layouts/energy splits
-and conservative escape checks. Bound debris, empirical ejecta distributions and
-fluid-shape stability remain outside this model; an inconclusive allocation is
-rejected without changing its classified regime.
-
-Checkpoint 4.4 implementation steps:
-
-- [x] **~~4.4a Capacity partition and inventories~~:** retain primary remnants,
-  select explicit debris deterministically, and summarize the remainder without
-  keeping hidden fragment states. Preserve mass, volume, momentum, orbital/spin
-  angular momentum and all energy components, including cross potential. Verify
-  that capacity cannot change classification, primary states or inventories.
-- [x] **~~4.4b Reservoir evolution and lifecycle (restricted model)~~:** define motion and gravity
-  coupling with explicit energy/work accounting, bound storage across repeated
-  collisions, and validate material transfers against resolved reference
-  simulations. Persistent-state migration and live application remain in 4.5.
-
-4.4b acceptance steps:
-
-- [x] **Far-field gravity exchange:** equal/opposite reservoir–body impulses,
-  explicit kinetic-work accounting, force/potential/tidal truncation bounds,
-  accuracy rejection and resolved-fragment reference checks at fixed positions.
-- [x] **~~Cloud transport (restricted model)~~:** evolve outward homologous clouds
-  with one resolved body, including extent, expansion energy and changing mutual
-  potentials. Validate full timesteps against resolved trajectories with convergence
-  and cumulative error checks. Reject incompatible shapes and near-field coupling.
-- [x] **~~Bounded lifecycle and exact transfers~~:** fixed slots, full-record
-  handoff and single-fragment promotion preserve material, provenance and error
-  history. Capacity and physics failures leave operations unapplied. Automatic
-  coalescence and multi-fragment resampling are unsupported; full stores refuse
-  admission rather than changing the collision regime or deleting material.
-
-Snapshot and gravity-exchange APIs, invariants and time/storage limits:
-[unresolved debris](unresolved-debris.md).
-Transport equations, supported geometry and error controls:
-[expanding clouds](debris-transport.md).
-Ownership, hard-cap behavior and transfer contracts:
-[reservoir lifecycle](debris-lifecycle.md). Completion applies to these standalone,
-restricted models; shared-body multi-cloud coupling and atomic application to the
-live simulation require integration work in 4.5.
-
-Acceptance: representative impacts match reference outcomes and close their
-mass, momentum, angular-momentum, and energy budgets within documented errors;
-particle limits do not silently change the collision regime.
-
-Checkpoint 4.5 implementation steps:
-
-- [x] **~~4.5a Persistent body inventories~~:** retain spin angular momentum and
-  internal energy independently of visual heat; capture complete SI states before
-  native collision mutation. Round-trip known and unknown inventories, migrate
-  older saves without inventing missing budgets, and invalidate inventories after
-  unaccounted heuristic transformations.
-- [ ] **4.5b Live calibrated outcomes:** provide an explicit supported collision
-  mode, preflight units, material/domain, inventories, isolation and allocation
-  feasibility before mutation, then apply conserved remnants atomically outside
-  the native callback. Unsupported encounters must stop with a useful explanation;
-  they must not silently change regime or use the heuristic. Validate successive
-  contacts and preserve smooth stepping and particle partitioning.
-- [ ] **4.5c Live unresolved material:** persist reservoir records and their error
-  history, coordinate ownership with explicit bodies, and evolve only supported
-  cloud/body couplings. Preflight capacity and accuracy limits before committing
-  outcomes; full stores must preserve the unapplied encounter. Do not independently
-  advance reservoirs sharing a resolved body.
-- [ ] **4.5d End-to-end acceptance:** run reference impacts across supported regimes,
-  grazing and repeated contacts, save/restart and particle-capacity comparisons;
-  check complete budgets and explicit rejection outside the model. Measure impact
-  and non-impact workloads against consumer-hardware budgets, and verify smooth
-  rendered Solar System motion before completing Milestone 4.
-
-4.5b implementation steps:
-
-- [x] **~~4.5b.1 Isolated live mergers~~:** opt-in rocky-planet mergers, deferred native
-  callbacks, preflight before particle mutation, intact paused encounters on
-  rejection, retained spin/energy and compatible save/restart settings. Check
-  head-on/grazing conservation, successive contacts and capacity independence.
-- [ ] **4.5b.2 Multiple remnants:** apply supported calibrated non-merging outcomes
-  with explicit allocation choices, capacity preflight and retained inventories;
-  do not present prescribed fragment layouts as empirical ejecta predictions.
-- [ ] **4.5b.3 External gravity and complete live accounting:** bound the isolated
-  impact approximation in scenes with other bodies, account for changed external
-  potential and expose complete collision budgets. Keep unsupported encounters
-  unapplied and validate repeated contacts and particle/cache updates.
-
-The default live handler uses heuristic outcomes. The opt-in `isolated_mergers`
-mode applies conserved rocky-planet mergers in a two-body scene; other outcomes
-pause without heuristic fallback. Reservoir transport remains standalone.
-State and migration contract: [collision budgets](collision-budgets.md#persistent-body-inventories).
+Implementation contracts: [impact measurements](impact-measurements.md),
+[calibration domains](impact-scaling.md), [collision budgets and live mode](collision-budgets.md),
+[debris inventories](unresolved-debris.md), [current transport limits](debris-transport.md),
+and [reservoir ownership](debris-lifecycle.md).
 
 ## 5. Rotation and tidal evolution
 
