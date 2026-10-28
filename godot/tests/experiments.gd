@@ -82,6 +82,17 @@ func _run() -> void:
 	if not await _until(func(): return main.hud.physics_settings.get("escape_distance") == null):
 		_fail("Removal boundary control did not reach the server")
 		return
+	main.hud.physics_menu.id_pressed.emit(14)
+	if not await _until(func(): return main.hud.physics_settings.get("collisions") == "isolated_impacts"):
+		_fail("Calibrated collision control did not reach the server")
+		return
+	if not main.hud.physics_menu.is_item_disabled(main.hud.physics_menu.get_item_index(10)):
+		_fail("Calibrated mode allowed tracer gravity")
+		return
+	main.hud.physics_menu.id_pressed.emit(14)
+	if not await _until(func(): return main.hud.physics_settings.get("collisions") == "heuristic"):
+		_fail("Could not return to heuristic mode")
+		return
 	if not await _request({"cmd": "checkpoint"}):
 		_fail("Could not set paused restart point for cancellation test")
 		return

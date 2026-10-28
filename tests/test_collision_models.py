@@ -243,6 +243,52 @@ def test_escape_certificate_rejects_bound_marginal_overlapping_and_inward_states
     assert remnant_escape_check((a, replace(b, velocity_m_s=(2 * escape, 0, 0)))) == 'two_body_hyperbolic'
 
 
+def test_weighted_escape_bound_has_analytic_margin_and_independent_gravity_check():
+    mass, side = 1e20, 1e6
+    points = np.array([[-.5, -math.sqrt(3)/6, 0], [.5, -math.sqrt(3)/6, 0], [0, math.sqrt(3)/3, 0]])
+    # Equilateral triangle: B_i=4Gm/(d*u), hence u^2 > 16Gm/d.
+    critical = math.sqrt(16 * G_SI * mass / side)
+    def triangle(speed):
+        return tuple(SphereState(mass, 1e4, side*p, speed*p) for p in points)
+    for speed in (critical * .9, critical, critical * (1 + 1e-14)):
+        with pytest.raises(ValueError, match='escape is not established'):
+            remnant_escape_check(triangle(speed))
+    states = triangle(1.01 * critical)
+    assert remnant_escape_check(states) == 'all_pairs_escape_bound'
+    # This valid state fails the former 8GM/d_min bound (24Gm/d here).
+    assert (1.01 * critical)**2 < 24 * G_SI * mass / side
+    sim = rebound.Simulation()
+    sim.G = 1
+    sim.integrator = 'ias15'
+    speed_unit = math.sqrt(G_SI * 3*mass / side)
+    for s in states:
+        x,y,z = np.array(s.position_m)/side
+        vx,vy,vz = np.array(s.velocity_m_s)/speed_unit
+        sim.add(m=1/3,x=x,y=y,z=z,vx=vx,vy=vy,vz=vz)
+    sim.integrate(20)
+    assert min(math.dist(a.xyz,b.xyz) for i,a in enumerate(sim.particles) for b in sim.particles[i+1:]) > 20
+
+
+def test_weighted_escape_rejects_overflow_in_gravity_impulse():
+    states = tuple(SphereState(1e20, 1e4, (i*1e6,0,0), (i*1e-310,0,0)) for i in range(3))
+    with pytest.raises(ValueError, match='numerical range'):
+        remnant_escape_check(states)
+
+
+def test_resolved_policy_preserves_classification_and_rejects_conflicting_or_excessive_allocations():
+    pair = rocky_pair(.7, 3)
+    with pytest.raises(ValueError, match='cannot be combined'):
+        construct_collision(*pair, material='fluid_planets', body_types=(0,0), resolved_policy=True,
+                            expansion_fraction=.5)
+    pair = rocky_pair(0, 8)
+    with pytest.raises(ValueError, match='more than 32'):
+        construct_collision(*pair, material='fluid_planets', body_types=(0,0), resolved_policy=True)
+    pair = rocky_pair(.9, 1.5)
+    outcome = construct_collision(*pair, material='fluid_planets', body_types=(0,0), resolved_policy=True)
+    assert outcome.classification.regime == 'hit_and_run' and len(outcome.remnants) == 2
+    assert_closed(pair, outcome.remnants)
+
+
 def test_fragmentation_cannot_accept_immediately_reaccreting_debris():
     pair = encounter(speed=200)
     classified = classify(pair, 'planetesimals')

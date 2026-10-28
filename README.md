@@ -261,7 +261,7 @@ The **Experiment** menu also controls full gravity for debris, inclusion of all 
 
 New saves use version-4 JSON with an explicit unit/radius-model identifier, physics settings, removal inventory and per-body spin/internal-energy inventories. Unknown body inventories are stored as null; versions 1–3 remain readable without inventing missing energy or spin. See [physical inventories and migration](docs/collision-budgets.md#persistent-body-inventories).
 
-Collision behavior defaults to the sandbox heuristic. Advanced experiments can opt into `isolated_mergers` through saved physics settings or the physics command: this applies calibrated, conserved mergers for supported two-body rocky-planet impacts. Unsupported encounters pause with both bodies intact. Full gravity is required; escape removal, supernovae and tidal shredding are disabled. See [configuration and limits](docs/collision-budgets.md#live-isolated-mergers).
+**Planet smash** uses calibrated, conserved rocky-body disruption with its original initial conditions. The **Experiment → Calibrated collisions** control selects this model for other experiments. It currently requires an isolated pair and full gravity; unsupported encounters or insufficient fragment slots pause intact. Escape removal, supernovae and tidal shredding are disabled in this mode. Other presets restore heuristic collisions. Fragment positions and energy splits remain prescribed approximations. See [configuration and limits](docs/collision-budgets.md#live-isolated-mergers).
 
 Version-1 scenes load automatically in **legacy sandbox units**, retaining all original values and exaggerated contact-radius rules; re-saving preserves that label. They are not silently converted to physical scenes. Clear or choose a preset to start a new physical scene.
 
@@ -334,10 +334,10 @@ The outcomes below use heuristic disruption and fragment prescriptions; these
 are not calibrated material models.
 
 The [impact classification API](docs/impact-scaling.md) estimates outcomes for
-supported solid contacts, including rocky hit-and-run events. The opt-in
-[isolated-merger mode](docs/collision-budgets.md#live-isolated-mergers) applies its
-single-remnant outcomes with conserved spin and energy. Other regimes remain
-standalone; the table below describes the default heuristic mode.
+supported solid contacts, including rocky hit-and-run events. The live
+[calibrated mode](docs/collision-budgets.md#live-isolated-mergers) constructs
+conserved resolved remnants and is enabled by Planet smash. The table below
+describes heuristic mode, retained by the other presets.
 
 | Situation | Outcome |
 |---|---|

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from dataclasses import asdict
 import cProfile
 from datetime import datetime, timezone
 import json
@@ -20,6 +21,8 @@ import numpy as np
 import rebound
 
 from diagnostics import Ledger, totals
+from body_state import capture_sphere
+from collision_outcomes import collision_budget
 from server import MAX_EVENTS_PER_PACKET, PHYSICS_BUDGET, TICK_HZ, pack_state
 from validation import run_accuracy
 import world as W
@@ -27,6 +30,17 @@ import units
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = ('solar', 'binary', 'black_hole', 'smash', 'formation', 'galaxies')
+
+
+def physical_inventory(world):
+    states = [capture_sphere(p, world.meta[p.name]['inventory'], world.units) for p in world.sim.particles]
+    if any(s is None for s in states):
+        return dict(available=False, reason='Unknown body inventories or nonphysical units')
+    try:
+        budget = collision_budget(states)
+    except ValueError as exc:
+        return dict(available=False, reason=str(exc))
+    return dict(available=True, **asdict(budget), energy_j=budget.energy_j)
 
 
 def summary(values):
@@ -77,6 +91,7 @@ def workload(name, ticks, seed, audit=False, settings=None):
                   units=units.metadata(), radius_model=world.units, physics=world.gravity_summary())
     if audit:
         world.ledger = Ledger()
+        initial_physical = physical_inventory(world)
     advance, packing, forecast, tick_times, point_counts = [], [], [], [], []
     events = Counter()
     for tick in range(ticks):
@@ -109,6 +124,7 @@ def workload(name, ticks, seed, audit=False, settings=None):
                   initial_tracers=initial['tracers'], final_tracers=final['tracers'])
     if audit:
         report['accounting'] = world.ledger.report(initial, final)
+        report['physical_inventory_si'] = dict(initial=initial_physical, final=physical_inventory(world))
     return report
 
 
@@ -144,13 +160,20 @@ def main(argv=None):
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--scenario', choices=SCENARIOS, action='append')
     parser.add_argument('--profile', action='store_true')
-    parser.add_argument('--gravity', choices=('tracers', 'full'), default='tracers')
+    parser.add_argument('--gravity', choices=('tracers', 'full'), default=None,
+                        help='Override preset gravity; calibrated impacts require full gravity')
+    parser.add_argument('--collisions', choices=('heuristic', 'isolated_mergers', 'isolated_impacts'),
+                        help='Override preset collisions for controlled comparisons')
     parser.add_argument('--forecast-limit', type=bounded_int(0, W.MAX_BODIES), default=20,
                         help='0 includes all bodies; otherwise select this many plus the attractor')
     parser.add_argument('--accuracy-only', action='store_true')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args(argv)
-    settings = dict(gravity=args.gravity, forecast_limit=args.forecast_limit)
+    settings = dict(forecast_limit=args.forecast_limit)
+    if args.gravity is not None:
+        settings['gravity'] = args.gravity
+    if args.collisions is not None:
+        settings['collisions'] = args.collisions
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     path = args.output or ROOT / 'benchmarks' / f'physics-{stamp}.json'
     report = dict(format='gravity-baseline', version=1, created_at_utc=stamp, machine=metadata(),
@@ -165,7 +188,7 @@ def main(argv=None):
                          'Workloads feed 1/60 s ticks without sleeping; they are not live end-to-end latency measurements.',
                          'Seeds reproduce initial conditions; wall budgets can change subsequent trajectories.',
                          'Accounting runs enable expensive inventory sampling and are excluded from timing comparisons.',
-                         'Energy is Newtonian mechanical energy; spin, heat and rest-mass energy are absent.',
+                         'Orbital accounting excludes spin and internal energy. physical_inventory_si includes sphere spin, binding and internal energy when all body inventories are known; it is not a temperature or rest-mass model.',
                          'Tracer-containing systems and collision/explosion scenarios are not closed conservative systems.'])
     for case in report['accuracy']:
         print(f"{'PASS' if case['passed'] else 'FAIL'} {case['name']}: {case['errors']}", flush=True)

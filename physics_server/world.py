@@ -238,7 +238,7 @@ class World:
         settings = configuration.settings(self.settings | changes)
         if settings['collisions'] != 'heuristic' and (self.units != units.SYSTEM or settings['gravity'] != 'full'
                                                     or settings['escape_distance'] is not None):
-            raise ValueError('Isolated mergers require physical units, full gravity and disabled escape removal')
+            raise ValueError('Calibrated impacts require physical units, full gravity and disabled escape removal')
         self.settings = settings
         self.sim.integrator.epsilon = self.settings['epsilon']
         self._partition_dirty = True
@@ -555,7 +555,7 @@ class World:
         for rec in pending:
             try:
                 if self.settings['collisions'] != 'heuristic':
-                    self._apply_isolated_merger(rec)
+                    self._apply_isolated_collision(rec)
                 else:
                     self._handle_collision(rec)
             except Exception as exc:
@@ -566,36 +566,48 @@ class World:
                 traceback.print_exc()
         self.sim.did_modify_particles = 1
 
-    def _apply_isolated_merger(self, rec):
+    def _apply_isolated_collision(self, rec):
         """Preflight a two-body outcome before committing any particle changes."""
         if self.units != units.SYSTEM or not math.isclose(self.sim.G, units.G, rel_tol=1e-12):
             raise ValueError('Calibrated collisions require physical units and Newtonian G')
         if self.sim.N != 2:
-            raise ValueError('Isolated mergers require exactly two bodies; external gravity is unsupported')
+            raise ValueError('Calibrated impacts require exactly two bodies; external gravity is unsupported')
         if (rec['ts'], rec['tr']) != (ROCKY, ROCKY):
-            raise ValueError('Isolated mergers currently support only rocky planets')
+            raise ValueError('Calibrated impacts currently support only rocky planets')
         if any(s is None for s in rec['spheres']):
             raise ValueError('Both bodies need known spin and internal-energy inventories')
-        outcome = construct_collision(*rec['spheres'], material='fluid_planets', body_types=(ROCKY, ROCKY))
-        remnant, = outcome.remnants  # No layout is supplied: only classified mergers can succeed.
-        inventory = BodyInventory(remnant.spin_kg_m2_s, remnant.internal_energy_j)
-        mass, radius = remnant.mass_kg / units.MASS_KG, remnant.radius_m / units.LENGTH_M
-        position = tuple(x / units.LENGTH_M for x in remnant.position_m)
-        velocity = tuple(v / units.VELOCITY_M_S for v in remnant.velocity_m_s)
+        outcome = construct_collision(*rec['spheres'], material='fluid_planets', body_types=(ROCKY, ROCKY),
+                                      resolved_policy=self.settings['collisions'] == 'isolated_impacts')
+        if len(outcome.remnants) > self.max_bodies:
+            raise ValueError('Insufficient body capacity for this impact; no material was removed')
+        prepared = [(s.mass_kg / units.MASS_KG, s.radius_m / units.LENGTH_M,
+                     tuple(x / units.LENGTH_M for x in s.position_m),
+                     tuple(v / units.VELOCITY_M_S for v in s.velocity_m_s),
+                     BodyInventory(s.spin_kg_m2_s, s.internal_energy_j)) for s in outcome.remnants]
         # Validate IDs before deletion, then reacquire the survivor: array slots can move.
         survivor, removed = self.particle(rec['s']), self.particle(rec['r'])
         if survivor is None or removed is None or rec['s'] == rec['r']:
             raise ValueError('Collision body IDs no longer identify an isolated pair')
         sm = self.meta[rec['s']]
         heat = max(.5, sm['heat'], self.meta[rec['r']]['heat'])
-        self.remove_body(int(rec['r']))
-        survivor = self.particle(rec['s'])
-        survivor.m, survivor.r = mass, radius
-        survivor.xyz, survivor.vxyz = position, velocity
-        sm['inventory'], sm['heat'] = inventory, heat
+        names = [rec['s'], rec['r']]
+        if len(prepared) == 1:
+            self.remove_body(int(rec['r']))
+            names.pop()
+        for mass, _radius, position, velocity, inventory in prepared[2:]:
+            names.append(str(self.add_body(ROCKY, mass, position, velocity, heat=heat, inventory=inventory)))
+        for name, (mass, radius, position, velocity, inventory) in zip(names, prepared, strict=True):
+            particle = self.particle(name)
+            particle.m, particle.r = mass, radius
+            particle.xyz, particle.vxyz = position, velocity
+            self.meta[name]['inventory'], self.meta[name]['heat'] = inventory, heat
+        self._partition_dirty = True
         # Keep the constructed volume/density and spin; heuristic promotion would
         # overwrite the radius and invalidate the conserved inventory.
-        self._event(EV_MERGE, position, 1.0, radius * 2, int(rec['s']), int(rec['r']))
+        total = sum(s.mass_kg for s in rec['spheres'])
+        center = tuple(sum(s.mass_kg * s.position_m[i] for s in rec['spheres']) / total / units.LENGTH_M for i in range(3))
+        self._event(EV_MERGE if len(prepared) == 1 else EV_SHATTER, center, 1.0,
+                    rec['rs'] + rec['rr'], int(rec['s']), int(rec['r']))
 
     def _handle_collision(self, rec):
         self.meta.pop(rec["r"], None)
@@ -1218,6 +1230,10 @@ class World:
         if name not in SCENARIOS:
             raise ValueError(f"Unknown scenario: {name!r}")
         self.clear()
+        if name == 'smash':
+            self.configure(dict(collisions='isolated_impacts', gravity='full', escape_distance=None))
+        elif self.settings['collisions'] != 'heuristic':
+            self.configure(dict(collisions='heuristic'))
         self.speed = PRESET_SPEEDS[name]
         rng = self.rng
         cam = {"focus": [0, 0, 0], "distance": 400.0, "pitch": 0.6}

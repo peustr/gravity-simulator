@@ -33,6 +33,18 @@ def test_profile_reports_native_integration_and_forecast():
     assert {'integration_including_collision_callbacks', 'tides', 'forecast', 'packing'} <= phases
 
 
+def test_physical_inventory_reports_unknown_energy_and_supported_smash():
+    import world as W
+    w=W.World(seed=42)
+    w.load_preset('smash')
+    assert benchmark.physical_inventory(w)['available']
+    w.meta['1']['inventory']=None
+    assert not benchmark.physical_inventory(w)['available']
+    w.load_preset('smash')
+    w.sim.particles[1].x=w.sim.particles[0].x
+    assert not benchmark.physical_inventory(w)['available']
+
+
 @pytest.mark.parametrize('passed, expected', [(True, 0), (False, 1)])
 def test_cli_writes_accuracy_failures_and_returns_status(tmp_path, monkeypatch, passed, expected):
     monkeypatch.setattr(benchmark, 'run_accuracy', lambda: [dict(name='reference', passed=passed, errors={'position': 1})])

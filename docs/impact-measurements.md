@@ -49,8 +49,8 @@ classify hit-and-run events or assign remnant spin.
 The standalone [impact scaling API](impact-scaling.md) provides SI head-on curves
 and solid-body classification, including supported rocky grazing contacts, with
 explicit scene-unit conversion.
-The opt-in [isolated-merger mode](collision-budgets.md#live-isolated-mergers) calls
-the calibrated single-remnant constructor after the native step. It defers all
+The [calibrated modes](collision-budgets.md#live-isolated-mergers) call
+the conserved outcome constructor after the native step. They defer all
 particle changes until validation succeeds; unsupported encounters pause intact.
 
 `tests/test_impacts.py` checks hand-calculated oblique impacts, head-on and

@@ -12,8 +12,8 @@ def settings(value, partial=False):
     if not isinstance(value, dict) or set(value) - DEFAULTS.keys() or (not partial and not required <= value.keys()):
         raise ValueError('Invalid physics settings')
     result = DEFAULTS | value
-    if result['collisions'] not in ('heuristic', 'isolated_mergers'):
-        raise ValueError('Collisions must be heuristic or isolated_mergers')
+    if result['collisions'] not in ('heuristic', 'isolated_mergers', 'isolated_impacts'):
+        raise ValueError('Collisions must be heuristic, isolated_mergers or isolated_impacts')
     if result['gravity'] not in ('full', 'tracers'):
         raise ValueError('Gravity must be full or tracers')
     epsilon = result['epsilon']

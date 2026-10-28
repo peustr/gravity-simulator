@@ -129,7 +129,7 @@ isolated-merger support do not satisfy that goal.
 |---|---|---|
 | Contact state and saves | Immutable pre-impact measurements; version-4 body spin/internal-energy inventories | Older or heuristically transformed bodies have unknown inventories |
 | Classification | Calibrated solid-body regimes and remnant masses within documented domains | Most classified outcomes are not applied live |
-| Outcome construction | Conserved spherical remnants; live opt-in isolated rocky mergers | Other outcomes require caller-supplied layouts/energy splits; live mode rejects a third body and spinning inputs |
+| Outcome construction | Planet smash uses conserved resolved disruption; mergers and prescribed multi-remnant allocations run live | Ejecta layout/energy split are prescribed; live mode rejects a third body, spinning inputs and insufficient fragment slots |
 | Unresolved material | Snapshot inventories, restricted cloud transport and bounded ownership APIs | No live coupling or persistence; transport cannot represent debris surrounding its remnant or general multi-body interactions |
 | Diagnostics | Orbital quantities and removal accounting | No complete live spin, internal-energy and reservoir ledger |
 

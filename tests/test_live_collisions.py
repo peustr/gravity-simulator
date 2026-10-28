@@ -184,3 +184,44 @@ def test_earlier_scene_settings_default_to_heuristic_mode(version):
     del data['physics']['collisions']
     restored, _ = E.restore(data)
     assert restored.settings['collisions'] == 'heuristic'
+
+
+@pytest.mark.parametrize('capacity', [21, 600])
+def test_unchanged_smash_preset_runs_calibrated_disruption_and_closes_budgets(capacity):
+    w = W.World(max_bodies=capacity, seed=42)
+    w.load_preset('smash')
+    initial = states(w)
+    before = collision_budget(initial)
+    # Initial COM shifts are the existing preset behavior, not new initial conditions.
+    assert tuple(w.snapshot()['m']) == (.003, .0026)
+    assert w.particle('2').x - w.particle('1').x == pytest.approx(.8)
+    assert w.particle('1').vx - w.particle('2').vx == 5
+    for _ in range(240):
+        w.advance(1/60, time.perf_counter()+1)
+    assert not w.paused and not w.notices and w.sim.N == w.sim.N_active == 21
+    after = collision_budget(states(w))
+    assert max(p.m for p in w.sim.particles)/.0056 == pytest.approx(.04804214216, rel=1e-8)
+    assert after.mass_kg == pytest.approx(before.mass_kg, rel=1e-12)
+    momentum_scale = sum(s.mass_kg*math.hypot(*s.velocity_m_s) for s in initial)
+    np.testing.assert_allclose(after.momentum_kg_m_s, before.momentum_kg_m_s, rtol=0, atol=1e-12*momentum_scale)
+    angular_scale = momentum_scale * sum(s.radius_m for s in initial)
+    np.testing.assert_allclose(after.angular_momentum_kg_m2_s, before.angular_momentum_kg_m2_s,
+                               rtol=0, atol=1e-12*angular_scale)
+    assert after.energy_j == pytest.approx(before.energy_j, rel=1e-10)
+    assert after.internal_energy_j > 0
+    assert [e[0] for e in w.events] == [W.EV_SHATTER]
+    restored,_ = E.restore(E.capture(w,E.DEFAULT_CAMERA))
+    assert states(restored) == states(w)
+    w.load_preset('solar')
+    assert w.settings['collisions'] == 'heuristic'
+
+
+def test_smash_insufficient_capacity_preserves_the_unapplied_encounter():
+    w = W.World(max_bodies=20,seed=42)
+    w.load_preset('smash')
+    for _ in range(240):
+        w.advance(1/60,time.perf_counter()+1)
+    assert w.paused and w.sim.N == 2 and not w.events
+    assert 'Insufficient body capacity' in w.notices[-1]['text']
+    assert sorted(p.m for p in w.sim.particles) == [.0026,.003]
+    assert all(md['inventory'] == BodyInventory() for md in w.meta.values())

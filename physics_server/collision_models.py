@@ -8,7 +8,7 @@ import math
 
 import numpy as np
 
-from collision_outcomes import SphereState, allocate_remnants, merge_spheres
+from collision_outcomes import RemnantSpec, SphereState, allocate_remnants, merge_spheres
 from disruption import ContactOutcome, classify_contact
 from impacts import Impact
 from units import G_SI
@@ -59,15 +59,16 @@ def remnant_escape_check(states) -> str:
     """Certify isolated fixed-sphere escape, or reject an inconclusive proposal.
 
     Two bodies: outgoing hyperbolic relative orbit. More bodies: a sufficient
-    all-pairs separation bound, u_min^2 > 8GM/d_min. Bound debris is outside
+    mass-weighted all-pairs impulse bound. Bound debris is outside
     this certificate even when the largest remnants could escape in reality.
     """
     states = tuple(states)
     if len(states) < 2:
         raise ValueError('Remnant escape requires at least two remnants')
-    separations, radial_speeds = [], []
+    separations, radial_speeds, pairs = [], [], []
+    impulse_bounds = [0.0] * len(states)
     for i, a in enumerate(states):
-        for b in states[i + 1:]:
+        for j, b in enumerate(states[i + 1:], i + 1):
             relative = _impact(a, b)
             if relative.separation < (a.radius_m + b.radius_m) * (1 - 1e-12):
                 raise ValueError('Remnant escape requires non-overlapping remnants')
@@ -77,21 +78,57 @@ def remnant_escape_check(states) -> str:
                 raise ValueError('Remnant escape requires receding remnants')
             separations.append(relative.separation)
             radial_speeds.append(relative.radial_speed)
+            pairs.append((i, j))
+            # If every radial speed remains above half its initial value,
+            # integrating G*m/(d + u*t/2)^2 bounds the total gravity impulse.
+            impulse_bounds[i] += 2 * G_SI * b.mass_kg / relative.separation / float(relative.radial_speed)
+            impulse_bounds[j] += 2 * G_SI * a.mass_kg / relative.separation / float(relative.radial_speed)
     total = math.fsum(s.mass_kg for s in states)
     if len(states) == 2:
         speed = _impact(*states).speed
         binding = 2 * G_SI * total / separations[0]
         method = 'two_body_hyperbolic'
     else:
-        speed = min(radial_speeds)
-        binding = 8 * G_SI * total / min(separations)
-        method = 'all_pairs_escape_bound'
+        # The pair's radial acceleration is >= -(|a_i| + |a_j|).
+        # Strict margins close the bootstrap assumption above for all time.
+        if not all(math.isfinite(value) for value in impulse_bounds):
+            raise ValueError('Remnant escape calculation is outside numerical range')
+        if any(2 * (impulse_bounds[i] + impulse_bounds[j]) >= u * (1 - 1e-12)
+               for (i, j), u in zip(pairs, radial_speeds, strict=True)):
+            raise ValueError('Remnant escape is not established for the proposed allocation')
+        return 'all_pairs_escape_bound'
     kinetic = speed * speed
     if not math.isfinite(kinetic + binding):
         raise ValueError('Remnant escape calculation is outside numerical range')
     if kinetic - binding <= 1e-12 * max(kinetic, binding):
         raise ValueError('Remnant escape is not established for the proposed allocation')
     return method
+
+
+def _resolved_layout(contact, classification):
+    """Bounded equal-mass debris on a coarse spherical shell; not an ejecta fit."""
+    masses = [classification.largest_remnant_mass_kg]
+    if classification.runner_mass_kg:
+        masses.append(classification.runner_mass_kg)
+    remaining = classification.remaining_mass_kg
+    count = math.ceil(remaining / masses[0])
+    if len(masses) + count > 32:
+        raise ValueError('Resolved impact requires more than 32 remnants; unresolved material is not integrated')
+    if count:
+        masses.extend([remaining / count] * count)
+    a, b = contact
+    radius = (a.radius_m**3 + b.radius_m**3)**(1 / 3)
+    total = a.mass_kg + b.mass_kg
+    layout = []
+    for i, mass in enumerate(masses):
+        z = 1 - 2 * (i + .5) / len(masses)
+        phi = i * math.pi * (3 - math.sqrt(5))
+        rho = math.sqrt(1 - z*z)
+        direction = ((2*i - 1) * np.array(_impact(a,b).normal) if len(masses) == 2
+                     else (rho * math.cos(phi), rho * math.sin(phi), z))
+        offset = tuple(8 * radius * x for x in direction)
+        layout.append(RemnantSpec(mass, radius * (mass / total)**(1 / 3), offset))
+    return tuple(layout)
 
 
 @dataclass(frozen=True)
@@ -103,7 +140,8 @@ class ConstructedCollision:
 
 
 def construct_collision(a: SphereState, b: SphereState, *, material: str, body_types: tuple[int, int],
-                        layout=None, expansion_fraction: float | None = None) -> ConstructedCollision:
+                        layout=None, expansion_fraction: float | None = None,
+                        resolved_policy: bool = False) -> ConstructedCollision:
     """Classify a contact and construct only a compatible, feasible outcome.
 
     Nonrotating inputs only, as required by the classifier. Merging needs no
@@ -112,6 +150,8 @@ def construct_collision(a: SphereState, b: SphereState, *, material: str, body_t
     retained and separated remnants must pass an escape certificate. Rejection
     never silently changes masses, parameters or regime.
     """
+    if resolved_policy and (layout is not None or expansion_fraction is not None):
+        raise ValueError('Resolved policy cannot be combined with a prescribed allocation')
     if any(component != 0 for s in (a, b) for component in s.spin_kg_m2_s):
         raise ValueError('Calibrated construction requires nonrotating inputs')
     contact = surface_contact(a, b)
@@ -120,6 +160,8 @@ def construct_collision(a: SphereState, b: SphereState, *, material: str, body_t
         if layout is not None or expansion_fraction is not None:
             raise ValueError('A classified merger does not accept a fragment layout or energy split')
         return ConstructedCollision(classification, contact, (merge_spheres(*contact),), None)
+    if resolved_policy:
+        layout, expansion_fraction = _resolved_layout(contact, classification), .5
     if layout is None or expansion_fraction is None:
         raise ValueError('Multiple remnants require a layout and explicit expansion fraction')
     specs = tuple(layout)

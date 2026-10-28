@@ -2,9 +2,10 @@
 
 `physics_server/collision_outcomes.py` provides SI state and inventory calculations
 for isolated, homogeneous spheres. `physics_server/collision_models.py` connects
-these constructors to the calibrated mass classifier. The live world uses the
-single-remnant path in opt-in `isolated_mergers` mode. Default sandbox outcomes
-remain heuristic; multiple-remnant construction is still standalone.
+these constructors to the calibrated mass classifier. Planet smash uses the
+resolved `isolated_impacts` path with its original initial conditions. Other
+presets retain heuristic outcomes. `isolated_mergers` remains available for
+merger-only experiments.
 
 ## State and energy convention
 
@@ -73,6 +74,21 @@ requires nonrotating inputs. New scenes and saves omitting `collisions` use
 `heuristic`; version-4 files persist the selected mode. Existing saves with unknown
 inventories cannot supply calibrated input states. Switch modes explicitly or
 prepare supported initial conditions before resuming a rejected encounter.
+
+`isolated_impacts`, selectable in **Experiment → Calibrated collisions**, also
+constructs separated remnants. Planet smash enables it automatically; other
+presets restore heuristic collisions. It retains the same two-body, material and
+spin restrictions. The resolved policy keeps the classified largest remnant and
+runner, and divides debris equally into the minimum number of fragments no
+heavier than the largest remnant, at most 32 bodies total. A deterministic
+spherical shell at eight combined-volume radii supplies offsets; a two-remnant
+layout follows the contact axis. Half of the available post-binding/rotation
+energy feeds expansion and half becomes internal energy. These are explicit
+resolution/geometry prescriptions, not calibrated ejecta distributions. All
+budgets and the escape certificate must pass before live mutation. Insufficient
+body slots pause the intact encounter; no unresolved reservoir is yet applied.
+Constructed radii and inventories survive save/restart. Benchmarks report the
+complete SI body inventory separately from orbital-only diagnostics.
 
 ## Spherical energies
 
@@ -224,22 +240,24 @@ require separate treatment before live integration.
 `remnant_escape_check(states)` certifies escape only for isolated, fixed spherical
 remnants under Newtonian gravity. All pairs must be non-overlapping and receding.
 For two remnants, `two_body_hyperbolic` requires relative v² > 2GM/d. For three or
-more, `all_pairs_escape_bound` uses total mass M, minimum pair separation d₀ and
-minimum pairwise radial speed u₀:
+more, `all_pairs_escape_bound` uses each initial separation dᵢⱼ, positive radial
+speed uᵢⱼ and individual mass mⱼ:
 
 ```text
-u₀² > 8GM/d₀
+Bᵢ = Σⱼ≠ᵢ 2Gmⱼ / (dᵢⱼ uᵢⱼ)
+2(Bᵢ + Bⱼ) < uᵢⱼ  for every pair
 ```
 
-This is a sufficient bound, not a necessary escape threshold. If every pair keeps
-separating at least at u₀/2, all distances exceed d₀ + u₀t/2. The magnitude of the
-relative gravitational acceleration is bounded by 2GM/(d₀ + u₀t/2)²; its integral
-to infinity is 4GM/(d₀u₀), less than u₀/2 under the condition above. Radial
-acceleration also has a nonnegative transverse-motion term. Therefore no pair can
-be the first to slow to u₀/2, establishing continued separation and escape.
+If every radial speed remains at least half its initial value, integrating each
+force bound Gmⱼ/(dᵢⱼ + uᵢⱼt/2)² to infinity gives Bᵢ. A pair's radial acceleration
+is at least −(|aᵢ|+|aⱼ|), because transverse motion contributes nonnegatively.
+The strict inequality therefore prevents any pair from being the first to slow
+to half its initial speed, proving continued separation. This sufficient bound
+retains actual masses/distances; replacing them by global minima recovers the
+more conservative u_min² > 8GM/d_min bound.
 
-Both checks require a 10⁻¹² relative positive margin between their squared-speed
-terms. Marginal/parabolic cases and inconclusive multi-body layouts are rejected.
+Both checks require a 10⁻¹² relative positive margin. Marginal/parabolic cases and
+inconclusive multi-body layouts are rejected.
 Requiring all remnants to escape also rejects cases where a runner escapes while
 some debris remains bound. These certificates do not apply in an external field,
 with expanding radii, or with additional dissipation.

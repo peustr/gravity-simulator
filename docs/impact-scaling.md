@@ -1,10 +1,10 @@
 # Impact scaling and classification
 
 `physics_server/disruption.py` provides head-on numerical primitives and a
-classifier for supported solid-body contacts. The live `isolated_mergers` mode
-uses it through the conserved single-remnant constructor. Neither classification
-calculation creates particles or assigns velocities; live non-merging outcomes
-remain unsupported. See [live mode limits](collision-budgets.md#live-isolated-mergers).
+classifier for supported solid-body contacts. The live calibrated modes use it
+through conserved remnant constructors; Planet smash enables resolved disruption.
+Classification itself creates no particles or velocities. See
+[live mode limits](collision-budgets.md#live-isolated-mergers).
 
 ## Reference model
 
