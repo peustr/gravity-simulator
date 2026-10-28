@@ -2,8 +2,9 @@
 
 `physics_server/collision_outcomes.py` provides SI state and inventory calculations
 for isolated, homogeneous spheres. `physics_server/collision_models.py` connects
-these constructors to the calibrated mass classifier. Both modules are separate
-from the live handler; no persistent state, particles or renderer fields are changed.
+these constructors to the calibrated mass classifier. Outcome construction is
+separate from the live handler. The live world captures SI input states and
+persists intrinsic inventories but still applies heuristic outcomes.
 
 ## State and energy convention
 
@@ -11,6 +12,34 @@ from the live handler; no persistent state, particles or renderer fields are cha
 momentum and nonnegative internal energy. Spin is **angular momentum**, not angular
 velocity. Internal energy has a fixed material reference and excludes self-binding;
 it is not the renderer's dimensionless `heat` value or a temperature.
+
+## Persistent body inventories
+
+`body_state.BodyInventory` owns immutable `spin_kg_m2_s` and `internal_energy_j`.
+New physical bodies default to zero spin and zero energy above the fixed material
+reference. Gravity and visual cooling leave these intrinsic values unchanged;
+there is no thermal or spin evolution model yet. This initial condition does not
+assert that a body's temperature is zero.
+
+Live metadata uses `inventory=None` when these budgets are unknown. Heuristic
+mergers, fragmentation, stellar transformations and tidal debris invalidate them;
+they do not compute the missing spin or energy. Collision records copy a pair of
+`SphereState` values into `spheres` before native mutation, in survivor/removed
+order. An unknown inventory, legacy units or an unrepresentable spherical state
+produces `None` for that member. Later callbacks in the same step see an unknown
+inventory for a previously merged survivor. Classification/construction must check
+model applicability separately; a captured state is not an acceptance certificate.
+
+Version-4 scene files require each body's `inventory` to be either null or an
+object containing exactly `spin_kg_m2_s` (three finite SI components, magnitudes
+at most 10¹⁰⁰) and `internal_energy_j` (finite, 0–10¹⁰⁰ J). Legacy-unit scenes
+permit only null. Versions 1–3 load with unknown inventories while preserving
+their existing body data and version-specific physics settings. Visual heat
+cannot reconstruct missing internal energy. Invalid files are rejected before
+the live world is replaced. Reservoir persistence is not supported yet. Live
+diagnostics and removal accounting still measure orbital quantities only.
+
+## Spherical energies
 
 For mass m, radius R and spin angular momentum **S**, the uniform-sphere model is:
 

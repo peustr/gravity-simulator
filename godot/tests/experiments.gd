@@ -160,7 +160,8 @@ func _run() -> void:
 	if not main.hud.insp_values["Physical radius"].text.ends_with(" km") or main.hud.insp_values["Display"].text != "Enlarged x2":
 		_fail("Physical inspector fields did not reach the HUD")
 		return
-	var legacy := FileAccess.get_file_as_string(path).replace('"version":3', '"version":1')
+	# Preserve integer tokens; Godot parses JSON numbers as floats.
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":4', '"version":1')
 	var migration_file := FileAccess.open(path, FileAccess.WRITE)
 	migration_file.store_string(legacy)
 	migration_file.close()

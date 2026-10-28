@@ -132,7 +132,7 @@ Complete these checkpoints in order:
 - [x] **~~4.4 Unresolved debris~~:** preserve material and its physical budgets in
   an accounted reservoir/statistical model when explicit particle capacity runs
   out; verify capacity changes cannot change the selected collision regime.
-- [ ] **4.5 Integration and validation — next:** apply the validated laws in their
+- [ ] **4.5 Integration and validation — active:** apply the validated laws in their
   supported domains, migrate persistent physical state, validate grazing and
   reference impacts, and measure runtime on the representative workloads.
 
@@ -220,6 +220,34 @@ live simulation require integration work in 4.5.
 Acceptance: representative impacts match reference outcomes and close their
 mass, momentum, angular-momentum, and energy budgets within documented errors;
 particle limits do not silently change the collision regime.
+
+Checkpoint 4.5 implementation steps:
+
+- [x] **~~4.5a Persistent body inventories~~:** retain spin angular momentum and
+  internal energy independently of visual heat; capture complete SI states before
+  native collision mutation. Round-trip known and unknown inventories, migrate
+  older saves without inventing missing budgets, and invalidate inventories after
+  unaccounted heuristic transformations.
+- [ ] **4.5b Live calibrated outcomes:** provide an explicit supported collision
+  mode, preflight units, material/domain, inventories, isolation and allocation
+  feasibility before mutation, then apply conserved remnants atomically outside
+  the native callback. Unsupported encounters must stop with a useful explanation;
+  they must not silently change regime or use the heuristic. Validate successive
+  contacts and preserve smooth stepping and particle partitioning.
+- [ ] **4.5c Live unresolved material:** persist reservoir records and their error
+  history, coordinate ownership with explicit bodies, and evolve only supported
+  cloud/body couplings. Preflight capacity and accuracy limits before committing
+  outcomes; full stores must preserve the unapplied encounter. Do not independently
+  advance reservoirs sharing a resolved body.
+- [ ] **4.5d End-to-end acceptance:** run reference impacts across supported regimes,
+  grazing and repeated contacts, save/restart and particle-capacity comparisons;
+  check complete budgets and explicit rejection outside the model. Measure impact
+  and non-impact workloads against consumer-hardware budgets, and verify smooth
+  rendered Solar System motion before completing Milestone 4.
+
+The live handler still uses heuristic outcomes. Body inventory persistence does
+not activate the standalone classifiers, remnant constructors or reservoir solver.
+State and migration contract: [collision budgets](collision-budgets.md#persistent-body-inventories).
 
 ## 5. Rotation and tidal evolution
 

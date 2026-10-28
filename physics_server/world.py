@@ -36,6 +36,7 @@ import rebound
 import units
 import configuration
 from impacts import capture as capture_impact
+from body_state import BodyInventory, capture_sphere
 from diagnostics import totals
 from dynamics import ContactGuard, step
 
@@ -43,6 +44,7 @@ from dynamics import ContactGuard, step
 warnings.filterwarnings("ignore", message=".*hash table.*")
 
 G = 1.0  # units.G is unity to floating-point precision
+_INITIAL_INVENTORY = BodyInventory()
 MAX_BODIES = 1321  # 11 + 12*N + 8*64 float32 values must fit IPv4 UDP (65507 bytes).
 SCENARIOS = ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty")
 PRESET_SPEEDS = dict(solar=1.0, binary=10.0, black_hole=0.05, smash=0.05,
@@ -270,9 +272,15 @@ class World:
     def capacity(self) -> int:
         return max(0, self.max_bodies - self.sim.N)
 
-    def add_body(self, btype, mass, pos, vel, heat=0.0):
+    def add_body(self, btype, mass, pos, vel, heat=0.0, *, inventory=_INITIAL_INVENTORY):
         if self.sim.N >= self.max_bodies or mass <= 0:
             return None
+        if inventory is not None and not isinstance(inventory, BodyInventory):
+            raise ValueError('Expected a body inventory or None')
+        if self.units == units.LEGACY:
+            if inventory not in (None, _INITIAL_INVENTORY):
+                raise ValueError('Legacy units cannot carry SI body inventories')
+            inventory = None
         bid = self._next_id
         self._next_id += 1
         name = str(bid)
@@ -285,7 +293,8 @@ class World:
         # owns. (Passing name= to add() keeps a pointer to a temporary Python
         # buffer, which can be garbage collected.)
         self.sim.particles[self.sim.N - 1].name = name
-        self.meta[name] = {"type": btype, "born": self.sim.t, "heat": float(heat)}
+        self.meta[name] = {"type": btype, "born": self.sim.t, "heat": float(heat),
+                           "inventory": inventory}
         self._names_dirty = True
         self._partition_dirty = True
         self.version += 1
@@ -499,11 +508,17 @@ class World:
             rec = {
                 "s": s.name, "r": r.name, "ts": ts, "tr": tr,
                 "impact": capture_impact(s, r, sim.G),
+                "spheres": tuple(capture_sphere(p, self.meta.get(p.name, {}).get('inventory'), self.units)
+                                 for p in (s, r)),
                 "ms": ms, "mr": mr, "rs": s.r, "rr": r.r,
                 "vrel": (r.vx - s.vx, r.vy - s.vy, r.vz - s.vz),
                 "normal": _unit((r.x - s.x, r.y - s.y, r.z - s.z)),
                 "heat_r": self.meta.get(r.name, {}).get("heat", 0.0),
             }
+            # The heuristic does not close spin/internal-energy budgets. Mark
+            # the survivor before another callback can capture it this step.
+            if s.name in self.meta:
+                self.meta[s.name]['inventory'] = None
             if M > 0:
                 inv = 1.0 / M
                 s.x = (ms * s.x + mr * r.x) * inv
@@ -536,6 +551,7 @@ class World:
         sm = self.meta.get(rec["s"])
         if p is None or sm is None:
             return  # the survivor was itself swallowed later in the same step
+        sm['inventory'] = None
         ts, tr = rec["ts"], rec["tr"]
         sid, rid = int(rec["s"]), int(rec["r"])
         pos = (p.x, p.y, p.z)
@@ -671,7 +687,7 @@ class World:
         for mf, off, u, _rf in frags:
             pos = _add(x_cm, off)
             vel = _add(v_cm, _sub(u, u_mean))
-            self.add_body(self._promoted_type(frag_type, mf), mf, pos, vel, heat=heat_new)
+            self.add_body(self._promoted_type(frag_type, mf), mf, pos, vel, heat=heat_new, inventory=None)
         contact = _add(x_cm, _mul(normal, r_lr))
         self._event(EV_SHATTER, contact, 1.0 + min(2.0, ratio / 2.0), r_sum * 1.5,
                     int(rec["s"]), int(rec["r"]))
@@ -691,7 +707,7 @@ class World:
                 mf = m_ej / n
                 rf = self.radius_for(PLASMA, mf)
                 self.add_body(PLASMA, mf, _add(pos, _mul(d, 2.0 + rf * 2)),
-                              _add(vel0, _mul(d, 0.6 * vesc * self.rng.uniform(0.8, 1.2))), heat=1.0)
+                              _add(vel0, _mul(d, 0.6 * vesc * self.rng.uniform(0.8, 1.2))), heat=1.0, inventory=None)
         # Adding ejecta can reallocate REBOUND's particle array.
         p = self.particle(rec["s"])
         p.r = self.radius_for(NEUTRON_STAR, p.m)
@@ -719,6 +735,9 @@ class World:
             return
         old = meta["type"]
         new = self._promoted_type(old, p.m)
+        radius = self.radius_for(new, p.m)
+        if new != old or radius != p.r:
+            meta['inventory'] = None
         if new != old:
             meta["type"] = new
             pos = (p.x, p.y, p.z)
@@ -726,7 +745,7 @@ class World:
                 self._event(EV_IGNITION, pos, 1.5, self.radius_for(STAR, p.m) * 4, int(name))
             elif new == BLACK_HOLE:
                 self._event(EV_COLLAPSE, pos, 2.5, 30.0, int(name))
-        p.r = self.radius_for(meta["type"], p.m)
+        p.r = radius
         self._partition_dirty = True
         if meta["type"] == STAR and p.m >= STAR_COLLAPSE:
             self._supernova_queue.append(int(name))
@@ -764,6 +783,7 @@ class World:
             pf = _add(pf, _mul(d, mf * s))
         u_mean = _mul(pf, 1.0 / m_ej)
         p.m = m_rem
+        meta['inventory'] = None
         meta["type"] = rem_type
         self._partition_dirty = True
         meta["heat"] = 1.0
@@ -771,7 +791,7 @@ class World:
         for mf, d, s in ej:
             rf = self.radius_for(PLASMA, mf)
             self.add_body(PLASMA, mf, _add(pos, _mul(d, r * 1.2 + rf * 1.5)),
-                          _add(vel, _sub(_mul(d, s), u_mean)), heat=1.0)
+                          _add(vel, _sub(_mul(d, s), u_mean)), heat=1.0, inventory=None)
         self._event(EV_SUPERNOVA, pos, 3.0, max(40.0, r * 12), int(name), 1 if rem_type == BLACK_HOLE else 0)
         if M < 8000 and not natural:
             self.notice("Fun fact: real stars need at least ~8 Suns of mass to explode like this.")
@@ -849,7 +869,7 @@ class World:
             fpos = _add(_add(pos, _mul(axis, s)), jitter)
             fvel = _add(vel, _mul(self._rand_unit(), 0.02 * _norm(vel) + 0.01))
             # Debris stays debris (no promotion), so tides can't shred it again.
-            self.add_body(frag_type, mf, fpos, fvel, heat=1.0)
+            self.add_body(frag_type, mf, fpos, fvel, heat=1.0, inventory=None)
         self._event(EV_TIDAL, pos, 1.6, rv * 4, hid, vid)
 
     # ------------------------------------------------------------ user tools

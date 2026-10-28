@@ -106,6 +106,11 @@ def test_callback_records_contact_before_merging_and_fragmenting():
     removed = w._resolve_collision(ctypes.pointer(w.sim), SimpleNamespace(p1=0, p2=1))
     assert removed == 2
     impact = w._pending[0]['impact']
+    spheres = w._pending[0]['spheres']
+    assert spheres[0].mass_kg == 3 * W.units.MASS_KG
+    assert spheres[1].position_m == (3 * W.units.LENGTH_M, 0, 0)
+    assert spheres[0].velocity_m_s == (W.units.VELOCITY_M_S, 2 * W.units.VELOCITY_M_S, 0)
+    assert w.meta['1']['inventory'] is None
     assert w.sim.particles[0].m == 4 and w.sim.particles[0].x == .75
     assert impact.mass_a == 3 and impact.relative_position == (3, 0, 0)
     assert impact.kinetic_energy == 9.375 and impact.angular_momentum == (0, 0, 6.75)
@@ -114,3 +119,5 @@ def test_callback_records_contact_before_merging_and_fragmenting():
     w._process_collisions()
     assert not w._pending and w.sim.N > 2
     assert impact.mass_a == 3 and impact.relative_velocity == (-4, 3, 0)
+    assert spheres[0].mass_kg == 3 * W.units.MASS_KG
+    assert all(md['inventory'] is None for md in w.meta.values())

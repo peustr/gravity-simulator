@@ -5,6 +5,7 @@ from pathlib import Path
 import tempfile
 
 from commands import integer, number, vector
+from body_state import BodyInventory
 import world as W
 import units
 
@@ -27,10 +28,12 @@ def capture(world, camera):
     bodies = []
     for p in world.sim.particles:
         md = world.meta[p.name]
+        inventory = md['inventory']
         bodies.append(dict(id=int(p.name), type=md['type'], mass=p.m, radius=p.r,
                            pos=[p.x, p.y, p.z], vel=[p.vx, p.vy, p.vz],
-                           heat=md['heat'], born=md['born']))
-    return dict(format='gravity-simulator', version=3, units=world.units, bodies=bodies,
+                           heat=md['heat'], born=md['born'], inventory=None if inventory is None else
+                           dict(spin_kg_m2_s=list(inventory.spin_kg_m2_s), internal_energy_j=inventory.internal_energy_j)))
+    return dict(format='gravity-simulator', version=4, units=world.units, bodies=bodies,
                 physics=world.settings.copy(), removed=json.loads(json.dumps(world.removed)),
                 time=world.sim.t, speed=world.speed, paused=world.paused,
                 max_bodies=world.max_bodies, next_id=world._next_id,
@@ -40,7 +43,7 @@ def capture(world, camera):
 
 def restore(data):
     """Build a separate world; callers swap it in only after all validation succeeds."""
-    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2, 3):
+    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2, 3, 4):
         raise ValueError('Unsupported scene format or version')
     camera = camera_state(data.get('camera'))
     world = W.World(max_bodies=data['max_bodies'])
@@ -48,7 +51,7 @@ def restore(data):
     if world.units not in (units.SYSTEM, units.LEGACY):
         raise ValueError('Unsupported physical units / radius model')
     world.sim.integrator.min_dt = 1e-4 if world.units == units.LEGACY else 0.0
-    if data['version'] == 3:
+    if data['version'] >= 3:
         import configuration
         world.configure(configuration.settings(data.get('physics')))
         removed = data.get('removed')
@@ -98,8 +101,21 @@ def restore(data):
         positions.add(position)
         heat = number(body['heat'], 0, 1e30)
         born = number(body['born'], 0, world.sim.t)
+        inventory = None
+        if data['version'] >= 4:
+            if 'inventory' not in body:
+                raise ValueError('Missing body inventory')
+            raw = body['inventory']
+            if raw is not None:
+                if world.units == units.LEGACY or not isinstance(raw, dict) or raw.keys() != {'spin_kg_m2_s', 'internal_energy_j'}:
+                    raise ValueError('Invalid body inventory')
+                spin = raw['spin_kg_m2_s']
+                if not isinstance(spin, list) or len(spin) != 3:
+                    raise ValueError('Invalid spin vector')
+                inventory = BodyInventory(tuple(number(x, -1e100, 1e100) for x in spin),
+                                          number(raw['internal_energy_j'], 0, 1e100))
         world._next_id = bid
-        world.add_body(body['type'], mass, body['pos'], body['vel'], heat)
+        world.add_body(body['type'], mass, body['pos'], body['vel'], heat, inventory=inventory)
         world.particle(str(bid)).r = radius
         world.meta[str(bid)]['born'] = born
     integer(data['next_id'], max(ids, default=0) + 1)

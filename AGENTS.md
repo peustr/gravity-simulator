@@ -61,6 +61,7 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 | `physics_server/diagnostics.py`, `validation.py` | Optional conservation accounting and physical reference problems |
 | `physics_server/dynamics.py`, `configuration.py` | Contact step guards and validated solver/approximation settings |
 | `physics_server/impacts.py` | Immutable pre-merge pair state and impact geometry/energy/angular-momentum measurements |
+| `physics_server/body_state.py` | Persistent intrinsic inventories and SI snapshots; unknown state after unaccounted heuristic transformations |
 | `physics_server/disruption.py` | Head-on curves and solid-body classification, including rocky grazing impacts; limits in `docs/impact-scaling.md` |
 | `physics_server/collision_outcomes.py` | SI spherical inventories, isolated mergers and prescribed remnant allocations; contract in `docs/collision-budgets.md` |
 | `physics_server/collision_models.py` | Classified construction, shallow-contact correction and isolated remnant escape certificates |

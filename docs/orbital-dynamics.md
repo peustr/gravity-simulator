@@ -64,7 +64,7 @@ This inventory is not a radiation model. Clearing/loading a preset starts a new
 inventory. Version-1/2 files receive the previous default approximation choices;
 their stored body values and unit model are preserved.
 
-The validated `physics` command accepts partial updates to `settings`; version-3
+The validated `physics` command accepts partial updates to `settings`; version-3 and newer
 files store the complete `physics` object:
 
 ```json

@@ -8,6 +8,11 @@ A is the callback's designated survivor, B the other body; A is not necessarily
 the more massive body. Inputs use the scene's existing simulation units and
 physical contact radii, including legacy radius rules for legacy scenes.
 
+The record also carries `spheres`: immutable absolute SI states with spin and
+internal energy when those inventories are known. See the
+[persistent inventory contract](collision-budgets.md#persistent-body-inventories)
+for unknown-state handling, chained collisions and save migration.
+
 For relative position **r** = **x**B − **x**A, relative velocity **v** = **v**B − **v**A,
 total mass M and reduced mass μ = mA mB / M:
 
