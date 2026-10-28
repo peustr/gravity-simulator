@@ -68,13 +68,16 @@ The validated `physics` command accepts partial updates to `settings`; version-3
 files store the complete `physics` object:
 
 ```json
-{"gravity":"full","epsilon":1e-9,"forecast_limit":0,"escape_distance":null}
+{"gravity":"full","epsilon":1e-9,"forecast_limit":0,"escape_distance":null,"collisions":"heuristic"}
 ```
 
 `epsilon` accepts `1e-12` through `1e-6`; `forecast_limit` accepts 0 (all bodies)
 or 1–1321; `escape_distance` accepts a positive distance up to `1e9` or null.
 Advanced values can be set through a scene file or the protocol. The server's
 periodic info response reports current settings, tracer mass and removal totals.
+`collisions` defaults to `heuristic` when omitted from older saves. The opt-in
+`isolated_mergers` mode requires full gravity, physical units and no removal
+boundary; see [supported live collisions](collision-budgets.md#live-isolated-mergers).
 
 ## Forecast scope and deadlines
 

@@ -259,7 +259,9 @@ Files preserve body IDs, types, masses, radii, positions, velocities, heat and a
 
 The **Experiment** menu also controls full gravity for debris, inclusion of all bodies in forecasts, and distant-body removal. It shows the collective tracer mass fraction. These choices and cumulative removal losses are stored in version-3 and newer saves and restart points; older saves retain their previous approximation defaults. See [orbital dynamics and accuracy controls](docs/orbital-dynamics.md).
 
-New saves use version-4 JSON with an explicit unit/radius-model identifier, physics settings, removal inventory and per-body spin/internal-energy inventories. Unknown body inventories are stored as null; versions 1–3 remain readable without inventing missing energy or spin. These fields do not yet enable the calibrated collision solver; the live collision rules remain heuristic. See [physical inventories and migration](docs/collision-budgets.md#persistent-body-inventories).
+New saves use version-4 JSON with an explicit unit/radius-model identifier, physics settings, removal inventory and per-body spin/internal-energy inventories. Unknown body inventories are stored as null; versions 1–3 remain readable without inventing missing energy or spin. See [physical inventories and migration](docs/collision-budgets.md#persistent-body-inventories).
+
+Collision behavior defaults to the sandbox heuristic. Advanced experiments can opt into `isolated_mergers` through saved physics settings or the physics command: this applies calibrated, conserved mergers for supported two-body rocky-planet impacts. Unsupported encounters pause with both bodies intact. Full gravity is required; escape removal, supernovae and tidal shredding are disabled. See [configuration and limits](docs/collision-budgets.md#live-isolated-mergers).
 
 Version-1 scenes load automatically in **legacy sandbox units**, retaining all original values and exaggerated contact-radius rules; re-saving preserves that label. They are not silently converted to physical scenes. Clear or choose a preset to start a new physical scene.
 
@@ -331,9 +333,11 @@ including encounter angle, relative kinetic energy and pair angular momentum.
 The outcomes below use heuristic disruption and fragment prescriptions; these
 are not calibrated material models.
 
-A separate [impact classification API](docs/impact-scaling.md) estimates outcomes
-for supported solid contacts, including rocky hit-and-run events. It is not yet
-connected to the live collision handler.
+The [impact classification API](docs/impact-scaling.md) estimates outcomes for
+supported solid contacts, including rocky hit-and-run events. The opt-in
+[isolated-merger mode](docs/collision-budgets.md#live-isolated-mergers) applies its
+single-remnant outcomes with conserved spin and energy. Other regimes remain
+standalone; the table below describes the default heuristic mode.
 
 | Situation | Outcome |
 |---|---|

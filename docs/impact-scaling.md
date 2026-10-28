@@ -1,8 +1,10 @@
 # Impact scaling and classification
 
 `physics_server/disruption.py` provides head-on numerical primitives and a
-classifier for supported solid-body contacts. The live collision handler does
-not call them. Neither calculation creates particles or assigns velocities.
+classifier for supported solid-body contacts. The live `isolated_mergers` mode
+uses it through the conserved single-remnant constructor. Neither classification
+calculation creates particles or assigns velocities; live non-merging outcomes
+remain unsupported. See [live mode limits](collision-budgets.md#live-isolated-mergers).
 
 ## Reference model
 

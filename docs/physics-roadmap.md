@@ -245,8 +245,23 @@ Checkpoint 4.5 implementation steps:
   and non-impact workloads against consumer-hardware budgets, and verify smooth
   rendered Solar System motion before completing Milestone 4.
 
-The live handler still uses heuristic outcomes. Body inventory persistence does
-not activate the standalone classifiers, remnant constructors or reservoir solver.
+4.5b implementation steps:
+
+- [x] **~~4.5b.1 Isolated live mergers~~:** opt-in rocky-planet mergers, deferred native
+  callbacks, preflight before particle mutation, intact paused encounters on
+  rejection, retained spin/energy and compatible save/restart settings. Check
+  head-on/grazing conservation, successive contacts and capacity independence.
+- [ ] **4.5b.2 Multiple remnants:** apply supported calibrated non-merging outcomes
+  with explicit allocation choices, capacity preflight and retained inventories;
+  do not present prescribed fragment layouts as empirical ejecta predictions.
+- [ ] **4.5b.3 External gravity and complete live accounting:** bound the isolated
+  impact approximation in scenes with other bodies, account for changed external
+  potential and expose complete collision budgets. Keep unsupported encounters
+  unapplied and validate repeated contacts and particle/cache updates.
+
+The default live handler uses heuristic outcomes. The opt-in `isolated_mergers`
+mode applies conserved rocky-planet mergers in a two-body scene; other outcomes
+pause without heuristic fallback. Reservoir transport remains standalone.
 State and migration contract: [collision budgets](collision-budgets.md#persistent-body-inventories).
 
 ## 5. Rotation and tidal evolution

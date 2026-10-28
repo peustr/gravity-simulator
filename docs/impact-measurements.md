@@ -40,7 +40,7 @@ Angular momentum excludes body spin; kinetic energy excludes gravitational
 potential, self-binding and thermal energy. Recording these quantities does not
 establish conservation across the generated collision outcome.
 
-The live outcome model remains the existing merge/shatter heuristic with special
+The default live outcome model is the existing merge/shatter heuristic with special
 stellar and compact-object rules. Its disruption threshold and fragment
 prescription are not a calibrated material model, and available particle slots
 can still turn fragmentation into a merger. The captured measurements do not
@@ -49,7 +49,9 @@ classify hit-and-run events or assign remnant spin.
 The standalone [impact scaling API](impact-scaling.md) provides SI head-on curves
 and solid-body classification, including supported rocky grazing contacts, with
 explicit scene-unit conversion.
-The live collision handler does not call either calculation.
+The opt-in [isolated-merger mode](collision-budgets.md#live-isolated-mergers) calls
+the calibrated single-remnant constructor after the native step. It defers all
+particle changes until validation succeeds; unsupported encounters pause intact.
 
 `tests/test_impacts.py` checks hand-calculated oblique impacts, head-on and
 tangential geometry, body exchange, translation, velocity boosts, rotation,

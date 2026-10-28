@@ -2,9 +2,9 @@
 
 `physics_server/collision_outcomes.py` provides SI state and inventory calculations
 for isolated, homogeneous spheres. `physics_server/collision_models.py` connects
-these constructors to the calibrated mass classifier. Outcome construction is
-separate from the live handler. The live world captures SI input states and
-persists intrinsic inventories but still applies heuristic outcomes.
+these constructors to the calibrated mass classifier. The live world uses the
+single-remnant path in opt-in `isolated_mergers` mode. Default sandbox outcomes
+remain heuristic; multiple-remnant construction is still standalone.
 
 ## State and energy convention
 
@@ -38,6 +38,41 @@ their existing body data and version-specific physics settings. Visual heat
 cannot reconstruct missing internal energy. Invalid files are rejected before
 the live world is replaced. Reservoir persistence is not supported yet. Live
 diagnostics and removal accounting still measure orbital quantities only.
+
+## Live isolated mergers
+
+Set physics options together through a saved scene's `physics` object or the
+`physics` command (other existing settings are retained for partial commands):
+
+```json
+{"collisions":"isolated_mergers","gravity":"full","escape_distance":null}
+```
+
+The mode requires physical units, full gravity and disabled escape removal.
+It uses the `fluid_planets` calibration for exactly two rocky bodies with known
+inventories and nonrotating inputs. All density, mass, speed, geometry, shallow
+contact and remnant-spin feasibility limits still apply. It accepts only
+classified merging or graze-and-merge outcomes. An extra body, unsupported state
+or non-merging outcome pauses at the detected encounter with an explanatory
+notice and both particles intact. There is no heuristic fallback. The detected
+contact may overlap by the documented contact-guard tolerance; this is not a
+rollback to an exact earlier collision time.
+
+The native callback records one immutable encounter and leaves both particles
+unchanged. After the native step, all model validation and output construction
+precede deletion/mutation. The survivor keeps its ID and receives the constructed
+mass, volume-preserving radius, COM position/velocity, spin and internal energy.
+The other body is removed; partition/contact/forecast caches are invalidated.
+No heuristic type promotion overwrites the radius or inventories. A merge event
+and artistic glow indicate contact; glow does not measure deposited energy.
+
+Tidal shredding, supernovae and automatic removal are disabled in this mode.
+Orbital stepping and visual cooling continue. A spinning survivor retains its
+inventory, but another collision involving it is rejected because the calibration
+requires nonrotating inputs. New scenes and saves omitting `collisions` use
+`heuristic`; version-4 files persist the selected mode. Existing saves with unknown
+inventories cannot supply calibrated input states. Switch modes explicitly or
+prepare supported initial conditions before resuming a rejected encounter.
 
 ## Spherical energies
 

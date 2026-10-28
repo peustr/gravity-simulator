@@ -37,6 +37,7 @@ import units
 import configuration
 from impacts import capture as capture_impact
 from body_state import BodyInventory, capture_sphere
+from collision_models import construct_collision
 from diagnostics import totals
 from dynamics import ContactGuard, step
 
@@ -234,7 +235,11 @@ class World:
 
     def configure(self, changes):
         configuration.settings(changes, partial=True)
-        self.settings = configuration.settings(self.settings | changes)
+        settings = configuration.settings(self.settings | changes)
+        if settings['collisions'] != 'heuristic' and (self.units != units.SYSTEM or settings['gravity'] != 'full'
+                                                    or settings['escape_distance'] is not None):
+            raise ValueError('Isolated mergers require physical units, full gravity and disabled escape removal')
+        self.settings = settings
         self.sim.integrator.epsilon = self.settings['epsilon']
         self._partition_dirty = True
         self._repartition()
@@ -419,6 +424,9 @@ class World:
                 if self._pending:
                     self._process_collisions()
                     self._repartition()
+                    if self.paused:
+                        self._target_t = sim.t
+                        break
                 # Tides are checked every step so fast fly-bys are never missed.
                 self._tidal_check()
                 self._repartition()
@@ -443,6 +451,8 @@ class World:
                 meta["heat"] *= cool
             else:
                 meta["heat"] = 0.0
+        if self.settings['collisions'] != 'heuristic':
+            return  # No unaccounted automatic removals or stellar transformations.
         self._cull_escapers()
         while self._supernova_queue:
             self.supernova(self._supernova_queue.pop(), natural=True)
@@ -479,11 +489,9 @@ class World:
     def _resolve_collision(self, sim_ptr, collision):
         """Called by REBOUND (from C) when two bodies overlap.
 
-        We always merge here - the gentlest outcome, which conserves mass and
-        momentum exactly - and remember the details. Right after the step
-        finishes, _handle_collision() may turn the merge into something more
-        dramatic (fragments, a kilonova, ...). Adding particles is done there,
-        outside the callback, to keep REBOUND's particle array stable.
+        Heuristic mode merges here and defers fragmentation. Isolated-merger
+        mode only records the encounter; validation and mutation both happen
+        after the step. No particles are added inside the native callback.
         """
         try:
             sim = sim_ptr.contents
@@ -515,6 +523,12 @@ class World:
                 "normal": _unit((r.x - s.x, r.y - s.y, r.z - s.z)),
                 "heat_r": self.meta.get(r.name, {}).get("heat", 0.0),
             }
+            if self.settings['collisions'] != 'heuristic':
+                # REBOUND may report both pair orders. The isolated mode needs
+                # one record; any scene with more than two bodies is rejected.
+                if not self._pending:
+                    self._pending.append(rec)
+                return 0
             # The heuristic does not close spin/internal-energy budgets. Mark
             # the survivor before another callback can capture it this step.
             if s.name in self.meta:
@@ -540,10 +554,48 @@ class World:
         pending, self._pending = self._pending, []
         for rec in pending:
             try:
-                self._handle_collision(rec)
-            except Exception:
+                if self.settings['collisions'] != 'heuristic':
+                    self._apply_isolated_merger(rec)
+                else:
+                    self._handle_collision(rec)
+            except Exception as exc:
+                if self.settings['collisions'] != 'heuristic':
+                    self.paused = True
+                    self.notice(f'Collision paused: {exc}')
+                    break
                 traceback.print_exc()
         self.sim.did_modify_particles = 1
+
+    def _apply_isolated_merger(self, rec):
+        """Preflight a two-body outcome before committing any particle changes."""
+        if self.units != units.SYSTEM or not math.isclose(self.sim.G, units.G, rel_tol=1e-12):
+            raise ValueError('Calibrated collisions require physical units and Newtonian G')
+        if self.sim.N != 2:
+            raise ValueError('Isolated mergers require exactly two bodies; external gravity is unsupported')
+        if (rec['ts'], rec['tr']) != (ROCKY, ROCKY):
+            raise ValueError('Isolated mergers currently support only rocky planets')
+        if any(s is None for s in rec['spheres']):
+            raise ValueError('Both bodies need known spin and internal-energy inventories')
+        outcome = construct_collision(*rec['spheres'], material='fluid_planets', body_types=(ROCKY, ROCKY))
+        remnant, = outcome.remnants  # No layout is supplied: only classified mergers can succeed.
+        inventory = BodyInventory(remnant.spin_kg_m2_s, remnant.internal_energy_j)
+        mass, radius = remnant.mass_kg / units.MASS_KG, remnant.radius_m / units.LENGTH_M
+        position = tuple(x / units.LENGTH_M for x in remnant.position_m)
+        velocity = tuple(v / units.VELOCITY_M_S for v in remnant.velocity_m_s)
+        # Validate IDs before deletion, then reacquire the survivor: array slots can move.
+        survivor, removed = self.particle(rec['s']), self.particle(rec['r'])
+        if survivor is None or removed is None or rec['s'] == rec['r']:
+            raise ValueError('Collision body IDs no longer identify an isolated pair')
+        sm = self.meta[rec['s']]
+        heat = max(.5, sm['heat'], self.meta[rec['r']]['heat'])
+        self.remove_body(int(rec['r']))
+        survivor = self.particle(rec['s'])
+        survivor.m, survivor.r = mass, radius
+        survivor.xyz, survivor.vxyz = position, velocity
+        sm['inventory'], sm['heat'] = inventory, heat
+        # Keep the constructed volume/density and spin; heuristic promotion would
+        # overwrite the radius and invalidate the conserved inventory.
+        self._event(EV_MERGE, position, 1.0, radius * 2, int(rec['s']), int(rec['r']))
 
     def _handle_collision(self, rec):
         self.meta.pop(rec["r"], None)
@@ -753,6 +805,9 @@ class World:
 
     # ------------------------------------------------------------- supernova
     def supernova(self, bid, natural=False) -> bool:
+        if self.settings['collisions'] != 'heuristic':
+            self.notice('Supernovae require heuristic collision mode.')
+            return False
         name = str(int(bid))
         p = self.particle(name)
         meta = self.meta.get(name)
@@ -800,6 +855,8 @@ class World:
 
     # ------------------------------------------------------- tidal disruption
     def _tidal_check(self):
+        if self.settings['collisions'] != 'heuristic':
+            return
         if self.sim.N < 2:
             return
         if self._tidal_pairs is None or self._partition_dirty:
