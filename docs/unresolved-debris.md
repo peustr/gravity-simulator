@@ -124,11 +124,12 @@ not long-term cloud evolution validation.
 
 These inventories describe **one instant**. Stored potentials cannot be reused
 after moving resolved bodies, and aggregate moments cannot recover individual
-trajectories or resample uniquely when capacity increases. The gravity substep
-does not supply cloud advection, extent evolution, self-gravity, tidal deformation,
-accretion, expiry or persistence integration. Transport needs additional shape
-and position–velocity information; a complete evolution and transfer model is
-required before live use.
+trajectories or resample uniquely when capacity increases. The separate
+[expanding-cloud transport model](debris-transport.md) evolves a restricted radial
+expansion mode with changing extent and gravitational potentials. It must be
+initialized from fragment states before compression; it cannot reconstruct a cloud
+from this snapshot alone. General shape evolution, tidal deformation, accretion,
+expiry and persistence integration remain unsupported.
 
 Each collision retains O(k) explicit states plus O(1) reservoir data, where k is
 the retained particle count. Creation still examines the full proposed fragment

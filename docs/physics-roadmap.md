@@ -198,15 +198,18 @@ Checkpoint 4.4 implementation steps:
 - [x] **Far-field gravity exchange:** equal/opposite reservoir–body impulses,
   explicit kinetic-work accounting, force/potential/tidal truncation bounds,
   accuracy rejection and resolved-fragment reference checks at fixed positions.
-- [ ] **Cloud transport:** evolve cloud position, extent and the required internal
-  moments; account for changing gravitational potentials and validate a complete
-  timestep against resolved trajectories with convergence tests.
+- [x] **~~Cloud transport (restricted model)~~:** evolve outward homologous clouds
+  with one resolved body, including extent, expansion energy and changing mutual
+  potentials. Validate full timesteps against resolved trajectories with convergence
+  and cumulative error checks. Reject incompatible shapes and near-field coupling.
 - [ ] **Bounded lifecycle and transfers:** bound storage across repeated events
   and verify transfer/coalescence accounting without silently deleting material
   or changing the collision regime. Define behavior outside approximation limits.
 
 Snapshot and gravity-exchange APIs, invariants and time/storage limits:
 [unresolved debris](unresolved-debris.md).
+Transport equations, supported geometry and error controls:
+[expanding clouds](debris-transport.md).
 
 Acceptance: representative impacts match reference outcomes and close their
 mass, momentum, angular-momentum, and energy budgets within documented errors;
