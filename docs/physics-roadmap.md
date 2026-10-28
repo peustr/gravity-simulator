@@ -129,10 +129,10 @@ Complete these checkpoints in order:
   independently of particle capacity; validate reference and boundary cases.
 - [x] **~~4.3 Conserved outcomes~~:** generate remnants and fragments with accounted
   mass, momentum, orbital/remnant spin angular momentum and energy partition.
-- [ ] **4.4 Unresolved debris — active:** preserve material and its physical budgets in
+- [x] **~~4.4 Unresolved debris~~:** preserve material and its physical budgets in
   an accounted reservoir/statistical model when explicit particle capacity runs
   out; verify capacity changes cannot change the selected collision regime.
-- [ ] **4.5 Integration and validation:** apply the validated laws in their
+- [ ] **4.5 Integration and validation — next:** apply the validated laws in their
   supported domains, migrate persistent physical state, validate grazing and
   reference impacts, and measure runtime on the representative workloads.
 
@@ -188,7 +188,7 @@ Checkpoint 4.4 implementation steps:
   keeping hidden fragment states. Preserve mass, volume, momentum, orbital/spin
   angular momentum and all energy components, including cross potential. Verify
   that capacity cannot change classification, primary states or inventories.
-- [ ] **4.4b Reservoir evolution and lifecycle:** define motion and gravity
+- [x] **~~4.4b Reservoir evolution and lifecycle (restricted model)~~:** define motion and gravity
   coupling with explicit energy/work accounting, bound storage across repeated
   collisions, and validate material transfers against resolved reference
   simulations. Persistent-state migration and live application remain in 4.5.
@@ -202,14 +202,20 @@ Checkpoint 4.4 implementation steps:
   with one resolved body, including extent, expansion energy and changing mutual
   potentials. Validate full timesteps against resolved trajectories with convergence
   and cumulative error checks. Reject incompatible shapes and near-field coupling.
-- [ ] **Bounded lifecycle and transfers:** bound storage across repeated events
-  and verify transfer/coalescence accounting without silently deleting material
-  or changing the collision regime. Define behavior outside approximation limits.
+- [x] **~~Bounded lifecycle and exact transfers~~:** fixed slots, full-record
+  handoff and single-fragment promotion preserve material, provenance and error
+  history. Capacity and physics failures leave operations unapplied. Automatic
+  coalescence and multi-fragment resampling are unsupported; full stores refuse
+  admission rather than changing the collision regime or deleting material.
 
 Snapshot and gravity-exchange APIs, invariants and time/storage limits:
 [unresolved debris](unresolved-debris.md).
 Transport equations, supported geometry and error controls:
 [expanding clouds](debris-transport.md).
+Ownership, hard-cap behavior and transfer contracts:
+[reservoir lifecycle](debris-lifecycle.md). Completion applies to these standalone,
+restricted models; shared-body multi-cloud coupling and atomic application to the
+live simulation require integration work in 4.5.
 
 Acceptance: representative impacts match reference outcomes and close their
 mass, momentum, angular-momentum, and energy budgets within documented errors;

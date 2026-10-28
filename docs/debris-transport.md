@@ -2,8 +2,10 @@
 
 `physics_server/debris_transport.py` evolves a compact debris cloud and one resolved
 body with a conservative, restricted model. It is standalone; the live simulator
-does not use it. General cloud shapes, reservoir coalescence, material transfers
-and persistence integration remain outside this implementation.
+does not use it. General cloud shapes, reservoir coalescence and persistence
+integration remain outside this implementation. The separate
+[bounded lifecycle API](debris-lifecycle.md) transfers complete records without
+resetting their model or error history and promotes single-fragment reservoirs.
 
 ## Supported initial states
 

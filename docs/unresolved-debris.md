@@ -133,8 +133,11 @@ expiry and persistence integration remain unsupported.
 
 Each collision retains O(k) explicit states plus O(1) reservoir data, where k is
 the retained particle count. Creation still examines the full proposed fragment
-list and evaluates pair potentials in O(N²) time. Storage across repeated
-collisions is not yet bounded by a reservoir lifecycle policy.
+list and evaluates pair potentials in O(N²) time. The separate
+[reservoir store](debris-lifecycle.md) bounds retained transport records across
+events with fixed slots and explicit admission refusal. It preserves complete
+state on handoff and supports exact promotion of one-fragment reservoirs;
+automatic coalescence and multi-fragment resampling are unsupported.
 
 Validation compares every inventory component and material volume against the
 fully explicit outcome across all classified regimes and capacities, including
