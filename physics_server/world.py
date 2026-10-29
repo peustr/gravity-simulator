@@ -37,7 +37,7 @@ import units
 import configuration
 from impacts import capture as capture_impact
 from body_state import BodyInventory, capture_sphere
-from collision_models import construct_collision
+from collision_models import construct_collision, couple_external_gravity
 from diagnostics import totals
 from dynamics import ContactGuard, step
 
@@ -489,7 +489,7 @@ class World:
     def _resolve_collision(self, sim_ptr, collision):
         """Called by REBOUND (from C) when two bodies overlap.
 
-        Heuristic mode merges here and defers fragmentation. Isolated-merger
+        Heuristic mode merges here and defers fragmentation. Calibrated
         mode only records the encounter; validation and mutation both happen
         after the step. No particles are added inside the native callback.
         """
@@ -524,9 +524,9 @@ class World:
                 "heat_r": self.meta.get(r.name, {}).get("heat", 0.0),
             }
             if self.settings['collisions'] != 'heuristic':
-                # REBOUND may report both pair orders. The isolated mode needs
-                # one record; any scene with more than two bodies is rejected.
-                if not self._pending:
+                # REBOUND may report both pair orders. Keep distinct contacts
+                # so simultaneous encounters can be rejected before mutation.
+                if not any({p['s'], p['r']} == {s.name, r.name} for p in self._pending):
                     self._pending.append(rec)
                 return 0
             # The heuristic does not close spin/internal-energy budgets. Mark
@@ -552,6 +552,10 @@ class World:
 
     def _process_collisions(self):
         pending, self._pending = self._pending, []
+        if self.settings['collisions'] != 'heuristic' and len(pending) > 1:
+            self.paused = True
+            self.notice('Collision paused: simultaneous contacts require a collective impact model')
+            return
         for rec in pending:
             try:
                 if self.settings['collisions'] != 'heuristic':
@@ -570,24 +574,25 @@ class World:
         """Preflight a two-body outcome before committing any particle changes."""
         if self.units != units.SYSTEM or not math.isclose(self.sim.G, units.G, rel_tol=1e-12):
             raise ValueError('Calibrated collisions require physical units and Newtonian G')
-        if self.sim.N != 2:
-            raise ValueError('Calibrated impacts require exactly two bodies; external gravity is unsupported')
         if (rec['ts'], rec['tr']) != (ROCKY, ROCKY):
             raise ValueError('Calibrated impacts currently support only rocky planets')
         if any(s is None for s in rec['spheres']):
             raise ValueError('Both bodies need known spin and internal-energy inventories')
         outcome = construct_collision(*rec['spheres'], material='fluid_planets', body_types=(ROCKY, ROCKY),
                                       resolved_policy=self.settings['collisions'] == 'isolated_impacts')
-        if len(outcome.remnants) > self.max_bodies:
+        if self.sim.N - 2 + len(outcome.remnants) > self.max_bodies:
             raise ValueError('Insufficient body capacity for this impact; no material was removed')
+        if self.particle(rec['s']) is None or self.particle(rec['r']) is None or rec['s'] == rec['r']:
+            raise ValueError('Collision body IDs no longer identify an incoming pair')
+        external = tuple(capture_sphere(p, self.meta[p.name]['inventory'], self.units)
+                         for p in self.sim.particles if p.name not in (rec['s'], rec['r']))
+        if any(s is None for s in external):
+            raise ValueError('External bodies need known physical inventories')
+        remnants = couple_external_gravity(rec['spheres'], outcome.remnants, external)
         prepared = [(s.mass_kg / units.MASS_KG, s.radius_m / units.LENGTH_M,
                      tuple(x / units.LENGTH_M for x in s.position_m),
                      tuple(v / units.VELOCITY_M_S for v in s.velocity_m_s),
-                     BodyInventory(s.spin_kg_m2_s, s.internal_energy_j)) for s in outcome.remnants]
-        # Validate IDs before deletion, then reacquire the survivor: array slots can move.
-        survivor, removed = self.particle(rec['s']), self.particle(rec['r'])
-        if survivor is None or removed is None or rec['s'] == rec['r']:
-            raise ValueError('Collision body IDs no longer identify an isolated pair')
+                     BodyInventory(s.spin_kg_m2_s, s.internal_energy_j)) for s in remnants]
         sm = self.meta[rec['s']]
         heat = max(.5, sm['heat'], self.meta[rec['r']]['heat'])
         names = [rec['s'], rec['r']]

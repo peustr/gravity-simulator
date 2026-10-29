@@ -129,11 +129,11 @@ isolated-merger support do not satisfy that goal.
 |---|---|---|
 | Contact state and saves | Immutable pre-impact measurements; version-4 body spin/internal-energy inventories | Older or heuristically transformed bodies have unknown inventories |
 | Classification | Calibrated solid-body regimes and remnant masses within documented domains | Most classified outcomes are not applied live |
-| Outcome construction | Planet smash uses conserved resolved disruption; mergers and prescribed multi-remnant allocations run live | Ejecta layout/energy split are prescribed; live mode rejects a third body, spinning inputs and insufficient fragment slots |
+| Outcome construction | Planet smash uses conserved resolved disruption; weak external fields are screened and their interaction energy is accounted for | Ejecta layout/energy split are prescribed; strong fields, simultaneous contacts, spinning inputs and insufficient fragment slots are rejected |
 | Unresolved material | Snapshot inventories, restricted cloud transport and bounded ownership APIs | No live coupling or persistence; transport cannot represent debris surrounding its remnant or general multi-body interactions |
 | Diagnostics | Orbital quantities and removal accounting | No complete live spin, internal-energy and reservoir ledger |
 
-### Remaining requirements
+### Delivery requirements
 
 This is the complete delivery checklist for Milestone 4. Implementation batches
 may address part of an item; they do not create additional numbered milestones.
@@ -147,7 +147,7 @@ Changing these requirements or supported domains requires an explicit scope deci
   parameters honestly. Provide an application control and runnable reference
   scenes. Validate before mutation; unsupported encounters remain intact with a
   useful explanation, without silently reverting to heuristic outcomes.
-- [ ] **Encounters in populated scenes.** Account for surrounding bodies and
+- [x] **Encounters in populated scenes.** Account for surrounding bodies and
   changes in their interaction potential, with a quantitative bound on the
   isolated-impact approximation. Apply supported outcomes outside the native
   callback, update particle/forecast/contact caches, and handle successive

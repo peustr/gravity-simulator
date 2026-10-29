@@ -8,7 +8,7 @@ import math
 
 import numpy as np
 
-from collision_outcomes import RemnantSpec, SphereState, allocate_remnants, merge_spheres
+from collision_outcomes import RemnantSpec, SphereState, _mutual_potential, allocate_remnants, merge_spheres
 from disruption import ContactOutcome, classify_contact
 from impacts import Impact
 from units import G_SI
@@ -129,6 +129,42 @@ def _resolved_layout(contact, classification):
         offset = tuple(8 * radius * x for x in direction)
         layout.append(RemnantSpec(mass, radius * (mass / total)**(1 / 3), offset))
     return tuple(layout)
+
+
+def couple_external_gravity(incoming, remnants, external):
+    """Account for a locally isolated impact in a weak surrounding field.
+
+    Bound the instantaneous differential acceleration over the whole construction
+    region, then debit/credit the exact external potential change to internal
+    energy. This does not certify long-term escape in the external field.
+    """
+    external = tuple(external)
+    if not external:
+        return remnants
+    a, b = incoming
+    total = a.mass_kg + b.mass_kg
+    centre = np.array(a.position_m) + b.mass_kg / total * np.subtract(b.position_m, a.position_m)
+    extent = max(math.dist(s.position_m, centre) + s.radius_m for s in (*incoming, *remnants))
+    gradient = 0.0
+    for source in external:
+        clearance = math.dist(source.position_m, centre) - extent
+        if clearance <= source.radius_m:
+            raise ValueError('External body intersects the impact construction region')
+        # The operator norm of the point-mass acceleration gradient is 2GM/r^3.
+        gradient += 2 * G_SI * source.mass_kg / clearance**3
+    contact = a.radius_m + b.radius_m
+    ratio = 2 * extent * gradient / (G_SI * total / contact**2)
+    if not math.isfinite(ratio) or ratio > 1e-4:
+        raise ValueError('External tidal acceleration exceeds the isolated-impact limit (1e-4)')
+    correction = math.fsum([_mutual_potential(s, source) for source in external for s in incoming] +
+                           [-_mutual_potential(s, source) for source in external for s in remnants])
+    relative_energy = .5 * a.mass_kg * (b.mass_kg / total) * math.dist(a.velocity_m_s, b.velocity_m_s)**2
+    energy_scale = max(relative_energy, G_SI * a.mass_kg / contact * b.mass_kg)
+    if not math.isfinite(correction) or abs(correction) > 1e-4 * energy_scale:
+        raise ValueError('External potential correction exceeds the isolated-impact limit (1e-4)')
+    # A negative inventory is rejected by SphereState before any live mutation.
+    return tuple(replace(s, internal_energy_j=s.internal_energy_j + correction * (s.mass_kg / total))
+                 for s in remnants)
 
 
 @dataclass(frozen=True)

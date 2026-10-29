@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 import rebound
 
-from collision_models import construct_collision, remnant_escape_check, surface_contact
-from collision_outcomes import RemnantSpec, SphereState, collision_budget
+from collision_models import construct_collision, couple_external_gravity, remnant_escape_check, surface_contact
+from collision_outcomes import RemnantSpec, SphereState, collision_budget, merge_spheres
 from disruption import classify_contact, estimate_head_on_disruption
 from impacts import Impact
 from units import G_SI
@@ -66,6 +66,35 @@ def assert_closed(before, after):
     np.testing.assert_allclose(final.angular_momentum_kg_m2_s, initial.angular_momentum_kg_m2_s,
                                rtol=0, atol=1e-12 * angular_scale)
     assert abs(final.energy_j - initial.energy_j) < 1e-12 * energy_scale
+
+
+def test_external_merger_energy_matches_analytic_axial_potential_change():
+    mass, radius, source_mass, distance = 1e22, 1e6, 1e26, 2e9
+    pair = tuple(SphereState(mass,radius,(sign*radius,0,0),(-sign*100,0,0)) for sign in (-1,1))
+    merged = merge_spheres(*pair)
+    source = SphereState(source_mass,1e6,(distance,0,0),(0,0,0))
+    result, = couple_external_gravity(pair,(merged,),(source,))
+    expected = -2*G_SI*mass*source_mass*radius**2 / (distance*(distance**2-radius**2))
+    assert result.internal_energy_j-merged.internal_energy_j == pytest.approx(expected, rel=1e-8)
+    assert replace(result,internal_energy_j=merged.internal_energy_j) == merged
+    before,after = collision_budget((*pair,source)),collision_budget((result,source))
+    assert after.energy_j == pytest.approx(before.energy_j,rel=1e-14)
+
+
+def test_external_field_limits_reject_nearby_sources_and_unfunded_energy_changes():
+    pair = tuple(SphereState(1e22,1e6,(sign*1e6,0,0),(-sign*100,0,0)) for sign in (-1,1))
+    merged = merge_spheres(*pair)
+    near = SphereState(1e26,1e6,(2e6,0,0),(0,0,0))
+    with pytest.raises(ValueError,match='intersects'):
+        couple_external_gravity(pair,(merged,),(near,))
+    distant = replace(near,position_m=(1e10,0,0))
+    with pytest.raises(ValueError,match='internal energy must be nonnegative'):
+        couple_external_gravity(pair,(replace(merged,internal_energy_j=0),),(distant,))
+    # A large prescribed displacement can change external potential too much
+    # even in a weak field; the correction must not subsidise a new outcome.
+    displaced = replace(merged,position_m=(1e8,0,0))
+    with pytest.raises(ValueError,match='potential correction'):
+        couple_external_gravity(pair,(displaced,),(distant,))
 
 
 @pytest.mark.parametrize('material,target', [('planetesimals', 4.2e15), ('fluid_planets', 5.9722e24)])

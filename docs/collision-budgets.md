@@ -50,17 +50,19 @@ Set physics options together through a saved scene's `physics` object or the
 ```
 
 The mode requires physical units, full gravity and disabled escape removal.
-It uses the `fluid_planets` calibration for exactly two rocky bodies with known
-inventories and nonrotating inputs. All density, mass, speed, geometry, shallow
+It uses the `fluid_planets` calibration for a pair of rocky bodies with known
+inventories and nonrotating inputs. Surrounding bodies require known inventories
+and the weak-field checks below. All density, mass, speed, geometry, shallow
 contact and remnant-spin feasibility limits still apply. It accepts only
-classified merging or graze-and-merge outcomes. An extra body, unsupported state
+classified merging or graze-and-merge outcomes. An unsupported field, state
 or non-merging outcome pauses at the detected encounter with an explanatory
 notice and both particles intact. There is no heuristic fallback. The detected
 contact may overlap by the documented contact-guard tolerance; this is not a
 rollback to an exact earlier collision time.
 
-The native callback records one immutable encounter and leaves both particles
-unchanged. After the native step, all model validation and output construction
+The native callback records distinct immutable encounters and leaves particles
+unchanged. Simultaneous contacts pause before any outcome is applied. After the
+native step, all model validation and output construction
 precede deletion/mutation. The survivor keeps its ID and receives the constructed
 mass, volume-preserving radius, COM position/velocity, spin and internal energy.
 The other body is removed; partition/contact/forecast caches are invalidated.
@@ -77,7 +79,7 @@ prepare supported initial conditions before resuming a rejected encounter.
 
 `isolated_impacts`, selectable in **Experiment → Calibrated collisions**, also
 constructs separated remnants. Planet smash enables it automatically; other
-presets restore heuristic collisions. It retains the same two-body, material and
+presets restore heuristic collisions. It retains the same pairwise, material and
 spin restrictions. The resolved policy keeps the classified largest remnant and
 runner, and divides debris equally into the minimum number of fragments no
 heavier than the largest remnant, at most 32 bodies total. A deterministic
@@ -89,6 +91,29 @@ budgets and the escape certificate must pass before live mutation. Insufficient
 body slots pause the intact encounter; no unresolved reservoir is yet applied.
 Constructed radii and inventories survive save/restart. Benchmarks report the
 complete SI body inventory separately from orbital-only diagnostics.
+
+### Surrounding gravity
+
+Both modes allow external bodies when gravity is weak across the construction
+region. Let R enclose the incoming and outgoing spheres about the pair's COM,
+Dₖ be each external centre's distance, and r_c the incoming contact separation.
+External spheres must lie wholly outside this region. The acceleration-gradient
+norm is bounded by H = Σₖ 2Gmₖ/(Dₖ−R)³, so any two points in the region differ in
+external acceleration by at most 2RH. Require 2RH/(GM/r_c²) ≤ 10⁻⁴.
+
+The exact change in interaction potential with all external bodies is debited
+from remnant internal energy, in proportion to mass. Its magnitude must be at
+most 10⁻⁴ of max(relative incoming kinetic energy, Gm₁m₂/r_c); every resulting
+internal inventory must remain nonnegative. External positions, velocities and
+inventories are unchanged by the instantaneous collision operation. All checks,
+including total particle capacity, precede mutation.
+
+These are instantaneous weak-field acceptance limits, not bounds on empirical
+remnant-mass errors or long-term trajectories. The isolated escape certificate
+screens the proposed allocation; it does not prove escape in the external field.
+Subsequent full N-body integration can deflect or recapture remnants. Unsupported
+later contacts still pause intact. For example, adding a solar-mass star one AU
+from Planet smash permits the impact; a sufficiently close star is rejected.
 
 ## Spherical energies
 
