@@ -99,6 +99,7 @@ def test_capture_is_immutable_and_owns_its_values():
 
 def test_callback_records_contact_before_merging_and_fragmenting():
     w = W.World(seed=42)
+    w.configure(dict(collisions='heuristic'))
     w.sim.G = 2
     w.add_body(W.ROCKY, 3, (0, 0, 0), (1, 2, 0))
     w.add_body(W.ROCKY, 1, (3, 0, 0), (-3, 5, 0))

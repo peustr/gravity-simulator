@@ -57,6 +57,7 @@ def test_invalid_inventory_does_not_add_a_particle_or_consume_its_id():
 
 def test_chained_callbacks_do_not_mistake_unaccounted_merger_for_zero_inventory():
     w = W.World()
+    w.configure(dict(collisions='heuristic'))
     inventory = BodyInventory((1e30, 2e30, 3e30), 4e25)
     add(w, inventory=inventory)
     add(w, (1, 0, 0))
@@ -74,6 +75,7 @@ def test_chained_callbacks_do_not_mistake_unaccounted_merger_for_zero_inventory(
 
 def test_callback_with_missing_metadata_records_unknown_state_without_failing():
     w = W.World()
+    w.configure(dict(collisions='heuristic'))
     add(w)
     add(w, (1, 0, 0))
     del w.meta['1']

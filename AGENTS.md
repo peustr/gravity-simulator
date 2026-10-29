@@ -98,7 +98,7 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 
 - Never pass `name=` to `sim.add()`: the C side keeps a pointer to a temporary Python buffer. Add first, then `sim.particles[sim.N-1].name = name`. Always go through `World.add_body` / `remove_body`.
 - Reacquire particle references by ID after adding particles: array growth can invalidate references to C storage.
-- Never add particles inside the collision callback. In heuristic mode `_resolve_collision` merges and records, then `_handle_collision` may shatter after the native step. In calibrated modes the callback only records; validation and mutation happen after the step, with unsupported encounters paused intact.
+- Never add particles inside the collision callback. In heuristic mode `_resolve_collision` merges and records, then `_handle_collision` may shatter after the native step. In automatic and isolated modes the callback only records. Automatic mode calibrates rocky pairs and uses heuristic models for other pairs after the step; unsupported rocky encounters pause intact.
 - Collision callback return: 1 removes p1, 2 removes p2. REBOUND reports only *approaching* overlaps, so fragments may start overlapping the remnant.
 - Light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
 - Changes to masses, physical radii, types or particle order must set `_partition_dirty`; `_repartition()` also invalidates the contact and tidal caches.

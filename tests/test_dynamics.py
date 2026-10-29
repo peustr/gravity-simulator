@@ -55,6 +55,7 @@ def test_full_gravity_restores_collective_debris_back_reaction():
 
 def test_tracer_cannot_attract_a_placed_body():
     w = W.World()
+    w.configure(dict(gravity='tracers'))
     w.add_body(W.ASTEROID, .1, (0, 0, 0), (0, 0, 0))
     assert w._dominant((1, 0, 0), w.snapshot()) is None
     w.configure(dict(gravity='full'))
@@ -63,6 +64,7 @@ def test_tracer_cannot_attract_a_placed_body():
 
 def test_heavier_tracer_placement_does_not_recoil_its_active_attractor():
     w = W.World()
+    w.configure(dict(gravity='tracers'))
     w.add_body(W.ROCKY, .01, (0, 0, 0), (0, 0, 0))
     bid = w.spawn(W.ASTEROID, (10, 0, 0), mass_mult=20000)
     assert w.particle('1').vxyz == [0, 0, 0]
@@ -104,7 +106,7 @@ def test_old_saves_get_explicit_previous_approximation_settings(version):
     data['version'] = version
     del data['physics'], data['removed']
     restored, _ = E.restore(data)
-    assert restored.settings == C.DEFAULTS
+    assert restored.settings == C.LEGACY_DEFAULTS
     assert E.capture(restored, E.DEFAULT_CAMERA)['version'] == 4
 
 
@@ -133,6 +135,7 @@ def test_removal_inventory_counts_losses_even_when_energy_is_undefined():
 
 def test_ballistic_ias15_convergence_and_mode_restoration(monkeypatch):
     w = W.World()
+    w.configure(dict(gravity='tracers'))
     w.add_body(W.ASTEROID, .01, (-1, 0, 0), (-1, 0, 0))
     w.add_body(W.ASTEROID, .01, (1, 0, 0), (1, 0, 0))
     for _ in range(30):
@@ -170,6 +173,22 @@ def test_separating_surface_pair_is_rechecked_before_turnaround():
     assert .01 < limit < .1 * (1 + 1e-8)**2 / 2
 
 
+def test_cached_contact_geometry_matches_fresh_bounds_and_resets_after_edits():
+    w = W.World(seed=42)
+    w.load_preset('solar')
+    guard = D.ContactGuard()
+    for gravity in ('full','tracers'):
+        w.configure(dict(gravity=gravity))
+        for _ in range(3):
+            fresh = D.contact_step_limit(w.sim, math.inf)
+            assert guard.limit(w.sim, math.inf) == pytest.approx(fresh, rel=1e-14)
+            D.step(w.sim,.001,guard)
+    w.sim.particles[1].m *= 2
+    w.sim.particles[1].r *= 2
+    guard.reset()
+    assert guard.limit(w.sim, math.inf) == D.contact_step_limit(w.sim, math.inf)
+
+
 def test_safe_step_does_not_stop_at_a_stale_guard_boundary():
     sim = rebound.Simulation()
     sim.G = 0
@@ -197,6 +216,7 @@ def test_forecast_matches_live_gravity_and_reports_omissions():
 
 def test_forecast_radial_contact_matches_live_capture():
     w = W.World()
+    w.configure(dict(gravity='tracers'))
     w.add_body(W.BLACK_HOLE, 20000, (0, 0, 0), (0, 0, 0))
     preview = w.predict(W.ASTEROID, (20, 0, 0), 'launch', (0, 0, 0), 1, wall_budget=2)
     radius = w.sim.particles[0].r + W.radius_for(W.ASTEROID, 2e-5)

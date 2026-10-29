@@ -58,15 +58,15 @@ Satellite pairs start with circular relative velocities and preserve their
 parent's centre-of-mass position and momentum. Orbital phases are illustrative;
 this is not an ephemeris. Saturn's ring material is not resolved. Solar playback starts at
 x0.1 (one simulation unit per real second); Io then takes about 0.45 seconds per
-orbit rather than 0.045 seconds at x1. The belt uses low-mass tracers by default;
-full gravity enables their back-reaction. The formation preset is an embryo disk, not a
+orbit rather than 0.045 seconds at x1. The belt uses low-mass bodies with full mutual gravity by default;
+the optional tracer approximation omits their back-reaction. The formation preset is an embryo disk, not a
 calibrated accretion model.
 
 The black-hole preset uses a stellar-mass hole and a star passing inside its
 physical Roche estimate. The impact preset launches two Earth-like bodies at
 several mutual escape speeds. Both use slower simulated time to show these short
 events. The `galaxies` preset is labelled **Tidal encounter**: its two stellar-mass
-primaries and tracer disks illustrate tidal tails, not actual galaxies. Its
+primaries and disks illustrate tidal tails, not actual galaxies. Its
 initial relative speed uses the full three-dimensional separation for a
 parabolic encounter.
 

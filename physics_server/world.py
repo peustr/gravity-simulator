@@ -36,7 +36,7 @@ import rebound
 import units
 import configuration
 from impacts import capture as capture_impact
-from body_state import BodyInventory, capture_sphere
+from body_state import BodyInventory, GravitySource, capture_sphere
 from collision_models import construct_collision, couple_external_gravity
 from diagnostics import totals
 from dynamics import ContactGuard, step
@@ -231,14 +231,17 @@ class World:
 
     def clear(self):
         self.units = units.SYSTEM
+        self.settings.update(collisions='auto', gravity='full')
         self._new_simulation()
 
     def configure(self, changes):
         configuration.settings(changes, partial=True)
         settings = configuration.settings(self.settings | changes)
-        if settings['collisions'] != 'heuristic' and (self.units != units.SYSTEM or settings['gravity'] != 'full'
+        if settings['collisions'] in ('isolated_mergers', 'isolated_impacts') and (self.units != units.SYSTEM or settings['gravity'] != 'full'
                                                     or settings['escape_distance'] is not None):
             raise ValueError('Calibrated impacts require physical units, full gravity and disabled escape removal')
+        if settings['collisions'] == 'auto' and self.units != units.SYSTEM:
+            raise ValueError('Automatic collisions require physical units')
         self.settings = settings
         self.sim.integrator.epsilon = self.settings['epsilon']
         self._partition_dirty = True
@@ -451,7 +454,7 @@ class World:
                 meta["heat"] *= cool
             else:
                 meta["heat"] = 0.0
-        if self.settings['collisions'] != 'heuristic':
+        if self.settings['collisions'] in ('isolated_mergers', 'isolated_impacts') or self.paused:
             return  # No unaccounted automatic removals or stellar transformations.
         self._cull_escapers()
         while self._supernova_queue:
@@ -486,6 +489,48 @@ class World:
             self.ledger.record('escape_boundary', before, self.ledger.capture(self))
 
     # ------------------------------------------------------------ collisions
+    def _collision_record(self, pi, pj):
+        ni, nj = pi.name, pj.name
+        ti = self.meta.get(ni, {}).get("type", ASTEROID)
+        tj = self.meta.get(nj, {}).get("type", ASTEROID)
+        if ti == BLACK_HOLE and tj != BLACK_HOLE:
+            keep_i = True
+        elif tj == BLACK_HOLE and ti != BLACK_HOLE:
+            keep_i = False
+        else:
+            keep_i = pi.m >= pj.m
+        s, r = (pi, pj) if keep_i else (pj, pi)
+        ts, tr = (ti, tj) if keep_i else (tj, ti)
+        ms, mr = s.m, r.m
+        rec = {
+            "s": s.name, "r": r.name, "ts": ts, "tr": tr,
+            "impact": capture_impact(s, r, self.sim.G),
+            "spheres": tuple(capture_sphere(p, self.meta.get(p.name, {}).get('inventory'), self.units)
+                             for p in (s, r)),
+            "ms": ms, "mr": mr, "rs": s.r, "rr": r.r,
+            "vrel": (r.vx - s.vx, r.vy - s.vy, r.vz - s.vz),
+            "normal": _unit((r.x - s.x, r.y - s.y, r.z - s.z)),
+            "heat_r": self.meta.get(r.name, {}).get("heat", 0.0),
+        }
+        return s, r, rec
+
+    def _merge_heuristic(self, s, r):
+        ms, mr = s.m, r.m
+        M = ms + mr
+        # The heuristic does not close spin/internal-energy budgets. Mark
+        # the survivor before another callback can capture it this step.
+        if s.name in self.meta:
+            self.meta[s.name]['inventory'] = None
+        if M > 0:
+            inv = 1.0 / M
+            s.x = (ms * s.x + mr * r.x) * inv
+            s.y = (ms * s.y + mr * r.y) * inv
+            s.z = (ms * s.z + mr * r.z) * inv
+            s.vx = (ms * s.vx + mr * r.vx) * inv
+            s.vy = (ms * s.vy + mr * r.vy) * inv
+            s.vz = (ms * s.vz + mr * r.vz) * inv
+            s.m = M
+
     def _resolve_collision(self, sim_ptr, collision):
         """Called by REBOUND (from C) when two bodies overlap.
 
@@ -500,48 +545,15 @@ class World:
             if i == j:
                 return 0
             pi, pj = ps[i], ps[j]
-            ni, nj = pi.name, pj.name
-            ti = self.meta.get(ni, {}).get("type", ASTEROID)
-            tj = self.meta.get(nj, {}).get("type", ASTEROID)
-            if ti == BLACK_HOLE and tj != BLACK_HOLE:
-                keep_i = True
-            elif tj == BLACK_HOLE and ti != BLACK_HOLE:
-                keep_i = False
-            else:
-                keep_i = pi.m >= pj.m
-            s, r = (pi, pj) if keep_i else (pj, pi)
-            ts, tr = (ti, tj) if keep_i else (tj, ti)
-            ms, mr = s.m, r.m
-            M = ms + mr
-            rec = {
-                "s": s.name, "r": r.name, "ts": ts, "tr": tr,
-                "impact": capture_impact(s, r, sim.G),
-                "spheres": tuple(capture_sphere(p, self.meta.get(p.name, {}).get('inventory'), self.units)
-                                 for p in (s, r)),
-                "ms": ms, "mr": mr, "rs": s.r, "rr": r.r,
-                "vrel": (r.vx - s.vx, r.vy - s.vy, r.vz - s.vz),
-                "normal": _unit((r.x - s.x, r.y - s.y, r.z - s.z)),
-                "heat_r": self.meta.get(r.name, {}).get("heat", 0.0),
-            }
+            s, r, rec = self._collision_record(pi, pj)
+            keep_i = s.name == pi.name
             if self.settings['collisions'] != 'heuristic':
                 # REBOUND may report both pair orders. Keep distinct contacts
                 # so simultaneous encounters can be rejected before mutation.
                 if not any({p['s'], p['r']} == {s.name, r.name} for p in self._pending):
                     self._pending.append(rec)
                 return 0
-            # The heuristic does not close spin/internal-energy budgets. Mark
-            # the survivor before another callback can capture it this step.
-            if s.name in self.meta:
-                self.meta[s.name]['inventory'] = None
-            if M > 0:
-                inv = 1.0 / M
-                s.x = (ms * s.x + mr * r.x) * inv
-                s.y = (ms * s.y + mr * r.y) * inv
-                s.z = (ms * s.z + mr * r.z) * inv
-                s.vx = (ms * s.vx + mr * r.vx) * inv
-                s.vy = (ms * s.vy + mr * r.vy) * inv
-                s.vz = (ms * s.vz + mr * r.vz) * inv
-                s.m = M
+            self._merge_heuristic(s, r)
             self._pending.append(rec)
             self._names_dirty = True
             self._partition_dirty = True
@@ -550,20 +562,41 @@ class World:
             traceback.print_exc()
             return 0
 
+    def _merge_deferred_contacts(self, pending):
+        """Replay heuristic contact components without stale native references."""
+        aliases = {name: name for rec in pending for name in (rec['s'], rec['r'])}
+        merged = []
+        for old in pending:
+            a, b = aliases[old['s']], aliases[old['r']]
+            if a == b:
+                continue
+            s, r, rec = self._collision_record(self.particle(a), self.particle(b))
+            self._merge_heuristic(s, r)
+            aliases = {name: rec['s'] if survivor == rec['r'] else survivor
+                       for name, survivor in aliases.items()}
+            self.remove_body(int(rec['r']))
+            merged.append(rec)
+        return merged
+
     def _process_collisions(self):
         pending, self._pending = self._pending, []
-        if self.settings['collisions'] != 'heuristic' and len(pending) > 1:
+        mode = self.settings['collisions']
+        calibrated = mode in ('isolated_mergers', 'isolated_impacts') or (
+            mode == 'auto' and any((r['ts'], r['tr']) == (ROCKY, ROCKY) for r in pending))
+        if calibrated and len(pending) > 1:
             self.paused = True
             self.notice('Collision paused: simultaneous contacts require a collective impact model')
             return
+        if mode == 'auto' and not calibrated:
+            pending = self._merge_deferred_contacts(pending)
         for rec in pending:
             try:
-                if self.settings['collisions'] != 'heuristic':
+                if calibrated:
                     self._apply_isolated_collision(rec)
                 else:
                     self._handle_collision(rec)
             except Exception as exc:
-                if self.settings['collisions'] != 'heuristic':
+                if calibrated:
                     self.paused = True
                     self.notice(f'Collision paused: {exc}')
                     break
@@ -574,20 +607,21 @@ class World:
         """Preflight a two-body outcome before committing any particle changes."""
         if self.units != units.SYSTEM or not math.isclose(self.sim.G, units.G, rel_tol=1e-12):
             raise ValueError('Calibrated collisions require physical units and Newtonian G')
+        if self.settings['gravity'] != 'full':
+            raise ValueError('Calibrated impacts require full gravity; disable the tracer approximation')
         if (rec['ts'], rec['tr']) != (ROCKY, ROCKY):
             raise ValueError('Calibrated impacts currently support only rocky planets')
         if any(s is None for s in rec['spheres']):
             raise ValueError('Both bodies need known spin and internal-energy inventories')
         outcome = construct_collision(*rec['spheres'], material='fluid_planets', body_types=(ROCKY, ROCKY),
-                                      resolved_policy=self.settings['collisions'] == 'isolated_impacts')
+                                      resolved_policy=self.settings['collisions'] != 'isolated_mergers')
         if self.sim.N - 2 + len(outcome.remnants) > self.max_bodies:
             raise ValueError('Insufficient body capacity for this impact; no material was removed')
         if self.particle(rec['s']) is None or self.particle(rec['r']) is None or rec['s'] == rec['r']:
             raise ValueError('Collision body IDs no longer identify an incoming pair')
-        external = tuple(capture_sphere(p, self.meta[p.name]['inventory'], self.units)
+        external = tuple(GravitySource(p.m * units.MASS_KG, p.r * units.LENGTH_M,
+                                       tuple(x * units.LENGTH_M for x in p.xyz))
                          for p in self.sim.particles if p.name not in (rec['s'], rec['r']))
-        if any(s is None for s in external):
-            raise ValueError('External bodies need known physical inventories')
         remnants = couple_external_gravity(rec['spheres'], outcome.remnants, external)
         prepared = [(s.mass_kg / units.MASS_KG, s.radius_m / units.LENGTH_M,
                      tuple(x / units.LENGTH_M for x in s.position_m),
@@ -822,8 +856,8 @@ class World:
 
     # ------------------------------------------------------------- supernova
     def supernova(self, bid, natural=False) -> bool:
-        if self.settings['collisions'] != 'heuristic':
-            self.notice('Supernovae require heuristic collision mode.')
+        if self.settings['collisions'] in ('isolated_mergers', 'isolated_impacts'):
+            self.notice('Supernovae are disabled in isolated collision experiments.')
             return False
         name = str(int(bid))
         p = self.particle(name)
@@ -872,7 +906,7 @@ class World:
 
     # ------------------------------------------------------- tidal disruption
     def _tidal_check(self):
-        if self.settings['collisions'] != 'heuristic':
+        if self.settings['collisions'] in ('isolated_mergers', 'isolated_impacts'):
             return
         if self.sim.N < 2:
             return
@@ -1235,10 +1269,6 @@ class World:
         if name not in SCENARIOS:
             raise ValueError(f"Unknown scenario: {name!r}")
         self.clear()
-        if name == 'smash':
-            self.configure(dict(collisions='isolated_impacts', gravity='full', escape_distance=None))
-        elif self.settings['collisions'] != 'heuristic':
-            self.configure(dict(collisions='heuristic'))
         self.speed = PRESET_SPEEDS[name]
         rng = self.rng
         cam = {"focus": [0, 0, 0], "distance": 400.0, "pitch": 0.6}

@@ -40,8 +40,8 @@ Angular momentum excludes body spin; kinetic energy excludes gravitational
 potential, self-binding and thermal energy. Recording these quantities does not
 establish conservation across the generated collision outcome.
 
-The default live outcome model is the existing merge/shatter heuristic with special
-stellar and compact-object rules. Its disruption threshold and fragment
+Automatic dispatch uses calibrated outcomes for rocky pairs and heuristic
+models for other pairs, including stellar and compact-object rules. The heuristic disruption threshold and fragment
 prescription are not a calibrated material model, and available particle slots
 can still turn fragmentation into a merger. The captured measurements do not
 classify hit-and-run events or assign remnant spin.

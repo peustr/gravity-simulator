@@ -2,10 +2,9 @@
 
 `physics_server/collision_outcomes.py` provides SI state and inventory calculations
 for isolated, homogeneous spheres. `physics_server/collision_models.py` connects
-these constructors to the calibrated mass classifier. Planet smash uses the
-resolved `isolated_impacts` path with its original initial conditions. Other
-presets retain heuristic outcomes. `isolated_mergers` remains available for
-merger-only experiments.
+these constructors to the calibrated mass classifier. Automatic dispatch uses
+them for rocky pairs in every preset. Other body pairs retain heuristic models.
+Isolated modes remain available for controlled experiments.
 
 ## State and energy convention
 
@@ -40,6 +39,28 @@ cannot reconstruct missing internal energy. Invalid files are rejected before
 the live world is replaced. Reservoir persistence is not supported yet. Live
 diagnostics and removal accounting still measure orbital quantities only.
 
+## Automatic model selection
+
+Fresh worlds, Clear and every preset select `collisions: auto` and full gravity.
+Rocky–rocky contacts use calibrated construction; other body pairs use the
+existing heuristic rules. The Experiment menu exposes automatic versus
+heuristic-only comparison mode. There is no heuristic fallback for rejected
+rocky contacts: unsupported calibration, incoming spin/inventories, external
+fields, tracer gravity or insufficient capacity pause the encounter intact.
+
+Automatic mode defers all contacts until after the native step. A simultaneous
+batch involving a rocky pair pauses before mutation. Other contact components
+merge each incoming body once before heuristic fragmentation. Tides, supernovae
+and removal remain independent of this dispatch. Their unaccounted transformations
+still mark affected inventories unknown; visual cooling is not energy evolution.
+External gravity needs only mass, radius and position, so unknown external heat
+or spin does not become an invented inventory or block an otherwise valid pair.
+
+Version-1/2 saves retain tracer/heuristic defaults. Version-3/4 files retain their
+stored settings; an omitted collision field means heuristic. Current saves and
+restart points preserve automatic mode explicitly. The old isolated modes retain
+their restrictions, including disabled removal, tides and supernovae.
+
 ## Live isolated mergers
 
 Set physics options together through a saved scene's `physics` object or the
@@ -51,8 +72,8 @@ Set physics options together through a saved scene's `physics` object or the
 
 The mode requires physical units, full gravity and disabled escape removal.
 It uses the `fluid_planets` calibration for a pair of rocky bodies with known
-inventories and nonrotating inputs. Surrounding bodies require known inventories
-and the weak-field checks below. All density, mass, speed, geometry, shallow
+inventories and nonrotating inputs. Surrounding bodies require valid gravity
+geometry and the weak-field checks below. All density, mass, speed, geometry, shallow
 contact and remnant-spin feasibility limits still apply. It accepts only
 classified merging or graze-and-merge outcomes. An unsupported field, state
 or non-merging outcome pauses at the detected encounter with an explanatory
@@ -72,14 +93,14 @@ and artistic glow indicate contact; glow does not measure deposited energy.
 Tidal shredding, supernovae and automatic removal are disabled in this mode.
 Orbital stepping and visual cooling continue. A spinning survivor retains its
 inventory, but another collision involving it is rejected because the calibration
-requires nonrotating inputs. New scenes and saves omitting `collisions` use
+requires nonrotating inputs. Older saves omitting `collisions` use
 `heuristic`; version-4 files persist the selected mode. Existing saves with unknown
 inventories cannot supply calibrated input states. Switch modes explicitly or
 prepare supported initial conditions before resuming a rejected encounter.
 
-`isolated_impacts`, selectable in **Experiment → Calibrated collisions**, also
-constructs separated remnants. Planet smash enables it automatically; other
-presets restore heuristic collisions. It retains the same pairwise, material and
+`isolated_impacts`, available through saved settings or the physics command,
+also constructs separated remnants. Automatic mode uses the same construction
+for rocky pairs. It retains the same pairwise, material and
 spin restrictions. The resolved policy keeps the classified largest remnant and
 runner, and divides debris equally into the minimum number of fragments no
 heavier than the largest remnant, at most 32 bodies total. A deterministic

@@ -16,7 +16,7 @@ def assert_partition(w):
     w._repartition()
     heavy = [not w.is_light(w.meta[p.name]['type'], p.m) for p in w.sim.particles]
     assert heavy == sorted(heavy, reverse=True)
-    assert w.sim.N_active == sum(heavy)
+    assert w.sim.N_active == (w.sim.N if w.settings['gravity'] == 'full' else sum(heavy))
     assert set(w.snapshot()['names']) == set(w.meta)
 
 
@@ -147,6 +147,7 @@ def test_shattering_multiple_mergers_preserves_current_mass():
 
 def test_kilonova_promotes_actual_particle_after_array_growth():
     w = W.World(seed=8)
+    w.configure(dict(collisions='heuristic'))
     a = w.add_body(W.NEUTRON_STAR, 1400, (-5, 0, 0), (0, 0, 0))
     w.add_body(W.NEUTRON_STAR, 1300, (5, 0, 0), (0, 0, 0))
     # Exercise the callback/deferred handler boundary without relying on wall time.

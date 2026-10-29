@@ -51,8 +51,10 @@ def restore(data):
     if world.units not in (units.SYSTEM, units.LEGACY):
         raise ValueError('Unsupported physical units / radius model')
     world.sim.integrator.min_dt = 1e-4 if world.units == units.LEGACY else 0.0
-    if data['version'] >= 3:
-        import configuration
+    import configuration
+    if data['version'] < 3:
+        world.configure(configuration.LEGACY_DEFAULTS)
+    else:
         world.configure(configuration.settings(data.get('physics')))
         removed = data.get('removed')
         if not isinstance(removed, dict) or removed.keys() != world.removed.keys() or type(removed['energy_defined']) is not bool:

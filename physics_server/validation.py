@@ -140,6 +140,7 @@ def hierarchical(periods=20, epsilon=1e-9):
 
 def merger():
     world = pair((0.2, 0, 0), (-0.05, 0, 0), masses=(0.003, 0.002))
+    world.configure(dict(collisions='heuristic'))  # Prescribed perfectly inelastic reference.
     for p in world.sim.particles:
         p.r = 0.01
         p.vz += 0.2
@@ -264,7 +265,7 @@ def contact_accuracy():
         for initial_dt in (1e-6, 1.0):
             for geometry in ('head_on', 'grazing', 'near_miss', 'capture', 'receding_capture'):
                 w = World(seed=42)
-                w.configure(dict(epsilon=epsilon, escape_distance=None))
+                w.configure(dict(epsilon=epsilon, escape_distance=None, gravity='tracers'))
                 if geometry in ('capture', 'receding_capture'):
                     outward = 10.0 if geometry == 'receding_capture' else 0.0
                     w.add_body(BLACK_HOLE, 20000, (0, 0, 0), (0, 0, 0))

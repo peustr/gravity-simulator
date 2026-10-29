@@ -162,6 +162,7 @@ def test_legacy_tides_and_capture_keep_version_one_rules():
     w._tidal_check()
     assert W.EV_TIDAL in [e[0] for e in w.events]
     w.clear()
+    w.configure(dict(collisions='heuristic'))
     w.add_body(W.ROCKY, .003, (0, 0, 0), (0, 0, 0))
     hole = w.add_body(W.BLACK_HOLE, 20000, (.001, 0, 0), (-1, 0, 0))
     assert w._resolve_collision(ctypes.pointer(w.sim), SimpleNamespace(p1=0, p2=1)) == 1

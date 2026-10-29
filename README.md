@@ -261,7 +261,7 @@ The **Experiment** menu also controls full gravity for debris, inclusion of all 
 
 New saves use version-4 JSON with an explicit unit/radius-model identifier, physics settings, removal inventory and per-body spin/internal-energy inventories. Unknown body inventories are stored as null; versions 1–3 remain readable without inventing missing energy or spin. See [physical inventories and migration](docs/collision-budgets.md#persistent-body-inventories).
 
-**Planet smash** uses calibrated, conserved rocky-body disruption with its original initial conditions. The **Experiment → Calibrated collisions** control selects this model for other experiments. It requires full gravity and weak external tides across the impact; adding a distant star to Planet smash is supported. Strong external fields, simultaneous contacts, unsupported body states or insufficient fragment slots pause intact. Escape removal, supernovae and tidal shredding are disabled in this mode. Other presets restore heuristic collisions. Fragment positions and energy splits remain prescribed approximations. See [configuration and limits](docs/collision-budgets.md#live-isolated-mergers).
+New scenes and all presets use **automatic collision models** and **full gravity**. Rocky–rocky impacts use calibrated, conserved outcomes; other body pairs retain their documented heuristic models. Tides, supernovae and distant-body removal remain available. Unsupported rocky impacts pause intact with an explanation, including strong external fields, simultaneous contacts, unknown incoming inventories/spin, insufficient fragment slots or explicitly selected tracer gravity. **Experiment → Automatic collision models** can be unchecked for heuristic-only comparisons. Fragment positions and energy splits remain prescribed approximations. Older saves retain their recorded model; see [configuration and limits](docs/collision-budgets.md#automatic-model-selection).
 
 Version-1 scenes load automatically in **legacy sandbox units**, retaining all original values and exaggerated contact-radius rules; re-saving preserves that label. They are not silently converted to physical scenes. Clear or choose a preset to start a new physical scene.
 
@@ -303,7 +303,7 @@ Restores rebuild REBOUND from the saved physical conditions. They do not preserv
 | **Black hole feast** | A star on a plunging orbit is torn apart near the black hole. The debris streams in and the disk and jets flare. |
 | **Planet smash** | Two Earth-like planets collide at several times their mutual escape speed and shatter into glowing fragments. |
 | **Planet formation** | 200 embryos orbit a young Sun. Physical contact is rare; this is an initial disk, not a calibrated planet-formation model. Runs at 2.5x speed. |
-| **Tidal encounter** | Two tracer disks around stellar-mass black holes make a parabolic encounter. This illustrates tidal tails; it is not a galaxy-scale mass model. The preset key remains `galaxies`. |
+| **Tidal encounter** | Two disks around stellar-mass black holes make a parabolic encounter. This illustrates tidal tails; it is not a galaxy-scale mass model. The preset key remains `galaxies`. |
 | **Empty space** | Your canvas. |
 
 The top bar shows simulation time, the body count, and **"Real-time"**, which turns amber with a percentage if the physics can't keep up with the requested speed. Lower the speed or remove debris if that happens.
@@ -322,7 +322,7 @@ See [physical units and models](docs/physical-model.md) for constants, radius ap
 
 All bodies live in one REBOUND simulation using the **IAS15** integrator (Rein & Spiegel 2015). It is adaptive: it takes tiny steps during close encounters and big ones in quiet periods, and the controlled reference problems check its accuracy. Physical scenes allow adaptive steps below the old sandbox minimum; difficult encounters reduce achieved simulation speed. The server targets 60 updates a second and limits each advance to the requested simulation time. Godot buffers about 50 ms of authoritative positions, then interpolates between them. Playback follows achieved simulation speed and stops at the last received state if updates stall; the renderer does not calculate gravitational forces. Very fast moon orbits still require slower playback when zoomed in to resolve them at your display's frame rate.
 
-By default, debris below 0.5 mass units (asteroids and small gas clouds) is treated as **test particles**. It feels active bodies' gravity and collides normally, but exerts no gravitational pull. Enable **Experiment → Full gravity, including debris** for mutual forces. This costs more for large debris clouds; a large collective tracer mass can make the approximation inaccurate. Planets, stars, neutron stars and black holes always exert gravity.
+Full gravity is enabled by default, including mutual forces from debris. For cheaper comparison runs, uncheck **Experiment → Full gravity, including debris**: asteroids and small gas clouds below 0.5 mass units become test particles, feeling active bodies without exerting gravitational pull. Large collective tracer mass can make this approximation inaccurate; calibrated rocky impacts require full gravity. Planets, stars, neutron stars and black holes always exert gravity.
 
 A shared contact step guard limits approach to physical surfaces before collision detection. Long-duration orbit, grazing-contact, capture and forecast checks have documented [accuracy targets and limitations](docs/orbital-dynamics.md). Bodies beyond 15,000 length units (250 AU) are removed by default regardless of binding energy; removal can be disabled and its inventory losses are recorded.
 
@@ -336,8 +336,8 @@ are not calibrated material models.
 The [impact classification API](docs/impact-scaling.md) estimates outcomes for
 supported solid contacts, including rocky hit-and-run events. The live
 [calibrated mode](docs/collision-budgets.md#live-isolated-mergers) constructs
-conserved resolved remnants and is enabled by Planet smash. The table below
-describes heuristic mode, retained by the other presets.
+conserved resolved remnants for rocky–rocky impacts by default. The table below
+describes heuristic models used for other pairs and in explicit comparison mode.
 
 | Situation | Outcome |
 |---|---|

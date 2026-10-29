@@ -7,6 +7,19 @@ import units
 
 
 @dataclass(frozen=True)
+class GravitySource:
+    """External spherical gravity geometry; no claim about spin or heat."""
+    mass_kg: float
+    radius_m: float
+    position_m: tuple[float, float, float]
+
+    def __post_init__(self):
+        if not all(math.isfinite(v) and v > 0 for v in (self.mass_kg, self.radius_m)):
+            raise ValueError('External gravity mass and radius must be finite and positive')
+        object.__setattr__(self, 'position_m', _vector(self.position_m))
+
+
+@dataclass(frozen=True)
 class BodyInventory:
     """Spin angular momentum and energy above the fixed material reference.
 

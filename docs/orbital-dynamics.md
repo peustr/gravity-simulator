@@ -50,11 +50,12 @@ The **Physics** section of the **Experiment** menu provides these options:
   removal for long excursions or translating systems. Re-enabling the menu
   option restores the default distance.
 
-Defaults retain tracer gravity, a 20-body forecast limit and the removal
-boundary. Full gravity can cost more for large debris populations; it never
+Defaults use full gravity, automatic collision models, a 20-body forecast limit
+and the removal boundary. Full gravity can cost more for large debris populations; it never
 silently falls back to tracers. Switching force models changes the equations
 and their conservation properties; set a new restart point for comparisons.
-Clear and built-in presets retain the selected physics settings.
+Clear and built-in presets restore full gravity and automatic collisions;
+other selected physics settings are retained.
 
 Version-3 saves and restart points retain these settings and cumulative removal
 inventory: body count, mass, momentum, orbital angular momentum and the change

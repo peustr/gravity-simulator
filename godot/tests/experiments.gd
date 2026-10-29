@@ -70,6 +70,13 @@ func _run() -> void:
 	if not await _until(func(): return main.views.size() == 6 and main.paused):
 		_fail("Scene test: initial scene did not arrive")
 		return
+	if main.hud.physics_settings.get("collisions") != "auto":
+		_fail("Preset did not enable automatic collision models")
+		return
+	main.hud.physics_menu.id_pressed.emit(10)
+	if not await _until(func(): return main.hud.physics_settings.get("gravity") == "tracers"):
+		_fail("Tracer comparison control did not reach the server")
+		return
 	main.hud.physics_menu.id_pressed.emit(10)
 	if not await _until(func(): return main.hud.physics_settings.get("gravity") == "full"):
 		_fail("Full gravity control did not reach the server")
@@ -83,15 +90,15 @@ func _run() -> void:
 		_fail("Removal boundary control did not reach the server")
 		return
 	main.hud.physics_menu.id_pressed.emit(14)
-	if not await _until(func(): return main.hud.physics_settings.get("collisions") == "isolated_impacts"):
-		_fail("Calibrated collision control did not reach the server")
-		return
-	if not main.hud.physics_menu.is_item_disabled(main.hud.physics_menu.get_item_index(10)):
-		_fail("Calibrated mode allowed tracer gravity")
+	if not await _until(func(): return main.hud.physics_settings.get("collisions") == "heuristic"):
+		_fail("Could not select heuristic comparison mode")
 		return
 	main.hud.physics_menu.id_pressed.emit(14)
-	if not await _until(func(): return main.hud.physics_settings.get("collisions") == "heuristic"):
-		_fail("Could not return to heuristic mode")
+	if not await _until(func(): return main.hud.physics_settings.get("collisions") == "auto"):
+		_fail("Could not restore automatic collision models")
+		return
+	if main.hud.physics_menu.is_item_disabled(main.hud.physics_menu.get_item_index(12)):
+		_fail("Automatic mode disabled the independent removal control")
 		return
 	if not await _request({"cmd": "checkpoint"}):
 		_fail("Could not set paused restart point for cancellation test")

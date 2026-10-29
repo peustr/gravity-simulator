@@ -162,7 +162,7 @@ def main(argv=None):
     parser.add_argument('--profile', action='store_true')
     parser.add_argument('--gravity', choices=('tracers', 'full'), default=None,
                         help='Override preset gravity; calibrated impacts require full gravity')
-    parser.add_argument('--collisions', choices=('heuristic', 'isolated_mergers', 'isolated_impacts'),
+    parser.add_argument('--collisions', choices=('auto', 'heuristic', 'isolated_mergers', 'isolated_impacts'),
                         help='Override preset collisions for controlled comparisons')
     parser.add_argument('--forecast-limit', type=bounded_int(0, W.MAX_BODIES), default=20,
                         help='0 includes all bodies; otherwise select this many plus the attractor')

@@ -15,7 +15,17 @@ def _pairs(count):
     return np.triu_indices(count, 1)
 
 
-def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION):
+def _contact_geometry(sim):
+    m, r = np.empty(sim.N), np.empty(sim.N)
+    sim.serialize_particle_data(m=m, r=r)
+    if sim.N_active < sim.N:
+        m[sim.N_active:] = 0
+    i, j = _pairs(sim.N)
+    vectors = [np.empty((len(i), 3)) for _ in range(3)]
+    return i, j, r[i] + r[j], sim.G * (m[i] + m[j]), np.empty(3 * sim.N), np.empty(3 * sim.N), *vectors
+
+
+def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION, *, _geometry=None):
     """Limit approach to finite surfaces before IAS15 evaluates a singular centre.
 
     The gap, radial approach speed and pair escape speed bound the proposed travel
@@ -27,25 +37,22 @@ def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION):
     """
     if sim.N < 2:
         return maximum
-    x, v = np.zeros(3 * sim.N), np.zeros(3 * sim.N)
-    m, r = np.zeros(sim.N), np.zeros(sim.N)
-    sim.serialize_particle_data(m=m, r=r, xyz=x, vxvyvz=v)
-    i, j = _pairs(sim.N)
-    dx = x.reshape(-1, 3)[j] - x.reshape(-1, 3)[i]
-    dv = v.reshape(-1, 3)[j] - v.reshape(-1, 3)[i]
+    i, j, radius, mu, x, v, dx, dv, scratch = _contact_geometry(sim) if _geometry is None else _geometry
+    sim.serialize_particle_data(xyz=x, vxvyvz=v)
+    # Gather into reusable contiguous buffers instead of allocating indexed
+    # copies on every near-contact step. Bounds and arithmetic are unchanged.
+    for values, delta in ((x, dx), (v, dv)):
+        np.take(values.reshape(-1, 3), j, axis=0, out=delta)
+        np.take(values.reshape(-1, 3), i, axis=0, out=scratch)
+        np.subtract(delta, scratch, out=delta)
     distance = np.sqrt(np.einsum('ij,ij->i', dx, dx))
-    radius = r[i] + r[j]
     radial = np.einsum('ij,ij->i', dx, dv) / np.maximum(distance, 1e-300)
     # Outside surfaces, gravity can turn an initially receding pair around
     # during a large trial step. Separating overlaps must remain free to leave.
     eligible = (distance > radius) | (radial <= 0)
-    # A mass-bearing tracer exerts no force, including on another tracer.
-    if sim.N_active < sim.N:
-        m[sim.N_active:] = 0
     # Tangential velocity alone cannot close a gap. Including it would impose
     # unnecessary small steps on every circular orbit; gravity is covered by
     # the escape-speed allowance and IAS15's own force error control.
-    mu = sim.G * (m[i] + m[j])
     speed = np.maximum(-radial, 0) + np.sqrt(2 * mu / np.maximum(distance, 1e-300))
     scale = np.maximum(distance - radius, fraction * radius)
     candidates = eligible & (radius > 0) & (speed > 0)
@@ -73,15 +80,23 @@ class ContactGuard:
 
     def reset(self):
         self.check_at = -1.0
+        self.geometry = None
+        self.geometry_key = None
 
     def limit(self, sim, maximum):
+        key = (sim.N, sim.N_active, sim.G)
+        if key != self.geometry_key:
+            self.reset()
+            self.geometry_key = key
+        if self.geometry is None:
+            self.geometry = _contact_geometry(sim)
         # Refresh before a proposed step crosses the cached interval. Splitting
         # at its old end can leave a tiny remainder that repeatedly shrinks
         # IAS15's next proposed step, even when every surface is still distant.
         if self.check_at <= sim.t + maximum:
             # Without a finite constraint, recheck on the next native call;
             # never cache an unbounded interval across changing trajectories.
-            interval = contact_step_limit(sim, math.inf)
+            interval = contact_step_limit(sim, math.inf, _geometry=self.geometry)
             if not math.isfinite(interval):
                 return maximum
             self.check_at = sim.t + interval

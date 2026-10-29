@@ -85,7 +85,7 @@ def test_callback_defers_all_changes_and_deduplicates_reversed_pair():
 
 @pytest.mark.parametrize('failure,reason', [
     ('unknown', 'known spin'), ('spin', 'nonrotating'), ('type', 'rocky planets'),
-    ('third', 'External tidal'), ('external_unknown', 'External bodies need'),
+    ('third', 'External tidal'), ('external_invalid', 'External gravity mass'),
     ('gravity', 'Newtonian G'), ('legacy', 'physical units'),
     ('deep', 'shallow surface'), ('fragments', 'Multiple remnants'), ('missing_id', 'body IDs'),
 ])
@@ -100,8 +100,9 @@ def test_rejection_preserves_all_particles_inventories_and_rng(failure, reason):
         w.meta['1']['type'] = W.GAS_GIANT
     elif failure == 'third':
         w.add_body(W.STAR, 1000, (1, 0, 0), (0, 0, 0))
-    elif failure == 'external_unknown':
-        w.add_body(W.STAR, 1000, (60, 0, 0), (0, 0, 0), inventory=None)
+    elif failure == 'external_invalid':
+        w.add_body(W.STAR, 1000, (60, 0, 0), (0, 0, 0))
+        w.particle('3').m = -1
     elif failure == 'gravity':
         w.sim.G = 2
     elif failure == 'legacy':
@@ -224,7 +225,7 @@ def test_unchanged_smash_preset_runs_calibrated_disruption_and_closes_budgets(ca
     restored,_ = E.restore(E.capture(w,E.DEFAULT_CAMERA))
     assert states(restored) == states(w)
     w.load_preset('solar')
-    assert w.settings['collisions'] == 'heuristic'
+    assert w.settings['collisions'] == 'auto'
 
 
 def test_smash_insufficient_capacity_preserves_the_unapplied_encounter():
@@ -294,7 +295,7 @@ def test_successive_mergers_with_external_gravity_preserve_inventories_and_sourc
 def test_calibrated_merger_in_existing_solar_system_keeps_all_surrounding_bodies():
     w = W.World(seed=42)
     w.load_preset('solar')
-    w.configure(MODE | dict(collisions='isolated_impacts'))
+    assert w.settings['collisions'] == 'auto'
     target = next(p for p in w.sim.particles if p.m == .003)
     name, mass, radius = target.name, target.m, target.r
     position, velocity = tuple(target.xyz), tuple(target.vxyz)
