@@ -21,9 +21,9 @@ def test_seeded_workload_and_separate_accounting():
     second = benchmark.workload('solar', 2, 7, audit=True)
     assert first['initial_bodies'] == second['initial_bodies'] == 73
     assert first['advance']['count'] == 2 and first['forecast']['count'] == 1
-    assert first['initial_tracers'] == 60
+    assert first['initial_tracers'] == 0
     assert 'accounting' not in first and 'accounting' in second
-    assert second['accounting']['initial']['tracers'] == 60
+    assert second['accounting']['initial']['tracers'] == 0
     assert first['requested_simulated_time'] == pytest.approx(1 / 30)
 
 
@@ -31,6 +31,18 @@ def test_profile_reports_native_integration_and_forecast():
     report = benchmark.profile_workload('binary', 2, 42)
     phases = {item['phase'] for item in report['phases']}
     assert {'integration_including_collision_callbacks', 'tides', 'forecast', 'packing'} <= phases
+
+
+def test_physical_inventory_reports_unknown_energy_and_supported_smash():
+    import world as W
+    w=W.World(seed=42)
+    w.load_preset('smash')
+    assert benchmark.physical_inventory(w)['available']
+    w.meta['1']['inventory']=None
+    assert not benchmark.physical_inventory(w)['available']
+    w.load_preset('smash')
+    w.sim.particles[1].x=w.sim.particles[0].x
+    assert not benchmark.physical_inventory(w)['available']
 
 
 @pytest.mark.parametrize('passed, expected', [(True, 0), (False, 1)])

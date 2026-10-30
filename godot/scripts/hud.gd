@@ -289,6 +289,7 @@ func _build_top_bar() -> void:
 	file_menu.add_check_item("Full gravity, including debris", 10)
 	file_menu.add_check_item("Include all bodies in forecasts", 11)
 	file_menu.add_check_item("Remove bodies beyond the boundary", 12)
+	file_menu.add_check_item("Automatic collision models", 14)
 	file_menu.add_item("Waiting for physics settings...", 13)
 	file_menu.set_item_disabled(file_menu.get_item_index(13), true)
 	file_menu.id_pressed.connect(_experiment_action)
@@ -312,6 +313,11 @@ func _experiment_action(id: int) -> void:
 				physics_changed.emit({"forecast_limit": 20 if physics_settings.forecast_limit == 0 else 0})
 			12:
 				physics_changed.emit({"escape_distance": 15000.0 if physics_settings.escape_distance == null else null})
+			14:
+				if physics_settings.get("collisions", "heuristic") != "heuristic":
+					physics_changed.emit({"collisions": "heuristic"})
+				else:
+					physics_changed.emit({"collisions": "auto", "gravity": "full"})
 
 
 func set_physics(info: Dictionary) -> void:
@@ -321,6 +327,13 @@ func set_physics(info: Dictionary) -> void:
 	physics_menu.set_item_checked(physics_menu.get_item_index(10), physics_settings.gravity == "full")
 	physics_menu.set_item_checked(physics_menu.get_item_index(11), physics_settings.forecast_limit == 0)
 	physics_menu.set_item_checked(physics_menu.get_item_index(12), physics_settings.escape_distance != null)
+	var mode: String = physics_settings.get("collisions", "heuristic")
+	physics_menu.set_item_checked(physics_menu.get_item_index(14), mode != "heuristic")
+	var isolated := mode in ["isolated_mergers", "isolated_impacts"]
+	physics_menu.set_item_text(physics_menu.get_item_index(14), "Isolated calibrated experiment" if isolated else "Automatic collision models")
+	physics_menu.set_item_disabled(physics_menu.get_item_index(10), isolated)
+	physics_menu.set_item_disabled(physics_menu.get_item_index(12), isolated)
+	physics_menu.set_item_tooltip(physics_menu.get_item_index(14), "Default: calibrated rocky–rocky impacts; heuristic models for other pairs. Tides and supernovae remain available. Unsupported rocky impacts pause intact, including when tracer gravity is selected. Uncheck for heuristic-only comparisons. Older isolated experiments retain their restrictions until switched off.")
 	physics_menu.set_item_text(physics_menu.get_item_index(13), "Tracers: %d · %.6f%% of total mass" % [int(info.get("tracers", 0)), 100.0 * float(info.get("tracer_mass_fraction", 0.0))])
 	physics_menu.set_item_tooltip(physics_menu.get_item_index(10), "Full gravity includes all mutual forces and costs more for large debris clouds. Tracers feel gravity but exert none; their collective mass can matter.")
 	physics_menu.set_item_tooltip(physics_menu.get_item_index(11), "All-body forecasts use the scene's gravity model. The time budget can shorten the path. Limited forecasts omit weaker perturbers and have no general error bound.")

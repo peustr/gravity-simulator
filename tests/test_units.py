@@ -125,7 +125,7 @@ def test_version_one_save_keeps_original_values_and_future_radius_rules():
         legacy._promote(p.name, p)
         assert p.r == W.legacy_radius_for(legacy.meta[p.name]['type'], p.m)
     current = E.capture(legacy, camera)
-    assert current['version'] == 3 and current['units'] == U.LEGACY
+    assert current['version'] == 4 and current['units'] == U.LEGACY
     loaded, _ = E.restore(current)
     assert loaded.units == U.LEGACY
     assert np.frombuffer(S.pack_state(loaded), dtype='<f4')[10] == 0
@@ -162,6 +162,7 @@ def test_legacy_tides_and_capture_keep_version_one_rules():
     w._tidal_check()
     assert W.EV_TIDAL in [e[0] for e in w.events]
     w.clear()
+    w.configure(dict(collisions='heuristic'))
     w.add_body(W.ROCKY, .003, (0, 0, 0), (0, 0, 0))
     hole = w.add_body(W.BLACK_HOLE, 20000, (.001, 0, 0), (-1, 0, 0))
     assert w._resolve_collision(ctypes.pointer(w.sim), SimpleNamespace(p1=0, p2=1)) == 1

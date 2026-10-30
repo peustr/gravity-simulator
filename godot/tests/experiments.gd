@@ -70,6 +70,13 @@ func _run() -> void:
 	if not await _until(func(): return main.views.size() == 6 and main.paused):
 		_fail("Scene test: initial scene did not arrive")
 		return
+	if main.hud.physics_settings.get("collisions") != "auto":
+		_fail("Preset did not enable automatic collision models")
+		return
+	main.hud.physics_menu.id_pressed.emit(10)
+	if not await _until(func(): return main.hud.physics_settings.get("gravity") == "tracers"):
+		_fail("Tracer comparison control did not reach the server")
+		return
 	main.hud.physics_menu.id_pressed.emit(10)
 	if not await _until(func(): return main.hud.physics_settings.get("gravity") == "full"):
 		_fail("Full gravity control did not reach the server")
@@ -81,6 +88,17 @@ func _run() -> void:
 	main.hud.physics_menu.id_pressed.emit(12)
 	if not await _until(func(): return main.hud.physics_settings.get("escape_distance") == null):
 		_fail("Removal boundary control did not reach the server")
+		return
+	main.hud.physics_menu.id_pressed.emit(14)
+	if not await _until(func(): return main.hud.physics_settings.get("collisions") == "heuristic"):
+		_fail("Could not select heuristic comparison mode")
+		return
+	main.hud.physics_menu.id_pressed.emit(14)
+	if not await _until(func(): return main.hud.physics_settings.get("collisions") == "auto"):
+		_fail("Could not restore automatic collision models")
+		return
+	if main.hud.physics_menu.is_item_disabled(main.hud.physics_menu.get_item_index(12)):
+		_fail("Automatic mode disabled the independent removal control")
 		return
 	if not await _request({"cmd": "checkpoint"}):
 		_fail("Could not set paused restart point for cancellation test")
@@ -160,7 +178,8 @@ func _run() -> void:
 	if not main.hud.insp_values["Physical radius"].text.ends_with(" km") or main.hud.insp_values["Display"].text != "Enlarged x2":
 		_fail("Physical inspector fields did not reach the HUD")
 		return
-	var legacy := FileAccess.get_file_as_string(path).replace('"version":3', '"version":1')
+	# Preserve integer tokens; Godot parses JSON numbers as floats.
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":4', '"version":1')
 	var migration_file := FileAccess.open(path, FileAccess.WRITE)
 	migration_file.store_string(legacy)
 	migration_file.close()

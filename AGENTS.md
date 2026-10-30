@@ -60,6 +60,15 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 | `physics_server/server.py` | UDP loop (60 Hz), JSON commands, binary packing, `--selftest` |
 | `physics_server/diagnostics.py`, `validation.py` | Optional conservation accounting and physical reference problems |
 | `physics_server/dynamics.py`, `configuration.py` | Contact step guards and validated solver/approximation settings |
+| `physics_server/impacts.py` | Immutable pre-merge pair state and impact geometry/energy/angular-momentum measurements |
+| `physics_server/body_state.py` | Persistent intrinsic inventories and SI snapshots; unknown state after unaccounted heuristic transformations |
+| `physics_server/disruption.py` | Head-on curves and solid-body classification, including rocky grazing impacts; limits in `docs/impact-scaling.md` |
+| `physics_server/collision_outcomes.py` | SI spherical inventories, isolated mergers and prescribed remnant allocations; contract in `docs/collision-budgets.md` |
+| `physics_server/collision_models.py` | Classified construction, shallow-contact correction and isolated remnant escape certificates |
+| `physics_server/debris.py` | Creation-time debris capacity partition and compact reservoirs; limits in `docs/unresolved-debris.md` |
+| `physics_server/debris_gravity.py` | Far-field reservoir/body gravity estimates and momentum substeps with explicit accuracy bounds |
+| `physics_server/debris_transport.py` | Homologous cloud expansion and two-centre transport; model limits in `docs/debris-transport.md` |
+| `physics_server/debris_lifecycle.py` | Fixed reservoir slots, atomic whole-record transfers and exact single-fragment promotion |
 | `docs/orbital-dynamics.md` | Accuracy targets, gravity/forecast options, removal boundaries and save migration |
 | `tools/benchmark.py` | Seeded performance workloads, profiling and JSON reports |
 | `docs/physics-roadmap.md` | Ordered realism milestones and current acceptance checklist |
@@ -89,7 +98,7 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 
 - Never pass `name=` to `sim.add()`: the C side keeps a pointer to a temporary Python buffer. Add first, then `sim.particles[sim.N-1].name = name`. Always go through `World.add_body` / `remove_body`.
 - Reacquire particle references by ID after adding particles: array growth can invalidate references to C storage.
-- Never add particles inside the collision callback. `_resolve_collision` merges and records; `_handle_collision` runs after `sim.steps(1)` and may shatter.
+- Never add particles inside the collision callback. In heuristic mode `_resolve_collision` merges and records, then `_handle_collision` may shatter after the native step. In automatic and isolated modes the callback only records. Automatic mode calibrates rocky pairs and uses heuristic models for other pairs after the step; unsupported rocky encounters pause intact.
 - Collision callback return: 1 removes p1, 2 removes p2. REBOUND reports only *approaching* overlaps, so fragments may start overlapping the remnant.
 - Light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
 - Changes to masses, physical radii, types or particle order must set `_partition_dirty`; `_repartition()` also invalidates the contact and tidal caches.

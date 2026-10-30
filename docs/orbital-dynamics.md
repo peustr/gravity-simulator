@@ -8,14 +8,19 @@ reference gates below do not certify that legacy model.
 
 ## Contact handling
 
-`physics_server/dynamics.py` limits proposed steps using pairs'
-surface gaps, radial closing speeds and pair escape speeds. No step crosses
-the next guard check. Pair checks are reused across shorter native steps and
-invalidated after edits, collisions and fragment generation. Near contact,
-the guard allows travel on a scale of `1e-4` of the summed physical radii so
-REBOUND's direct overlap detector can resolve contact. Separating ejecta can
-leave overlaps; outside surfaces, outgoing pairs are rechecked using their
-mutual-gravity turnaround timescale. IAS15 still controls gravitational integration error.
+`physics_server/dynamics.py` limits proposed steps using surface gaps, radial
+motion and acceleration bounds. For separated bodies, each source contributes
+at most `4 G m / d²` while its distance remains above half its current value.
+The guard bounds relative displacement to enforce that interval, then bounds
+radial gap closure using all active sources. Circular orbits therefore avoid
+unnecessary steps based on immediate motion at escape speed; third-body forces
+still constrain approaching contacts.
+
+Pair checks are reused across shorter native steps and invalidated after edits,
+collisions and fragment generation. Near contact, the travel scale remains
+`1e-4` of the summed physical radii so REBOUND's direct overlap detector can
+resolve contact. Existing overlaps use the pair escape-speed safeguard;
+separating ejecta remain free to leave. IAS15 controls gravitational integration error.
 
 This avoids tunnelling in the tested fast/grazing encounters and stops radial
 capture before the singular centre. It is not an exact continuous collision
@@ -50,11 +55,12 @@ The **Physics** section of the **Experiment** menu provides these options:
   removal for long excursions or translating systems. Re-enabling the menu
   option restores the default distance.
 
-Defaults retain tracer gravity, a 20-body forecast limit and the removal
-boundary. Full gravity can cost more for large debris populations; it never
+Defaults use full gravity, automatic collision models, a 20-body forecast limit
+and the removal boundary. Full gravity can cost more for large debris populations; it never
 silently falls back to tracers. Switching force models changes the equations
 and their conservation properties; set a new restart point for comparisons.
-Clear and built-in presets retain the selected physics settings.
+Clear and built-in presets restore full gravity and automatic collisions;
+other selected physics settings are retained.
 
 Version-3 saves and restart points retain these settings and cumulative removal
 inventory: body count, mass, momentum, orbital angular momentum and the change
@@ -64,17 +70,20 @@ This inventory is not a radiation model. Clearing/loading a preset starts a new
 inventory. Version-1/2 files receive the previous default approximation choices;
 their stored body values and unit model are preserved.
 
-The validated `physics` command accepts partial updates to `settings`; version-3
+The validated `physics` command accepts partial updates to `settings`; version-3 and newer
 files store the complete `physics` object:
 
 ```json
-{"gravity":"full","epsilon":1e-9,"forecast_limit":0,"escape_distance":null}
+{"gravity":"full","epsilon":1e-9,"forecast_limit":0,"escape_distance":null,"collisions":"heuristic"}
 ```
 
 `epsilon` accepts `1e-12` through `1e-6`; `forecast_limit` accepts 0 (all bodies)
 or 1–1321; `escape_distance` accepts a positive distance up to `1e9` or null.
 Advanced values can be set through a scene file or the protocol. The server's
 periodic info response reports current settings, tracer mass and removal totals.
+`collisions` defaults to `heuristic` when omitted from older saves. The opt-in
+`isolated_mergers` and `isolated_impacts` modes require full gravity, physical units and no removal
+boundary; see [supported live collisions](collision-budgets.md#live-isolated-mergers).
 
 ## Forecast scope and deadlines
 

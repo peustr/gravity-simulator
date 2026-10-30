@@ -35,6 +35,9 @@ import rebound
 
 import units
 import configuration
+from impacts import capture as capture_impact
+from body_state import BodyInventory, GravitySource, capture_sphere
+from collision_models import construct_collision, couple_external_gravity
 from diagnostics import totals
 from dynamics import ContactGuard, step
 
@@ -42,6 +45,7 @@ from dynamics import ContactGuard, step
 warnings.filterwarnings("ignore", message=".*hash table.*")
 
 G = 1.0  # units.G is unity to floating-point precision
+_INITIAL_INVENTORY = BodyInventory()
 MAX_BODIES = 1321  # 11 + 12*N + 8*64 float32 values must fit IPv4 UDP (65507 bytes).
 SCENARIOS = ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty")
 PRESET_SPEEDS = dict(solar=1.0, binary=10.0, black_hole=0.05, smash=0.05,
@@ -227,11 +231,18 @@ class World:
 
     def clear(self):
         self.units = units.SYSTEM
+        self.settings.update(collisions='auto', gravity='full')
         self._new_simulation()
 
     def configure(self, changes):
         configuration.settings(changes, partial=True)
-        self.settings = configuration.settings(self.settings | changes)
+        settings = configuration.settings(self.settings | changes)
+        if settings['collisions'] in ('isolated_mergers', 'isolated_impacts') and (self.units != units.SYSTEM or settings['gravity'] != 'full'
+                                                    or settings['escape_distance'] is not None):
+            raise ValueError('Calibrated impacts require physical units, full gravity and disabled escape removal')
+        if settings['collisions'] == 'auto' and self.units != units.SYSTEM:
+            raise ValueError('Automatic collisions require physical units')
+        self.settings = settings
         self.sim.integrator.epsilon = self.settings['epsilon']
         self._partition_dirty = True
         self._repartition()
@@ -269,9 +280,15 @@ class World:
     def capacity(self) -> int:
         return max(0, self.max_bodies - self.sim.N)
 
-    def add_body(self, btype, mass, pos, vel, heat=0.0):
+    def add_body(self, btype, mass, pos, vel, heat=0.0, *, inventory=_INITIAL_INVENTORY):
         if self.sim.N >= self.max_bodies or mass <= 0:
             return None
+        if inventory is not None and not isinstance(inventory, BodyInventory):
+            raise ValueError('Expected a body inventory or None')
+        if self.units == units.LEGACY:
+            if inventory not in (None, _INITIAL_INVENTORY):
+                raise ValueError('Legacy units cannot carry SI body inventories')
+            inventory = None
         bid = self._next_id
         self._next_id += 1
         name = str(bid)
@@ -284,7 +301,8 @@ class World:
         # owns. (Passing name= to add() keeps a pointer to a temporary Python
         # buffer, which can be garbage collected.)
         self.sim.particles[self.sim.N - 1].name = name
-        self.meta[name] = {"type": btype, "born": self.sim.t, "heat": float(heat)}
+        self.meta[name] = {"type": btype, "born": self.sim.t, "heat": float(heat),
+                           "inventory": inventory}
         self._names_dirty = True
         self._partition_dirty = True
         self.version += 1
@@ -409,6 +427,9 @@ class World:
                 if self._pending:
                     self._process_collisions()
                     self._repartition()
+                    if self.paused:
+                        self._target_t = sim.t
+                        break
                 # Tides are checked every step so fast fly-bys are never missed.
                 self._tidal_check()
                 self._repartition()
@@ -433,6 +454,8 @@ class World:
                 meta["heat"] *= cool
             else:
                 meta["heat"] = 0.0
+        if self.settings['collisions'] in ('isolated_mergers', 'isolated_impacts') or self.paused:
+            return  # No unaccounted automatic removals or stellar transformations.
         self._cull_escapers()
         while self._supernova_queue:
             self.supernova(self._supernova_queue.pop(), natural=True)
@@ -466,14 +489,54 @@ class World:
             self.ledger.record('escape_boundary', before, self.ledger.capture(self))
 
     # ------------------------------------------------------------ collisions
+    def _collision_record(self, pi, pj):
+        ni, nj = pi.name, pj.name
+        ti = self.meta.get(ni, {}).get("type", ASTEROID)
+        tj = self.meta.get(nj, {}).get("type", ASTEROID)
+        if ti == BLACK_HOLE and tj != BLACK_HOLE:
+            keep_i = True
+        elif tj == BLACK_HOLE and ti != BLACK_HOLE:
+            keep_i = False
+        else:
+            keep_i = pi.m >= pj.m
+        s, r = (pi, pj) if keep_i else (pj, pi)
+        ts, tr = (ti, tj) if keep_i else (tj, ti)
+        ms, mr = s.m, r.m
+        rec = {
+            "s": s.name, "r": r.name, "ts": ts, "tr": tr,
+            "impact": capture_impact(s, r, self.sim.G),
+            "spheres": tuple(capture_sphere(p, self.meta.get(p.name, {}).get('inventory'), self.units)
+                             for p in (s, r)),
+            "ms": ms, "mr": mr, "rs": s.r, "rr": r.r,
+            "vrel": (r.vx - s.vx, r.vy - s.vy, r.vz - s.vz),
+            "normal": _unit((r.x - s.x, r.y - s.y, r.z - s.z)),
+            "heat_r": self.meta.get(r.name, {}).get("heat", 0.0),
+        }
+        return s, r, rec
+
+    def _merge_heuristic(self, s, r):
+        ms, mr = s.m, r.m
+        M = ms + mr
+        # The heuristic does not close spin/internal-energy budgets. Mark
+        # the survivor before another callback can capture it this step.
+        if s.name in self.meta:
+            self.meta[s.name]['inventory'] = None
+        if M > 0:
+            inv = 1.0 / M
+            s.x = (ms * s.x + mr * r.x) * inv
+            s.y = (ms * s.y + mr * r.y) * inv
+            s.z = (ms * s.z + mr * r.z) * inv
+            s.vx = (ms * s.vx + mr * r.vx) * inv
+            s.vy = (ms * s.vy + mr * r.vy) * inv
+            s.vz = (ms * s.vz + mr * r.vz) * inv
+            s.m = M
+
     def _resolve_collision(self, sim_ptr, collision):
         """Called by REBOUND (from C) when two bodies overlap.
 
-        We always merge here - the gentlest outcome, which conserves mass and
-        momentum exactly - and remember the details. Right after the step
-        finishes, _handle_collision() may turn the merge into something more
-        dramatic (fragments, a kilonova, ...). Adding particles is done there,
-        outside the callback, to keep REBOUND's particle array stable.
+        Heuristic mode merges here and defers fragmentation. Calibrated
+        mode only records the encounter; validation and mutation both happen
+        after the step. No particles are added inside the native callback.
         """
         try:
             sim = sim_ptr.contents
@@ -482,35 +545,15 @@ class World:
             if i == j:
                 return 0
             pi, pj = ps[i], ps[j]
-            ni, nj = pi.name, pj.name
-            ti = self.meta.get(ni, {}).get("type", ASTEROID)
-            tj = self.meta.get(nj, {}).get("type", ASTEROID)
-            if ti == BLACK_HOLE and tj != BLACK_HOLE:
-                keep_i = True
-            elif tj == BLACK_HOLE and ti != BLACK_HOLE:
-                keep_i = False
-            else:
-                keep_i = pi.m >= pj.m
-            s, r = (pi, pj) if keep_i else (pj, pi)
-            ts, tr = (ti, tj) if keep_i else (tj, ti)
-            ms, mr = s.m, r.m
-            M = ms + mr
-            rec = {
-                "s": s.name, "r": r.name, "ts": ts, "tr": tr,
-                "ms": ms, "mr": mr, "rs": s.r, "rr": r.r,
-                "vrel": (r.vx - s.vx, r.vy - s.vy, r.vz - s.vz),
-                "normal": _unit((r.x - s.x, r.y - s.y, r.z - s.z)),
-                "heat_r": self.meta.get(r.name, {}).get("heat", 0.0),
-            }
-            if M > 0:
-                inv = 1.0 / M
-                s.x = (ms * s.x + mr * r.x) * inv
-                s.y = (ms * s.y + mr * r.y) * inv
-                s.z = (ms * s.z + mr * r.z) * inv
-                s.vx = (ms * s.vx + mr * r.vx) * inv
-                s.vy = (ms * s.vy + mr * r.vy) * inv
-                s.vz = (ms * s.vz + mr * r.vz) * inv
-                s.m = M
+            s, r, rec = self._collision_record(pi, pj)
+            keep_i = s.name == pi.name
+            if self.settings['collisions'] != 'heuristic':
+                # REBOUND may report both pair orders. Keep distinct contacts
+                # so simultaneous encounters can be rejected before mutation.
+                if not any({p['s'], p['r']} == {s.name, r.name} for p in self._pending):
+                    self._pending.append(rec)
+                return 0
+            self._merge_heuristic(s, r)
             self._pending.append(rec)
             self._names_dirty = True
             self._partition_dirty = True
@@ -519,14 +562,91 @@ class World:
             traceback.print_exc()
             return 0
 
+    def _merge_deferred_contacts(self, pending):
+        """Replay heuristic contact components without stale native references."""
+        aliases = {name: name for rec in pending for name in (rec['s'], rec['r'])}
+        merged = []
+        for old in pending:
+            a, b = aliases[old['s']], aliases[old['r']]
+            if a == b:
+                continue
+            s, r, rec = self._collision_record(self.particle(a), self.particle(b))
+            self._merge_heuristic(s, r)
+            aliases = {name: rec['s'] if survivor == rec['r'] else survivor
+                       for name, survivor in aliases.items()}
+            self.remove_body(int(rec['r']))
+            merged.append(rec)
+        return merged
+
     def _process_collisions(self):
         pending, self._pending = self._pending, []
+        mode = self.settings['collisions']
+        calibrated = mode in ('isolated_mergers', 'isolated_impacts') or (
+            mode == 'auto' and any((r['ts'], r['tr']) == (ROCKY, ROCKY) for r in pending))
+        if calibrated and len(pending) > 1:
+            self.paused = True
+            self.notice('Collision paused: simultaneous contacts require a collective impact model')
+            return
+        if mode == 'auto' and not calibrated:
+            pending = self._merge_deferred_contacts(pending)
         for rec in pending:
             try:
-                self._handle_collision(rec)
-            except Exception:
+                if calibrated:
+                    self._apply_isolated_collision(rec)
+                else:
+                    self._handle_collision(rec)
+            except Exception as exc:
+                if calibrated:
+                    self.paused = True
+                    self.notice(f'Collision paused: {exc}')
+                    break
                 traceback.print_exc()
         self.sim.did_modify_particles = 1
+
+    def _apply_isolated_collision(self, rec):
+        """Preflight a two-body outcome before committing any particle changes."""
+        if self.units != units.SYSTEM or not math.isclose(self.sim.G, units.G, rel_tol=1e-12):
+            raise ValueError('Calibrated collisions require physical units and Newtonian G')
+        if self.settings['gravity'] != 'full':
+            raise ValueError('Calibrated impacts require full gravity; disable the tracer approximation')
+        if (rec['ts'], rec['tr']) != (ROCKY, ROCKY):
+            raise ValueError('Calibrated impacts currently support only rocky planets')
+        if any(s is None for s in rec['spheres']):
+            raise ValueError('Both bodies need known spin and internal-energy inventories')
+        outcome = construct_collision(*rec['spheres'], material='fluid_planets', body_types=(ROCKY, ROCKY),
+                                      resolved_policy=self.settings['collisions'] != 'isolated_mergers')
+        if self.sim.N - 2 + len(outcome.remnants) > self.max_bodies:
+            raise ValueError('Insufficient body capacity for this impact; no material was removed')
+        if self.particle(rec['s']) is None or self.particle(rec['r']) is None or rec['s'] == rec['r']:
+            raise ValueError('Collision body IDs no longer identify an incoming pair')
+        external = tuple(GravitySource(p.m * units.MASS_KG, p.r * units.LENGTH_M,
+                                       tuple(x * units.LENGTH_M for x in p.xyz))
+                         for p in self.sim.particles if p.name not in (rec['s'], rec['r']))
+        remnants = couple_external_gravity(rec['spheres'], outcome.remnants, external)
+        prepared = [(s.mass_kg / units.MASS_KG, s.radius_m / units.LENGTH_M,
+                     tuple(x / units.LENGTH_M for x in s.position_m),
+                     tuple(v / units.VELOCITY_M_S for v in s.velocity_m_s),
+                     BodyInventory(s.spin_kg_m2_s, s.internal_energy_j)) for s in remnants]
+        sm = self.meta[rec['s']]
+        heat = max(.5, sm['heat'], self.meta[rec['r']]['heat'])
+        names = [rec['s'], rec['r']]
+        if len(prepared) == 1:
+            self.remove_body(int(rec['r']))
+            names.pop()
+        for mass, _radius, position, velocity, inventory in prepared[2:]:
+            names.append(str(self.add_body(ROCKY, mass, position, velocity, heat=heat, inventory=inventory)))
+        for name, (mass, radius, position, velocity, inventory) in zip(names, prepared, strict=True):
+            particle = self.particle(name)
+            particle.m, particle.r = mass, radius
+            particle.xyz, particle.vxyz = position, velocity
+            self.meta[name]['inventory'], self.meta[name]['heat'] = inventory, heat
+        self._partition_dirty = True
+        # Keep the constructed volume/density and spin; heuristic promotion would
+        # overwrite the radius and invalidate the conserved inventory.
+        total = sum(s.mass_kg for s in rec['spheres'])
+        center = tuple(sum(s.mass_kg * s.position_m[i] for s in rec['spheres']) / total / units.LENGTH_M for i in range(3))
+        self._event(EV_MERGE if len(prepared) == 1 else EV_SHATTER, center, 1.0,
+                    rec['rs'] + rec['rr'], int(rec['s']), int(rec['r']))
 
     def _handle_collision(self, rec):
         self.meta.pop(rec["r"], None)
@@ -534,6 +654,7 @@ class World:
         sm = self.meta.get(rec["s"])
         if p is None or sm is None:
             return  # the survivor was itself swallowed later in the same step
+        sm['inventory'] = None
         ts, tr = rec["ts"], rec["tr"]
         sid, rid = int(rec["s"]), int(rec["r"])
         pos = (p.x, p.y, p.z)
@@ -597,7 +718,7 @@ class World:
         self._promote(rec["s"], self.particle(rec["s"]))
 
     def _try_shatter(self, p, rec, frag_type) -> bool:
-        """Simplified Leinhardt & Stewart (2012) catastrophic disruption.
+        """Disruption heuristic inspired by Leinhardt & Stewart (2012).
 
         Q_R  = specific impact energy (reduced-mass kinetic energy / total mass)
         Q*   = energy needed to disperse half the mass  (~ escape speed^2)
@@ -669,7 +790,7 @@ class World:
         for mf, off, u, _rf in frags:
             pos = _add(x_cm, off)
             vel = _add(v_cm, _sub(u, u_mean))
-            self.add_body(self._promoted_type(frag_type, mf), mf, pos, vel, heat=heat_new)
+            self.add_body(self._promoted_type(frag_type, mf), mf, pos, vel, heat=heat_new, inventory=None)
         contact = _add(x_cm, _mul(normal, r_lr))
         self._event(EV_SHATTER, contact, 1.0 + min(2.0, ratio / 2.0), r_sum * 1.5,
                     int(rec["s"]), int(rec["r"]))
@@ -689,7 +810,7 @@ class World:
                 mf = m_ej / n
                 rf = self.radius_for(PLASMA, mf)
                 self.add_body(PLASMA, mf, _add(pos, _mul(d, 2.0 + rf * 2)),
-                              _add(vel0, _mul(d, 0.6 * vesc * self.rng.uniform(0.8, 1.2))), heat=1.0)
+                              _add(vel0, _mul(d, 0.6 * vesc * self.rng.uniform(0.8, 1.2))), heat=1.0, inventory=None)
         # Adding ejecta can reallocate REBOUND's particle array.
         p = self.particle(rec["s"])
         p.r = self.radius_for(NEUTRON_STAR, p.m)
@@ -717,6 +838,9 @@ class World:
             return
         old = meta["type"]
         new = self._promoted_type(old, p.m)
+        radius = self.radius_for(new, p.m)
+        if new != old or radius != p.r:
+            meta['inventory'] = None
         if new != old:
             meta["type"] = new
             pos = (p.x, p.y, p.z)
@@ -724,7 +848,7 @@ class World:
                 self._event(EV_IGNITION, pos, 1.5, self.radius_for(STAR, p.m) * 4, int(name))
             elif new == BLACK_HOLE:
                 self._event(EV_COLLAPSE, pos, 2.5, 30.0, int(name))
-        p.r = self.radius_for(meta["type"], p.m)
+        p.r = radius
         self._partition_dirty = True
         if meta["type"] == STAR and p.m >= STAR_COLLAPSE:
             self._supernova_queue.append(int(name))
@@ -732,6 +856,9 @@ class World:
 
     # ------------------------------------------------------------- supernova
     def supernova(self, bid, natural=False) -> bool:
+        if self.settings['collisions'] in ('isolated_mergers', 'isolated_impacts'):
+            self.notice('Supernovae are disabled in isolated collision experiments.')
+            return False
         name = str(int(bid))
         p = self.particle(name)
         meta = self.meta.get(name)
@@ -762,6 +889,7 @@ class World:
             pf = _add(pf, _mul(d, mf * s))
         u_mean = _mul(pf, 1.0 / m_ej)
         p.m = m_rem
+        meta['inventory'] = None
         meta["type"] = rem_type
         self._partition_dirty = True
         meta["heat"] = 1.0
@@ -769,7 +897,7 @@ class World:
         for mf, d, s in ej:
             rf = self.radius_for(PLASMA, mf)
             self.add_body(PLASMA, mf, _add(pos, _mul(d, r * 1.2 + rf * 1.5)),
-                          _add(vel, _sub(_mul(d, s), u_mean)), heat=1.0)
+                          _add(vel, _sub(_mul(d, s), u_mean)), heat=1.0, inventory=None)
         self._event(EV_SUPERNOVA, pos, 3.0, max(40.0, r * 12), int(name), 1 if rem_type == BLACK_HOLE else 0)
         if M < 8000 and not natural:
             self.notice("Fun fact: real stars need at least ~8 Suns of mass to explode like this.")
@@ -778,6 +906,8 @@ class World:
 
     # ------------------------------------------------------- tidal disruption
     def _tidal_check(self):
+        if self.settings['collisions'] in ('isolated_mergers', 'isolated_impacts'):
+            return
         if self.sim.N < 2:
             return
         if self._tidal_pairs is None or self._partition_dirty:
@@ -847,7 +977,7 @@ class World:
             fpos = _add(_add(pos, _mul(axis, s)), jitter)
             fvel = _add(vel, _mul(self._rand_unit(), 0.02 * _norm(vel) + 0.01))
             # Debris stays debris (no promotion), so tides can't shred it again.
-            self.add_body(frag_type, mf, fpos, fvel, heat=1.0)
+            self.add_body(frag_type, mf, fpos, fvel, heat=1.0, inventory=None)
         self._event(EV_TIDAL, pos, 1.6, rv * 4, hid, vid)
 
     # ------------------------------------------------------------ user tools

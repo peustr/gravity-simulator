@@ -23,6 +23,7 @@ class WorldTests(unittest.TestCase):
 
     def test_removal_repartitions(self):
         w = W.World()
+        w.configure(dict(gravity='tracers'))
         heavy = w.add_body(W.STAR, 1000, (0, 0, 0), (0, 0, 0))
         w.add_body(W.ASTEROID, 1e-5, (100, 0, 0), (0, 0, 0))
         w._repartition()
@@ -32,6 +33,7 @@ class WorldTests(unittest.TestCase):
 
     def test_partition_preserves_identity_and_state(self):
         w = W.World()
+        w.configure(dict(gravity='tracers'))
         ids = [w.add_body(t, m, (i * 100, 0, 0), (0, i, 0))
                for i, (t, m) in enumerate([(W.ASTEROID, 1e-5), (W.STAR, 1000),
                                            (W.PLASMA, 0.1), (W.ROCKY, 0.003)])]
@@ -126,7 +128,7 @@ class WorldTests(unittest.TestCase):
                 for i, name in enumerate(w.snapshot()['names']):
                     p = w.particle(name)
                     self.assertEqual(i < w.sim.N_active,
-                                     not w.is_light(w.meta[name]['type'], p.m))
+                                     w.settings['gravity'] == 'full' or not w.is_light(w.meta[name]['type'], p.m))
 
     def test_body_limit_validation(self):
         for value in (0, -1, W.MAX_BODIES + 1, True, 2.5):

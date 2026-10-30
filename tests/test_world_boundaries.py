@@ -19,8 +19,11 @@ def add(w, kind=W.ROCKY, mass=.003, pos=(0, 0, 0), vel=(0, 0, 0)):
 
 def collision(w, i=0, j=1):
     result = w._resolve_collision(ctypes.pointer(w.sim), SimpleNamespace(p1=i, p2=j))
-    assert result in (1, 2)
-    w.sim.remove(i if result == 1 else j)
+    if w.settings['collisions'] == 'heuristic':
+        assert result in (1, 2)
+        w.sim.remove(i if result == 1 else j)
+    else:
+        assert result == 0
     w._process_collisions()
 
 
@@ -100,6 +103,7 @@ def test_callback_ignores_self_contact_and_reports_failure(capsys):
 
 def test_callback_with_zero_mass_does_not_divide_by_zero():
     w = W.World()
+    w.configure(dict(collisions='heuristic'))
     add(w)
     add(w, pos=(1, 0, 0))
     for p in w.sim.particles:
@@ -111,6 +115,7 @@ def test_callback_with_zero_mass_does_not_divide_by_zero():
 
 def test_failed_deferred_collision_does_not_drop_later_records(monkeypatch, capsys):
     w = W.World()
+    w.configure(dict(collisions='heuristic'))
     w._pending = [{'s': 'first'}, {'s': 'second'}]
     handler = Mock(side_effect=[RuntimeError('bad collision'), None])
     monkeypatch.setattr(w, '_handle_collision', handler)
@@ -339,6 +344,7 @@ def test_shattering_at_capacity_preserves_merged_mass():
 
 def test_chained_collision_skips_survivor_swallowed_in_the_same_step():
     w = W.World()
+    w.configure(dict(collisions='heuristic'))
     add(w, mass=.003)
     add(w, mass=.002, pos=(1, 0, 0))
     star = add(w, W.STAR, 1000, pos=(2, 0, 0))

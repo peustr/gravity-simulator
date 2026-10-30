@@ -16,7 +16,7 @@ COMMANDS = {
     "speed": "value (clamped to 0.05–2000)",
     "clear": "no fields",
     "preset": "name",
-    "physics": "settings (gravity, epsilon, forecast_limit, escape_distance; partial updates allowed)",
+    "physics": "settings (gravity, epsilon, forecast_limit, escape_distance, collisions; partial updates allowed)",
     "save_scene": "path, camera, request",
     "load_scene": "path, request",
     "checkpoint": "camera, request",

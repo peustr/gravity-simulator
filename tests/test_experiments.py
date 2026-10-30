@@ -8,6 +8,7 @@ import pytest
 import experiments as E
 import server as S
 import world as W
+from body_state import BodyInventory
 
 
 def scene():
@@ -17,6 +18,8 @@ def scene():
     w.paused = True
     w.speed = 25
     w.meta['1']['heat'] = .7
+    w.meta['1']['inventory'] = BodyInventory((1e35, -2e35, 3e35), 4e30)
+    w.meta['2']['inventory'] = None
     return w, E.capture(w, dict(focus=[1, 2, 3], distance=240, pitch=.8, yaw=-1.2))
 
 
@@ -37,7 +40,7 @@ def test_disk_round_trip_restores_physics_and_random_state(tmp_path):
     assert restored._next_id == original._next_id
     assert restored.rng.getstate() == original.rng.getstate()
     assert camera == data['camera']
-    assert saved['version'] == 3
+    assert saved['version'] == 4
     restored.paused = False
     restored.advance(.01, time.perf_counter() + 1)
     assert restored.sim.t > original.sim.t
@@ -45,7 +48,16 @@ def test_disk_round_trip_restores_physics_and_random_state(tmp_path):
 
 
 @pytest.mark.parametrize('change', [
-    lambda d: d.update(version=4),
+    lambda d: d.update(version=5),
+    lambda d: d['bodies'][0].pop('inventory'),
+    lambda d: d['bodies'][0].update(inventory=[]),
+    lambda d: d['bodies'][0]['inventory'].update(extra=0),
+    lambda d: d['bodies'][0]['inventory'].update(spin_kg_m2_s=[1, 2]),
+    lambda d: d['bodies'][0]['inventory'].update(spin_kg_m2_s=[0, False, 0]),
+    lambda d: d['bodies'][0]['inventory'].update(spin_kg_m2_s=[0, float('inf'), 0]),
+    lambda d: d['bodies'][0]['inventory'].update(internal_energy_j=-1),
+    lambda d: d['bodies'][0]['inventory'].update(internal_energy_j=float('nan')),
+    lambda d: d.update(units=W.units.LEGACY),
     lambda d: d.update(time=float('nan')),
     lambda d: d.update(paused='yes'),
     lambda d: d.update(next_id=1),
@@ -122,7 +134,31 @@ def test_restart_and_retry_are_idempotent(tmp_path):
 
 
 def data_to_meta(data):
-    return {str(b['id']): dict(type=b['type'], heat=b['heat'], born=b['born']) for b in data['bodies']}
+    return {str(b['id']): dict(type=b['type'], heat=b['heat'], born=b['born'],
+                             inventory=None if b['inventory'] is None else BodyInventory(**b['inventory']))
+            for b in data['bodies']}
+
+
+@pytest.mark.parametrize('version', [1, 2, 3])
+def test_old_saves_do_not_invent_spin_or_internal_energy(version):
+    original, data = scene()
+    data['version'] = version
+    for body in data['bodies']:
+        del body['inventory']
+    restored, _ = E.restore(data)
+    assert all(md['inventory'] is None for md in restored.meta.values())
+    for body in data['bodies']:
+        p = restored.particle(str(body['id']))
+        assert p.m == body['mass'] and p.r == body['radius']
+        assert list(p.xyz) == body['pos'] and list(p.vxyz) == body['vel']
+    assert restored.rng.getstate() == original.rng.getstate()
+    if version == 3:
+        assert restored.settings == original.settings and restored.removed == original.removed
+    saved = E.capture(restored, E.DEFAULT_CAMERA)
+    assert saved['version'] == 4
+    assert all(body['inventory'] is None for body in saved['bodies'])
+    again, _ = E.restore(saved)
+    assert again.meta == restored.meta
 
 
 def test_checkpoint_empty_and_preset_restart():
