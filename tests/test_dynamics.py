@@ -173,6 +173,45 @@ def test_separating_surface_pair_is_rechecked_before_turnaround():
     assert .01 < limit < .1 * (1 + 1e-8)**2 / 2
 
 
+def test_contact_guard_resolves_third_body_driven_contact():
+    # Two passive particles fall radially towards the same fixed source.
+    # Their separation halves at a known free-fall time, without mutual gravity.
+    sim = rebound.Simulation()
+    sim.add(m=1, r=.001)
+    sim.add(m=1e-6, r=.05, x=1, y=-.1)
+    sim.add(m=1e-6, r=.05, x=1, y=.1)
+    sim.N_active = 1
+    sim.integrator = 'ias15'
+    sim.collision = 'direct'
+    sim.dt = 1
+    contacts = []
+    def record(ptr, collision):
+        state = ptr.contents
+        a, b = state.particles[collision.p1], state.particles[collision.p2]
+        contacts.append((state.t, {collision.p1, collision.p2}, math.dist(a.xyz, b.xyz)))
+        return 0
+    sim.collision_resolve = record
+    initial_distance = math.hypot(1, .1)
+    expected_time = math.sqrt(initial_distance**3 / 2) * (math.pi / 4 + .5)
+    guard = D.ContactGuard()
+    while sim.t < expected_time * 1.01 and not contacts:
+        D.step(sim, expected_time * 1.01 - sim.t, guard)
+    assert contacts
+    actual_time, pair, separation = contacts[0]
+    assert pair == {1, 2}
+    assert abs(separation / .1 - 1) <= D.CONTACT_FRACTION
+    relative_speed = .2 / initial_distance * math.sqrt(2 / initial_distance)
+    assert abs(actual_time - expected_time) * relative_speed / .1 < .002
+
+
+def test_guard_allows_native_step_for_detached_circular_orbit():
+    sim = rebound.Simulation()
+    sim.add(m=1500, r=.354)
+    sim.add(m=.003, r=.0001, x=.6, vy=math.sqrt(1500.003 / .6))
+    # A detached orbit must allow this step without spending its gap at escape speed.
+    assert D.contact_step_limit(sim, .0025) == .0025
+
+
 def test_cached_contact_geometry_matches_fresh_bounds_and_resets_after_edits():
     w = W.World(seed=42)
     w.load_preset('solar')

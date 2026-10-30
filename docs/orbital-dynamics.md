@@ -8,14 +8,19 @@ reference gates below do not certify that legacy model.
 
 ## Contact handling
 
-`physics_server/dynamics.py` limits proposed steps using pairs'
-surface gaps, radial closing speeds and pair escape speeds. No step crosses
-the next guard check. Pair checks are reused across shorter native steps and
-invalidated after edits, collisions and fragment generation. Near contact,
-the guard allows travel on a scale of `1e-4` of the summed physical radii so
-REBOUND's direct overlap detector can resolve contact. Separating ejecta can
-leave overlaps; outside surfaces, outgoing pairs are rechecked using their
-mutual-gravity turnaround timescale. IAS15 still controls gravitational integration error.
+`physics_server/dynamics.py` limits proposed steps using surface gaps, radial
+motion and acceleration bounds. For separated bodies, each source contributes
+at most `4 G m / d²` while its distance remains above half its current value.
+The guard bounds relative displacement to enforce that interval, then bounds
+radial gap closure using all active sources. Circular orbits therefore avoid
+unnecessary steps based on immediate motion at escape speed; third-body forces
+still constrain approaching contacts.
+
+Pair checks are reused across shorter native steps and invalidated after edits,
+collisions and fragment generation. Near contact, the travel scale remains
+`1e-4` of the summed physical radii so REBOUND's direct overlap detector can
+resolve contact. Existing overlaps use the pair escape-speed safeguard;
+separating ejecta remain free to leave. IAS15 controls gravitational integration error.
 
 This avoids tunnelling in the tested fast/grazing encounters and stops radial
 capture before the singular centre. It is not an exact continuous collision
