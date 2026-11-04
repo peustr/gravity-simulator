@@ -98,6 +98,7 @@ EV_IGNITION = 6
 EV_COLLAPSE = 7
 EV_BH_MERGER = 8
 EV_KILONOVA = 9
+EV_HIT_AND_RUN = 10
 
 # Light debris (asteroids, small gas clouds) are "test particles": they feel
 # everyone's gravity but don't pull on anything themselves. That is the
@@ -645,7 +646,9 @@ class World:
         # overwrite the radius and invalidate the conserved inventory.
         total = sum(s.mass_kg for s in rec['spheres'])
         center = tuple(sum(s.mass_kg * s.position_m[i] for s in rec['spheres']) / total / units.LENGTH_M for i in range(3))
-        self._event(EV_MERGE if len(prepared) == 1 else EV_SHATTER, center, 1.0,
+        kind = EV_HIT_AND_RUN if outcome.classification.regime == 'hit_and_run' else (
+            EV_MERGE if len(prepared) == 1 else EV_SHATTER)
+        self._event(kind, center, 1.0,
                     rec['rs'] + rec['rr'], int(rec['s']), int(rec['r']))
 
     def _handle_collision(self, rec):

@@ -87,7 +87,7 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 
 | What | Where |
 |---|---|
-| Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_KILONOVA=9), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
+| Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_HIT_AND_RUN=10), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
 | Packet layout: header 11 floats, body 12, event 8; forecast reply header 9 (protocol 2, packet kinds 3/4) | `server.py` `pack_state`/`pack_prediction` ↔ `main.gd` `_on_state`/`_on_prediction` |
 | UDP port 47810 | `server.py` `DEFAULT_PORT` ↔ `net_client.gd` `SERVER_PORT` |
 | Scenario names | `world.load_preset()` ↔ `hud.gd` `PRESETS` |

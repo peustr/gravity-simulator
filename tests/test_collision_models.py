@@ -326,6 +326,53 @@ def test_fragmentation_cannot_accept_immediately_reaccreting_debris():
                             layout=layout_for(pair, classified), expansion_fraction=0)
 
 
+@pytest.mark.parametrize('b,speed,regime,count', [(.7, 3, 'hit_and_run', 3), (0, 1.5, 'partial_accretion', 2)])
+def test_resolved_mass_loss_still_constructs_classified_debris(b, speed, regime, count):
+    pair = rocky_pair(b, speed)
+    outcome = construct_collision(*pair, material='fluid_planets', body_types=(0, 0), resolved_policy=True)
+    assert outcome.classification.regime == regime
+    assert outcome.classification.remaining_mass_kg > 0
+    assert len(outcome.remnants) == count
+    assert_closed(pair, outcome.remnants)
+    if regime == 'hit_and_run':
+        assert outcome.remnants[1].mass_kg == outcome.classification.runner_mass_kg
+        assert outcome.remnants[2].mass_kg == outcome.classification.remaining_mass_kg
+
+
+@pytest.mark.parametrize('gamma', [1, .25])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_intact_runner_rebounds_at_contact_without_recycling_existing_heat(gamma, reverse):
+    mass, density = 2.9861e24, 5514
+    radius = (mass / ((4 / 3) * math.pi * density))**(1 / 3)
+    speed = 1.5 * math.sqrt(2 * G_SI * mass * (1 + gamma) / (radius * (1 + gamma**(1 / 3))))
+    a, b = encounter(target=mass, gamma=gamma, density=density, b=.9, speed=speed)
+    # A rotated, translated and boosted encounter exercises the impulse in 3D.
+    pair = tuple(replace(s, position_m=np.roll(s.position_m, 1) + (1e9, -2e9, 3e9),
+                         velocity_m_s=np.roll(s.velocity_m_s, 1) + (1e4, 2e4, -3e4),
+                         internal_energy_j=(i + 1) * 1e29) for i, s in enumerate((a, b)))
+    if reverse:
+        pair = pair[::-1]
+    outcome = construct_collision(*pair, material='fluid_planets', body_types=(0, 0), resolved_policy=True)
+    assert outcome.classification.regime == 'hit_and_run'
+    assert outcome.classification.remaining_mass_kg == 0
+    assert outcome.escape_certificate == 'two_body_hyperbolic'
+    after = tuple(next(s for s in outcome.remnants if s.position_m == p.position_m) for p in pair)
+    for before, remnant in zip(pair, after, strict=True):
+        assert (remnant.mass_kg, remnant.radius_m, remnant.spin_kg_m2_s) == (
+            before.mass_kg, before.radius_m, before.spin_kg_m2_s)
+        assert remnant.internal_energy_j > before.internal_energy_j
+    normal = np.subtract(pair[1].position_m, pair[0].position_m)
+    normal /= np.linalg.norm(normal)
+    vin = np.subtract(pair[1].velocity_m_s, pair[0].velocity_m_s)
+    vout = np.subtract(after[1].velocity_m_s, after[0].velocity_m_s)
+    assert vout @ normal == pytest.approx(-math.sqrt(.5) * (vin @ normal), rel=1e-12)
+    np.testing.assert_allclose(vout - (vout @ normal) * normal, vin - (vin @ normal) * normal, atol=1e-10)
+    heat = sum(s.internal_energy_j for s in after) - sum(s.internal_energy_j for s in pair)
+    reduced_mass = mass * gamma / (1 + gamma)
+    assert heat == pytest.approx(.25 * reduced_mass * (vin @ normal)**2, rel=1e-12)
+    assert_closed(pair, after)
+
+
 @pytest.mark.parametrize('position,velocity', [((1e6, 0, 0), (1e155, 0, 0)),
                                               ((1.1e308, 1.1e308, 1.1e308), (0, 0, 0))])
 def test_escape_cannot_certify_nonfinite_arithmetic(position, velocity):

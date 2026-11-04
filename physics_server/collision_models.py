@@ -114,8 +114,7 @@ def _resolved_layout(contact, classification):
     count = math.ceil(remaining / masses[0])
     if len(masses) + count > 32:
         raise ValueError('Resolved impact requires more than 32 remnants; unresolved material is not integrated')
-    if count:
-        masses.extend([remaining / count] * count)
+    masses.extend([remaining / count] * count)
     a, b = contact
     radius = (a.radius_m**3 + b.radius_m**3)**(1 / 3)
     total = a.mass_kg + b.mass_kg
@@ -129,6 +128,25 @@ def _resolved_layout(contact, classification):
         offset = tuple(8 * radius * x for x in direction)
         layout.append(RemnantSpec(mass, radius * (mass / total)**(1 / 3), offset))
     return tuple(layout)
+
+
+def _intact_hit_and_run(a, b):
+    """Local frictionless rebound; retain half the normal kinetic energy.
+
+    Restitution and heat partition are prescriptions, not calibrated ejecta
+    fits. Tangential velocity, individual radii and existing heat are retained.
+    """
+    impact = _impact(a, b)
+    fraction = b.mass_kg / impact.total_mass
+    change = -(1 + math.sqrt(.5)) * impact.radial_speed * np.array(impact.normal)
+    heat = .25 * impact.reduced_mass * impact.radial_speed**2
+    remnants = (
+        replace(a, velocity_m_s=np.array(a.velocity_m_s) - fraction * change,
+                internal_energy_j=a.internal_energy_j + (1 - fraction) * heat),
+        replace(b, velocity_m_s=np.array(b.velocity_m_s) + (1 - fraction) * change,
+                internal_energy_j=b.internal_energy_j + fraction * heat),
+    )
+    return tuple(sorted(remnants, key=lambda s: s.mass_kg, reverse=True))
 
 
 def couple_external_gravity(incoming, remnants, external):
@@ -182,8 +200,9 @@ def construct_collision(a: SphereState, b: SphereState, *, material: str, body_t
 
     Nonrotating inputs only, as required by the classifier. Merging needs no
     layout or energy fraction. Other regimes require both; layout order is
-    largest remnant, runner (hit-and-run only), then debris. Uniform density is
-    retained and separated remnants must pass an escape certificate. Rejection
+    largest remnant, runner (hit-and-run only), then debris. Fragment allocations
+    retain mean density; intact runners retain their individual radii. Separated
+    remnants must pass an escape certificate. Rejection
     never silently changes masses, parameters or regime.
     """
     if resolved_policy and (layout is not None or expansion_fraction is not None):
@@ -197,6 +216,9 @@ def construct_collision(a: SphereState, b: SphereState, *, material: str, body_t
             raise ValueError('A classified merger does not accept a fragment layout or energy split')
         return ConstructedCollision(classification, contact, (merge_spheres(*contact),), None)
     if resolved_policy:
+        if classification.regime == 'hit_and_run' and classification.remaining_mass_kg == 0:
+            remnants = _intact_hit_and_run(*contact)
+            return ConstructedCollision(classification, contact, remnants, remnant_escape_check(remnants))
         layout, expansion_fraction = _resolved_layout(contact, classification), .5
     if layout is None or expansion_fraction is None:
         raise ValueError('Multiple remnants require a layout and explicit expansion fraction')

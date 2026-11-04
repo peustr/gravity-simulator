@@ -73,6 +73,17 @@ func _run() -> void:
 	if main.hud.physics_settings.get("collisions") != "auto":
 		_fail("Preset did not enable automatic collision models")
 		return
+	main.follow_id = 2
+	main.selected_id = 2
+	main._on_event(main.Palette.EV_HIT_AND_RUN, Vector3.ZERO, 1.0, 0.01, 1, 2)
+	if main.follow_id != 2 or main.selected_id != 2:
+		_fail("Hit-and-run switched focus away from the surviving runner")
+		return
+	if not "both bodies survived" in main._event_text(main.Palette.EV_HIT_AND_RUN, 1, 2)[0]:
+		_fail("Hit-and-run was labelled as destruction")
+		return
+	main.follow_id = -1
+	main.selected_id = -1
 	main.hud.physics_menu.id_pressed.emit(10)
 	if not await _until(func(): return main.hud.physics_settings.get("gravity") == "tracers"):
 		_fail("Tracer comparison control did not reach the server")

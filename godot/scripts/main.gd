@@ -376,6 +376,8 @@ func _event_text(kind: int, a: int, b: int) -> Array:
 			if na != "" and nb != "" and not small:
 				return ["Catastrophic impact! %s and %s shattered" % [na, nb], Color(1.0, 0.65, 0.4)]
 			return ["Catastrophic impact - debris everywhere!", Color(1.0, 0.65, 0.4)]
+		Palette.EV_HIT_AND_RUN:
+			return ["Hit-and-run impact - both bodies survived", Color(1.0, 0.85, 0.6)]
 		Palette.EV_SWALLOW:
 			if small or na == "":
 				return []

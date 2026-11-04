@@ -128,8 +128,8 @@ isolated-merger support do not satisfy that goal.
 | Component | Available behavior | Remaining limitation |
 |---|---|---|
 | Contact state and saves | Immutable pre-impact measurements; version-4 body spin/internal-energy inventories | Older or heuristically transformed bodies have unknown inventories |
-| Classification | Calibrated solid-body regimes and remnant masses within documented domains | Most classified outcomes are not applied live |
-| Outcome construction | Automatic dispatch uses conserved rocky outcomes in every preset; weak external fields are screened and their interaction energy is accounted for | Ejecta layout/energy split are prescribed; strong fields, simultaneous contacts, spinning inputs and insufficient fragment slots are rejected |
+| Classification | Calibrated solid-body regimes and remnant masses feed live rocky outcome construction | Construction feasibility and available fragment slots further limit accepted encounters |
+| Outcome construction | Conserved rocky outcomes in every preset; intact hit-and-run survivors separate at contact; weak external fields have bounded screening and energy accounting | Restitution and ejecta layouts/energy splits are prescribed; strong fields, simultaneous contacts, spinning inputs and insufficient fragment slots are rejected |
 | Unresolved material | Snapshot inventories, restricted cloud transport and bounded ownership APIs | No live coupling or persistence; transport cannot represent debris surrounding its remnant or general multi-body interactions |
 | Diagnostics | Orbital quantities and removal accounting | No complete live spin, internal-energy and reservoir ledger |
 

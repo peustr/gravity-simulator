@@ -64,6 +64,7 @@ At most 1321 bodies and 64 events fit in one packet.
 | `EV_COLLAPSE` | 7 |
 | `EV_BH_MERGER` | 8 |
 | `EV_KILONOVA` | 9 |
+| `EV_HIT_AND_RUN` | 10 |
 
 ## Scenarios
 

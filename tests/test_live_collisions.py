@@ -74,6 +74,43 @@ def test_native_mergers_preserve_complete_budgets_and_survive_restart(b, speed, 
     assert states(restored)[0].internal_energy_j == states(w)[0].internal_energy_j
 
 
+@pytest.mark.parametrize('external_star', [False, True])
+def test_off_centre_smash_keeps_intact_runners_local_and_survives_restart(external_star):
+    w = W.World(seed=42)
+    w.load_preset('smash')
+    a, b = w.sim.particles
+    total, radius = a.m + b.m, a.r + b.r
+    fraction = b.m / total
+    relative_velocity = 1.5 * math.sqrt(2 * w.sim.G * total / radius) * np.array([-math.sqrt(1 - .9**2), .9, 0])
+    for p, weight in ((a, -fraction), (b, 1 - fraction)):
+        p.xyz = (weight * radius * 1.00001, 0, 0)
+        p.vxyz = weight * relative_velocity
+    incoming = [(p.name, p.m, p.r) for p in w.sim.particles]
+    if external_star:
+        w.add_body(W.STAR, 1000, (100, 0, 0), (0, 0, 0))
+    before = energy_without_sun_binding(w)
+    w.speed = 1
+    w.advance(1e-5, time.perf_counter() + 1)
+    assert not w.paused and not w.notices and w.sim.N == 2 + external_star
+    assert [e[0] for e in w.events] == [W.EV_HIT_AND_RUN]
+    assert radius < math.dist(w.particle('1').xyz, w.particle('2').xyz) < 1.1 * radius
+    for name, mass, physical_radius in incoming:
+        p = w.particle(name)
+        assert (p.m, p.r) == pytest.approx((mass, physical_radius), rel=1e-12)
+        assert w.meta[name]['inventory'].spin_kg_m2_s == (0, 0, 0)
+        assert w.meta[name]['inventory'].internal_energy_j > 0
+    assert energy_without_sun_binding(w) == pytest.approx(before, rel=1e-9)
+    restored, _ = E.restore(E.capture(w, E.DEFAULT_CAMERA))
+    assert states(restored) == states(w)
+    for simulation in (w, restored):
+        simulation.events.clear()
+        simulation.advance(.02, time.perf_counter() + 1)
+        assert not simulation.paused and not simulation.events
+        assert simulation.sim.N == 2 + external_star
+        assert math.dist(simulation.particle('1').xyz, simulation.particle('2').xyz) > 2 * radius
+    np.testing.assert_allclose(w.snapshot()['xyz'], restored.snapshot()['xyz'], rtol=1e-9, atol=1e-10)
+
+
 def test_callback_defers_all_changes_and_deduplicates_reversed_pair():
     w = pair(gap=1)
     before = E.capture(w, E.DEFAULT_CAMERA)

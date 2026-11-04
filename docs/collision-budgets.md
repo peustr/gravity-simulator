@@ -100,8 +100,17 @@ prepare supported initial conditions before resuming a rejected encounter.
 
 `isolated_impacts`, available through saved settings or the physics command,
 also constructs separated remnants. Automatic mode uses the same construction
-for rocky pairs. It retains the same pairwise, material and
-spin restrictions. The resolved policy keeps the classified largest remnant and
+for rocky pairs. It retains the same pairwise, material and spin restrictions.
+For hit-and-run with no stripped mass, both bodies remain at reconstructed
+surface contact with their original masses, radii, spin and existing heat.
+A frictionless normal impulse reverses approach with restitution `sqrt(0.5)`;
+tangential relative velocity is unchanged. Half the incoming normal kinetic
+energy becomes additional internal energy, shared in proportion to mass.
+This restitution is a prescription, not a calibrated scattering law. The
+outgoing pair must pass the same hyperbolic-escape check. The hit-and-run event
+preserves camera follow and selection of either survivor.
+
+For other separated outcomes, the resolved policy keeps the classified largest remnant and
 runner, and divides debris equally into the minimum number of fragments no
 heavier than the largest remnant, at most 32 bodies total. A deterministic
 spherical shell at eight combined-volume radii supplies offsets; a two-remnant

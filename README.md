@@ -336,7 +336,11 @@ are not calibrated material models.
 The [impact classification API](docs/impact-scaling.md) estimates outcomes for
 supported solid contacts, including rocky hit-and-run events. The live
 [calibrated mode](docs/collision-budgets.md#live-isolated-mergers) constructs
-conserved resolved remnants for rocky–rocky impacts by default. The table below
+conserved resolved remnants for rocky–rocky impacts by default. Intact hit-and-run
+survivors separate at contact, retaining their masses and radii; a prescribed
+normal impulse converts half the normal impact kinetic energy into internal
+energy. The event is labelled as hit-and-run and keeps the selected body in focus.
+The table below
 describes heuristic models used for other pairs and in explicit comparison mode.
 
 | Situation | Outcome |

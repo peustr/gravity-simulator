@@ -57,6 +57,8 @@ func spawn_event(kind: int, pos: Vector3, magnitude: float, size: float) -> void
 			_ring(pos, Color(1.0, 0.6, 0.3), size * 8.0, 1.6, 2.0)
 			_light(pos, Color(1.0, 0.6, 0.3), 6.0 * magnitude, size * 40.0, 1.2)
 			_shake_near(pos, 0.6 * magnitude, size)
+		Palette.EV_HIT_AND_RUN:
+			_flash(pos, Color(1.0, 0.85, 0.6), size * 2.0, 0.6 + magnitude, 0.6)
 		Palette.EV_SWALLOW:
 			_flash(pos, Color(0.85, 0.6, 1.0), size * 2.0, 1.2 + magnitude, 0.8)
 			_burst(pos, Color(1.0, 0.8, 0.95), Color(0.5, 0.2, 1.0), int(30 + 30 * magnitude), size * 0.3, size * 1.2, 1.0)
