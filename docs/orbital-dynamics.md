@@ -1,6 +1,6 @@
 # Orbital dynamics and accuracy controls
 
-The live solver uses REBOUND IAS15 with Newtonian, unsoftened gravity.
+The live solver normally uses REBOUND IAS15 with Newtonian, unsoftened gravity.
 Physical scenes default to `epsilon = 1e-9` and `min_dt = 0`: difficult encounters
 slow simulated time instead of imposing an inaccurate timestep floor.
 Version-1 legacy scenes retain their original `min_dt = 1e-4`; the physical
@@ -33,6 +33,11 @@ are zero. For exactly force-free states (one body, no active gravitating bodies,
 or zero G), the step uses IAS15's individual convergence criterion and restores
 the configured criterion afterwards. It does not suppress convergence warnings
 or loosen gravitational tolerances. Contact detection remains active.
+
+If IAS15 reaches a nonadvancing floating-point timestep, the solver switches to
+BS without changing the force law. Symmetric post-impact constructions also use
+BS; [compact ejecta](unresolved-debris.md) use a joint body/cloud BS system.
+Solver selection is displayed and saved.
 
 ## Explicit approximations
 

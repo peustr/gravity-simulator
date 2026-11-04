@@ -38,8 +38,10 @@ import configuration
 from impacts import capture as capture_impact
 from body_state import BodyInventory, GravitySource, capture_sphere
 from collision_models import construct_collision, couple_external_gravity
-from diagnostics import totals
+from diagnostics import totals,PhysicalLossLedger
 from dynamics import ContactGuard, step
+from debris_shell import MAX_SHELLS, ShellIntegrator, approaching_contacts, form_shell, model_defect, shell_energy
+from dataclasses import replace
 
 # REBOUND rebuilds its name lookup table on its own; the warning is just noise.
 warnings.filterwarnings("ignore", message=".*hash table.*")
@@ -99,6 +101,8 @@ EV_COLLAPSE = 7
 EV_BH_MERGER = 8
 EV_KILONOVA = 9
 EV_HIT_AND_RUN = 10
+EV_ACCRETION = 11
+EV_EROSION = 12
 
 # Light debris (asteroids, small gas clouds) are "test particles": they feel
 # everyone's gravity but don't pull on anything themselves. That is the
@@ -204,6 +208,12 @@ class World:
 
     # ------------------------------------------------------------------ setup
     def _new_simulation(self):
+        self.shells = ()
+        self._next_shell_id = 1
+        self._shell_integrator = None
+        self.shell_numerical_energy_error_j = 0.0
+        self.shell_error_history = dict(max_omitted_impulse_m_s=0.0, refused_steps=0, last_refusal='')
+        self.physical_loss_ledger = PhysicalLossLedger()
         self.conservation_baseline = None
         self.ledger = None  # opt-in accounting applies to one world history
         self.removed = dict(bodies=0, mass=0.0, momentum=[0.0] * 3, angular_momentum=[0.0] * 3,
@@ -233,7 +243,7 @@ class World:
 
     def clear(self):
         self.units = units.SYSTEM
-        self.settings.update(collisions='auto', gravity='full')
+        self.settings.update(collisions='auto', gravity='full',impact_material='fluid_planets')
         self._new_simulation()
 
     def configure(self, changes):
@@ -244,21 +254,34 @@ class World:
             raise ValueError('Calibrated impacts require physical units, full gravity and disabled escape removal')
         if settings['collisions'] == 'auto' and self.units != units.SYSTEM:
             raise ValueError('Automatic collisions require physical units')
+        if self.shells and (settings['gravity'] != 'full' or settings['collisions'] == 'heuristic'):
+            raise ValueError('Unresolved ejecta require full gravity and calibrated collision handling')
         self.settings = settings
-        self.sim.integrator.epsilon = self.settings['epsilon']
+        self._set_solver_tolerance()
         self._partition_dirty = True
         self._repartition()
         self.sim.did_modify_particles = 1
         self.version += 1
+
+    def _set_solver_tolerance(self):
+        if str(self.sim.integrator) == 'bs':
+            self.sim.integrator.eps_rel = self.settings['epsilon']*.01
+            self.sim.integrator.eps_abs = self.settings['epsilon']*.001
+        else:
+            self.sim.integrator.epsilon = self.settings['epsilon']
+
+    def solver_name(self):
+        return 'BS (ejecta)' if self.shells else str(self.sim.integrator).upper()
 
     def gravity_summary(self):
         snap = self.snapshot()
         passive = [self.is_light(self.meta[n]['type'], mass)
                    for n, mass in zip(snap['names'], snap['m'], strict=True)]
         omitted = float(snap['m'][passive].sum())
-        total = float(snap['m'].sum())
+        total = float(snap['m'].sum())+sum(s.mass_kg/units.MASS_KG for s in self.shells)
         return dict(settings=self.settings.copy(), tracers=sum(passive), tracer_mass=omitted,
-                    tracer_mass_fraction=omitted / total if total else 0.0, removed=self.removed.copy())
+                    tracer_mass_fraction=omitted / total if total else 0.0, removed=self.removed.copy(),
+                    reservoirs=len(self.shells),unresolved_fragments=sum(s.fragment_count for s in self.shells))
 
     def radius_for(self, btype, mass):
         model = legacy_radius_for if self.units == units.LEGACY else radius_for
@@ -329,6 +352,7 @@ class World:
             return
         self._partition_dirty = False
         self._contact_guard.reset()
+        self._shell_integrator = None
         self._tidal_pairs = None
         sim = self.sim
         n = sim.N
@@ -411,14 +435,25 @@ class World:
             while sim.t < self._target_t:
                 if time.perf_counter() > deadline:
                     break
-                if sim.N == 0:
+                if sim.N == 0 and not self.shells:
                     sim.t = self._target_t
                     break
                 try:
                     # An adaptive step may span several display ticks. Stop at
                     # this tick's target instead of publishing a future state
                     # followed by repeated frozen states while time catches up.
-                    step(sim, self._target_t - sim.t, self._contact_guard)
+                    if self.shells:
+                        self._advance_shells(self._target_t-sim.t)
+                    else:
+                        step(sim, self._target_t - sim.t, self._contact_guard)
+                except (ValueError,ArithmeticError) as exc:
+                    if self.shells:
+                        self.shell_error_history['refused_steps'] += 1
+                        self.shell_error_history['last_refusal'] = str(exc)[:300]
+                    self.paused = True
+                    self.notice(f'Physics paused: {exc}')
+                    self._shell_integrator = None
+                    break
                 except rebound.NoParticles:
                     sim.t = self._target_t
                     break
@@ -449,6 +484,22 @@ class World:
         else:
             self.perf = max(0.0, min(1.0, self._ema_got / self._ema_req))
 
+    def _advance_shells(self,maximum):
+        if self._shell_integrator is None:
+            self._shell_integrator = ShellIntegrator(self.sim,self.shells,self.settings['epsilon'])
+        masses = [p.m*units.MASS_KG for p in self.sim.particles]
+        positions = [tuple(x*units.LENGTH_M for x in p.xyz) for p in self.sim.particles]
+        energy_before = self.sim.energy()*units.MASS_KG*units.VELOCITY_M_S**2+shell_energy(self.shells,masses,positions)
+        self.shells = self._shell_integrator.advance(self.sim,self.shells,maximum,self._contact_guard)
+        positions = [tuple(x*units.LENGTH_M for x in p.xyz) for p in self.sim.particles]
+        energy_after = self.sim.energy()*units.MASS_KG*units.VELOCITY_M_S**2+shell_energy(self.shells,masses,positions)
+        self.shell_numerical_energy_error_j += energy_after-energy_before
+        self.shell_error_history['max_omitted_impulse_m_s'] = max(
+            self.shell_error_history['max_omitted_impulse_m_s'],
+            max(s.omitted_impulse_m_s for s in self.shells))
+        for i,j in approaching_contacts(self.sim):
+            self._resolve_collision(ctypes.pointer(self.sim), type('Contact',(),dict(p1=i,p2=j))())
+
     def _post_tick(self, dt_sim: float):
         cool = math.exp(-dt_sim / HEAT_COOLING_TIME)
         for meta in self.meta.values():
@@ -460,17 +511,21 @@ class World:
             return  # No unaccounted automatic removals or stellar transformations.
         self._cull_escapers()
         while self._supernova_queue:
+            before = self.physical_loss_ledger.capture(self)
             self.supernova(self._supernova_queue.pop(), natural=True)
+            self.physical_loss_ledger.record('natural_supernova',before,self.physical_loss_ledger.capture(self))
 
     def _cull_escapers(self):
         boundary = self.settings['escape_distance']
         if boundary is None:
             return
         snap = self.snapshot()
-        if snap["n"] == 0:
+        if snap["n"] == 0 and not self.shells:
             return
         d2 = np.einsum("ij,ij->i", snap["xyz"], snap["xyz"])
         far = np.nonzero(d2 > boundary ** 2)[0]
+        shell_far = tuple(s for s in self.shells if s.radius_m-math.dist(s.centre_m,(0,0,0)) > boundary*units.LENGTH_M)
+        physical_before = self.physical_loss_ledger.capture(self) if len(far) or shell_far else None
         before = self.ledger.capture(self) if self.ledger is not None and len(far) else None
         energy = None
         if len(far):
@@ -483,12 +538,31 @@ class World:
                 energy = totals(self)['energy']
             except ValueError:
                 self.removed['energy_defined'] = False
+        if shell_far:
+            for shell in shell_far:
+                self.removed['bodies'] += shell.fragment_count
+                self.removed['mass'] += shell.mass_kg/units.MASS_KG
+                p = shell.mass_kg*np.array(shell.velocity_m_s)
+                self.removed['momentum'] = (np.array(self.removed['momentum'])+p/(units.MASS_KG*units.VELOCITY_M_S)).tolist()
+                self.removed['angular_momentum'] = (np.array(self.removed['angular_momentum'])+
+                    np.cross(shell.centre_m,p)/(units.MASS_KG*units.LENGTH_M*units.VELOCITY_M_S)).tolist()
+            if energy is None:
+                try:
+                    energy = totals(self)['energy']
+                except ValueError:
+                    self.removed['energy_defined'] = False
         for i in sorted(far, reverse=True):
             self.remove_body(int(snap["names"][i]))
+        if shell_far:
+            removed_ids = {s.identifier for s in shell_far}
+            self.shells = tuple(s for s in self.shells if s.identifier not in removed_ids)
+            self._shell_integrator = None
         if energy is not None:
             self.removed['energy'] += energy - totals(self)['energy']
         if before is not None:
             self.ledger.record('escape_boundary', before, self.ledger.capture(self))
+        if len(far) or shell_far:
+            self.physical_loss_ledger.record('escape_boundary',physical_before,self.physical_loss_ledger.capture(self))
 
     # ------------------------------------------------------------ collisions
     def _collision_record(self, pi, pj):
@@ -583,12 +657,14 @@ class World:
     def _process_collisions(self):
         pending, self._pending = self._pending, []
         mode = self.settings['collisions']
+        kinds = (ROCKY,) if self.settings['impact_material'] == 'fluid_planets' else (ROCKY,ASTEROID)
         calibrated = mode in ('isolated_mergers', 'isolated_impacts') or (
-            mode == 'auto' and any((r['ts'], r['tr']) == (ROCKY, ROCKY) for r in pending))
+            mode == 'auto' and any(r['ts'] in kinds and r['tr'] in kinds for r in pending))
         if calibrated and len(pending) > 1:
             self.paused = True
             self.notice('Collision paused: simultaneous contacts require a collective impact model')
             return
+        physical_before = self.physical_loss_ledger.capture(self) if not calibrated else None
         if mode == 'auto' and not calibrated:
             pending = self._merge_deferred_contacts(pending)
         for rec in pending:
@@ -604,6 +680,8 @@ class World:
                     break
                 traceback.print_exc()
         self.sim.did_modify_particles = 1
+        if not calibrated:
+            self.physical_loss_ledger.record('heuristic_collision',physical_before,self.physical_loss_ledger.capture(self))
 
     def _apply_isolated_collision(self, rec):
         """Preflight a two-body outcome before committing any particle changes."""
@@ -611,20 +689,43 @@ class World:
             raise ValueError('Calibrated collisions require physical units and Newtonian G')
         if self.settings['gravity'] != 'full':
             raise ValueError('Calibrated impacts require full gravity; disable the tracer approximation')
-        if (rec['ts'], rec['tr']) != (ROCKY, ROCKY):
-            raise ValueError('Calibrated impacts currently support only rocky planets')
+        material = self.settings['impact_material']
+        kinds = (ROCKY,) if material == 'fluid_planets' else (ROCKY,ASTEROID)
+        if rec['ts'] not in kinds or rec['tr'] not in kinds:
+            raise ValueError('Body types are outside the selected solid-impact calibration')
         if any(s is None for s in rec['spheres']):
             raise ValueError('Both bodies need known spin and internal-energy inventories')
-        outcome = construct_collision(*rec['spheres'], material='fluid_planets', body_types=(ROCKY, ROCKY),
+        outcome = construct_collision(*rec['spheres'], material=material, body_types=(rec['ts'],rec['tr']),
                                       resolved_policy=self.settings['collisions'] != 'isolated_mergers')
-        if self.sim.N - 2 + len(outcome.remnants) > self.max_bodies:
-            raise ValueError('Insufficient body capacity for this impact; no material was removed')
+        compact = self.sim.N-2+len(outcome.remnants) > self.max_bodies
+        if compact and (not outcome.central_shell or len(self.shells) >= MAX_SHELLS):
+            raise ValueError('Insufficient body or supported reservoir capacity; no material was removed')
         if self.particle(rec['s']) is None or self.particle(rec['r']) is None or rec['s'] == rec['r']:
             raise ValueError('Collision body IDs no longer identify an incoming pair')
         external = tuple(GravitySource(p.m * units.MASS_KG, p.r * units.LENGTH_M,
                                        tuple(x * units.LENGTH_M for x in p.xyz))
                          for p in self.sim.particles if p.name not in (rec['s'], rec['r']))
+        for old in self.shells:
+            if not all(math.dist(s.position_m,old.centre_m)+s.radius_m < old.radius_m-old.fragment_radius_m
+                       for s in (*rec['spheres'],*outcome.remnants)):
+                external += (GravitySource(old.mass_kg,old.radius_m+old.fragment_radius_m,old.centre_m),)
         remnants = couple_external_gravity(rec['spheres'], outcome.remnants, external)
+        shell = None
+        if compact:
+            identifier = self._next_shell_id
+            shell = replace(form_shell(remnants[0],remnants[1:],identifier),formed_at_s=self.sim.t*units.TIME_S,
+                            regime=outcome.classification.regime)
+            masses = [remnants[0].mass_kg]+[s.mass_kg for s in external]
+            positions = [remnants[0].position_m]+[s.position_m for s in external]
+            radii = [remnants[0].radius_m]+[s.radius_m for s in external]
+            model_defect(shell,masses,positions,radii)
+            correction = math.fsum(-units.G_SI*s.mass_kg*p.mass_kg/math.dist(s.position_m,p.position_m)
+                                   for s in remnants[1:] for p in external)
+            from debris_shell import shell_potential
+            correction -= math.fsum(shell_potential(shell,s.mass_kg,s.position_m) for s in external)
+            shell = replace(shell,potential_offset_j=correction)
+            shell_energy((*self.shells,shell),masses,positions)
+            remnants = remnants[:1]
         prepared = [(s.mass_kg / units.MASS_KG, s.radius_m / units.LENGTH_M,
                      tuple(x / units.LENGTH_M for x in s.position_m),
                      tuple(v / units.VELOCITY_M_S for v in s.velocity_m_s),
@@ -632,23 +733,31 @@ class World:
         sm = self.meta[rec['s']]
         heat = max(.5, sm['heat'], self.meta[rec['r']]['heat'])
         names = [rec['s'], rec['r']]
+        output_type = ROCKY if material == 'fluid_planets' else ASTEROID
         if len(prepared) == 1:
             self.remove_body(int(rec['r']))
             names.pop()
         for mass, _radius, position, velocity, inventory in prepared[2:]:
-            names.append(str(self.add_body(ROCKY, mass, position, velocity, heat=heat, inventory=inventory)))
+            names.append(str(self.add_body(output_type, mass, position, velocity, heat=heat, inventory=inventory)))
         for name, (mass, radius, position, velocity, inventory) in zip(names, prepared, strict=True):
             particle = self.particle(name)
             particle.m, particle.r = mass, radius
             particle.xyz, particle.vxyz = position, velocity
             self.meta[name]['inventory'], self.meta[name]['heat'] = inventory, heat
+            self.meta[name]['type'] = output_type
         self._partition_dirty = True
         # Keep the constructed volume/density and spin; heuristic promotion would
         # overwrite the radius and invalidate the conserved inventory.
         total = sum(s.mass_kg for s in rec['spheres'])
         center = tuple(sum(s.mass_kg * s.position_m[i] for s in rec['spheres']) / total / units.LENGTH_M for i in range(3))
-        kind = EV_HIT_AND_RUN if outcome.classification.regime == 'hit_and_run' else (
-            EV_MERGE if len(prepared) == 1 else EV_SHATTER)
+        kind = {'hit_and_run':EV_HIT_AND_RUN,'partial_accretion':EV_ACCRETION,'erosion':EV_EROSION}.get(
+            outcome.classification.regime,EV_MERGE if len(outcome.remnants)==1 else EV_SHATTER)
+        if shell is not None:
+            self.shells = (*self.shells,shell)
+            self._next_shell_id += 1
+        if outcome.central_shell:
+            self.sim.integrator = 'bs'
+            self._set_solver_tolerance()
         self._event(kind, center, 1.0,
                     rec['rs'] + rec['rr'], int(rec['s']), int(rec['r']))
 
@@ -957,6 +1066,7 @@ class World:
         n = min(14, self.capacity + 1)
         if n < 3:
             return
+        physical_before = self.physical_loss_ledger.capture(self)
         vt = vm["type"]
         frag_type = PLASMA if vt in (STAR, GAS_GIANT) else ASTEROID
         M = pv.m
@@ -983,11 +1093,12 @@ class World:
             # Debris stays debris (no promotion), so tides can't shred it again.
             self.add_body(frag_type, mf, fpos, fvel, heat=1.0, inventory=None)
         self._event(EV_TIDAL, pos, 1.6, rv * 4, hid, vid)
+        self.physical_loss_ledger.record('tidal_disruption',physical_before,self.physical_loss_ledger.capture(self))
 
     # ------------------------------------------------------------ user tools
     def _dominant(self, pos, snap, exclude=None):
         """Index of the body pulling hardest on `pos` (largest m / d^2)."""
-        if snap["n"] == 0:
+        if snap["n"] == 0 and not self.shells:
             return None
         d = snap["xyz"] - np.asarray(pos)
         d2 = np.einsum("ij,ij->i", d, d) + snap["r"] ** 2
@@ -1124,8 +1235,13 @@ class World:
         mini = rebound.Simulation()
         mini.G = G
         mini.integrator = "ias15"
-        mini.integrator.min_dt = self.sim.integrator.min_dt
-        mini.integrator.epsilon = self.sim.integrator.epsilon
+        mini.integrator = str(self.sim.integrator)
+        if str(mini.integrator) == 'bs':
+            mini.integrator.eps_rel = self.settings['epsilon']*.01
+            mini.integrator.eps_abs = self.settings['epsilon']*.001
+        else:
+            mini.integrator.min_dt = self.sim.integrator.min_dt
+            mini.integrator.epsilon = self.sim.integrator.epsilon
         a_local = None
         r_new = self.radius_for(btype, mass)
         for k, i in enumerate(order):
@@ -1176,7 +1292,17 @@ class World:
             a0 = (pa.x, pa.y, pa.z)
         points = [tuple(pos)]
         times = [0.0]
+        def append_forecast_state():
+            pt = mini.particles[test]
+            location = np.array(pt.xyz)
+            if a0 is not None:
+                location += np.array(a0)-mini.particles[a_local].xyz
+            if np.isfinite(location).all():
+                points.append(tuple(location))
+                times.append(mini.t)
         guard = ContactGuard()
+        forecast_shells = self.shells
+        shell_integrator = ShellIntegrator(mini,forecast_shells,self.settings['epsilon']) if forecast_shells else None
         failed = False
         try:
             for k in range(1, samples + 1):
@@ -1193,7 +1319,12 @@ class World:
                     # Sample at the requested time, never overshoot it and
                     # accidentally integrate backwards to the next sample.
                     previous = mini.t
-                    step(mini, target - mini.t, guard)
+                    if shell_integrator is None:
+                        step(mini, target - mini.t, guard)
+                    else:
+                        forecast_shells = shell_integrator.advance(mini,forecast_shells,target-mini.t,guard)
+                        for i,j in approaching_contacts(mini):
+                            on_collision(ctypes.pointer(mini),type('Contact',(),dict(p1=i,p2=j))())
                     pt = mini.particles[test]
                     if mini.t <= previous or not all(math.isfinite(value) for value in (mini.t, pt.x, pt.y, pt.z)):
                         raise ArithmeticError("Forecast step did not produce a finite advancing state")
@@ -1201,17 +1332,13 @@ class World:
                         break
                 if mini.t == start:
                     break
-                pt = mini.particles[test]
-                if a0 is not None:
-                    pa = mini.particles[a_local]
-                    points.append((pt.x - pa.x + a0[0], pt.y - pa.y + a0[1], pt.z - pa.z + a0[2]))
-                else:
-                    points.append((pt.x, pt.y, pt.z))
-                times.append(mini.t)
+                append_forecast_state()
                 if hit["stop"] or exhausted:
                     break
         except Exception:
             failed = True
+            if mini.N > test and mini.t > times[-1]:
+                append_forecast_state()
         aid = int(snap["names"][a]) if a is not None else -1
         return {"points": points, "hit": hit["flag"], "attractor": aid, "vel": vel, "radius": r_new,
                 "times": times, "horizon": horizon, "complete": not failed and not hit['stop'] and mini.t >= horizon,

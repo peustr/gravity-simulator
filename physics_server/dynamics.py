@@ -25,7 +25,7 @@ def _contact_geometry(sim):
     return i, j, r[i] + r[j], sim.G * m[i], sim.G * m[j], np.empty(3 * sim.N), np.empty(3 * sim.N), *vectors
 
 
-def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION, *, _geometry=None):
+def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION, *, _geometry=None, extra_acceleration=None):
     """Limit approach to finite surfaces before IAS15 evaluates a singular centre.
 
     Outside overlaps, bound all source accelerations over an interval in which
@@ -54,6 +54,8 @@ def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION, *, _geometry=Non
         # 4*G*m/d**2. Sum magnitudes: this also bounds third-body perturbations.
         acceleration = (np.bincount(i, weights=4 * gmj / distance2, minlength=sim.N)
                         + np.bincount(j, weights=4 * gmi / distance2, minlength=sim.N))
+        if extra_acceleration is not None:
+            acceleration += extra_acceleration
         pair_acceleration = acceleration[i] + acceleration[j]
         speed2 = np.einsum('ij,ij->i', dv, dv)
         # Solve |dv|*t + A*t**2/2 = d/2. Before the earliest such time, the
@@ -109,7 +111,7 @@ class ContactGuard:
         self.geometry = None
         self.geometry_key = None
 
-    def limit(self, sim, maximum):
+    def limit(self, sim, maximum, *, extra_acceleration=None):
         key = (sim.N, sim.N_active, sim.G)
         if key != self.geometry_key:
             self.reset()
@@ -119,10 +121,10 @@ class ContactGuard:
         # Refresh before a proposed step crosses the cached interval. Splitting
         # at its old end can leave a tiny remainder that repeatedly shrinks
         # IAS15's next proposed step, even when every surface is still distant.
-        if self.check_at <= sim.t + maximum:
+        if extra_acceleration is not None or self.check_at <= sim.t + maximum:
             # Without a finite constraint, recheck on the next native call;
             # never cache an unbounded interval across changing trajectories.
-            interval = contact_step_limit(sim, math.inf, _geometry=self.geometry)
+            interval = contact_step_limit(sim, math.inf, _geometry=self.geometry,extra_acceleration=extra_acceleration)
             if not math.isfinite(interval):
                 return maximum
             self.check_at = sim.t + interval
@@ -137,9 +139,15 @@ def step(sim, maximum, guard):
     that criterion only when gravity is identically absent, restoring the
     configured mode afterwards; gravitational steps retain PRS23 and epsilon.
     """
+    if str(sim.integrator) == 'ias15' and (sim.dt <= 0 or sim.t+sim.dt == sim.t):
+        epsilon = sim.integrator.epsilon
+        sim.integrator = 'bs'
+        sim.integrator.eps_rel = epsilon*.01
+        sim.integrator.eps_abs = epsilon*.001
+        sim.dt = guard.limit(sim,maximum)
     free = sim.N <= 1 or sim.N_active == 0 or sim.G == 0
     sim.dt = guard.limit(sim, min(sim.dt, maximum))
-    if not free:
+    if not free or str(sim.integrator) == 'bs':
         sim.steps(1)
     else:
         mode = sim.integrator.adaptive_mode

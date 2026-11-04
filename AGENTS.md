@@ -2,7 +2,7 @@
 
 Interactive N-body space sandbox for Windows. Two programs talk over UDP on `127.0.0.1:47810`:
 
-- `physics_server/` — Python 3.10–3.14 + REBOUND 5 (IAS15 integrator) + NumPy. **All physics lives here.**
+- `physics_server/` — Python 3.10–3.14 + REBOUND 5 (IAS15/BS integrators) + NumPy. **All physics lives here.**
 - `godot/` — Godot 4.7.2 project (GDScript, Forward+ renderer). Rendering, input and UI only. Never put physics in GDScript.
 
 Development supports Windows and Linux. The physics venv is `physics_server/.venv` (Python 3.13 on Windows; Python 3.12 on Linux). Keep physics claims consistent with the documented model (see README "What is *not* simulated").
@@ -36,6 +36,7 @@ Use `python3` on Linux/macOS or `py -3.13` on Windows to run `tools/dev.py`. The
 | Create/refresh the venv and validate physics | `python3 tools/dev.py setup` |
 | Install developer tools | `python3 tools/dev.py setup-dev` |
 | All quality checks | `python3 tools/dev.py check` |
+| Generate loadable collision references | `python3 tools/dev.py impact-references --output benchmarks/impact-references` |
 | Physical accuracy references | `python3 tools/dev.py accuracy` |
 | Physics performance baseline | `python3 tools/dev.py benchmark --profile` |
 | Rendered performance baseline | `python3 tools/dev.py benchmark-visual solar` |
@@ -65,10 +66,7 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 | `physics_server/disruption.py` | Head-on curves and solid-body classification, including rocky grazing impacts; limits in `docs/impact-scaling.md` |
 | `physics_server/collision_outcomes.py` | SI spherical inventories, isolated mergers and prescribed remnant allocations; contract in `docs/collision-budgets.md` |
 | `physics_server/collision_models.py` | Classified construction, shallow-contact correction and isolated remnant escape certificates |
-| `physics_server/debris.py` | Creation-time debris capacity partition and compact reservoirs; limits in `docs/unresolved-debris.md` |
-| `physics_server/debris_gravity.py` | Far-field reservoir/body gravity estimates and momentum substeps with explicit accuracy bounds |
-| `physics_server/debris_transport.py` | Homologous cloud expansion and two-centre transport; model limits in `docs/debris-transport.md` |
-| `physics_server/debris_lifecycle.py` | Fixed reservoir slots, atomic whole-record transfers and exact single-fragment promotion |
+| `physics_server/debris_shell.py` | Live compact symmetric ejecta, coupled gravity and model-error diagnostics; limits in `docs/unresolved-debris.md` |
 | `docs/orbital-dynamics.md` | Accuracy targets, gravity/forecast options, removal boundaries and save migration |
 | `tools/benchmark.py` | Seeded performance workloads, profiling and JSON reports |
 | `docs/physics-roadmap.md` | Ordered realism milestones and current acceptance checklist |
@@ -87,7 +85,7 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 
 | What | Where |
 |---|---|
-| Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_HIT_AND_RUN=10), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
+| Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_EROSION=12), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
 | Packet layout: header 11 floats, body 12, event 8; forecast reply header 9 (protocol 2, packet kinds 3/4) | `server.py` `pack_state`/`pack_prediction` ↔ `main.gd` `_on_state`/`_on_prediction` |
 | UDP port 47810 | `server.py` `DEFAULT_PORT` ↔ `net_client.gd` `SERVER_PORT` |
 | Scenario names | `world.load_preset()` ↔ `hud.gd` `PRESETS` |

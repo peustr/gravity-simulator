@@ -127,11 +127,10 @@ isolated-merger support do not satisfy that goal.
 
 | Component | Available behavior | Remaining limitation |
 |---|---|---|
-| Contact state and saves | Immutable pre-impact measurements; version-4 body spin/internal-energy inventories | Older or heuristically transformed bodies have unknown inventories |
-| Classification | Calibrated solid-body regimes and remnant masses feed live rocky outcome construction | Construction feasibility and available fragment slots further limit accepted encounters |
-| Outcome construction | Conserved rocky outcomes in every preset; intact hit-and-run survivors separate at contact; weak external fields have bounded screening and energy accounting | Restitution and ejecta layouts/energy splits are prescribed; strong fields, simultaneous contacts, spinning inputs and insufficient fragment slots are rejected |
-| Unresolved material | Snapshot inventories, restricted cloud transport and bounded ownership APIs | No live coupling or persistence; transport cannot represent debris surrounding its remnant or general multi-body interactions |
-| Diagnostics | On-demand SI body budgets include spin/internal energy, before/after comparisons and saved baselines; orbital removal accounting remains available | Reservoir accounting and separation of numerical/model errors and explicit losses remain incomplete |
+| Contact state and saves | Immutable impact state; version-5 spin/internal energy, compact ejecta, solver and error/loss histories | Older or heuristically transformed bodies can have unknown inventories |
+| Classification and construction | Planet and small-body controls; live regimes, prescribed conserved layouts and loadable examples | Published domains, incoming spin, strong fields and simultaneous contacts restrict applicability |
+| Unresolved material | Live symmetric ejecta coupled to resolved bodies, disjoint/nested clouds, bounded storage and transactional refusal | Head-on expanding shells only; no surface crossing, recollapse or automatic reconstruction |
+| Diagnostics | SI inventories across bodies/clouds, explicit-loss residuals, model offsets, force-defect and numerical diagnostics | Release-wide validation remains pending |
 
 ### Delivery requirements
 
@@ -198,8 +197,7 @@ outside the stated domains is not claimed.
 
 Implementation contracts: [impact measurements](impact-measurements.md),
 [calibration domains](impact-scaling.md), [collision budgets and live mode](collision-budgets.md),
-[debris inventories](unresolved-debris.md), [current transport limits](debris-transport.md),
-and [reservoir ownership](debris-lifecycle.md).
+[compact ejecta and ownership](unresolved-debris.md).
 
 ## 5. Rotation and tidal evolution
 

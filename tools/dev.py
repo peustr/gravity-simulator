@@ -109,6 +109,11 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == 'benchmark-visual':
         visual_benchmark(sys.argv[2:])
         return
+    if len(sys.argv) > 1 and sys.argv[1] == 'impact-references':
+        if not PYTHON.is_file():
+            raise RuntimeError("Missing physics venv. Run this helper's setup command first.")
+        run([str(PYTHON),str(ROOT/'tools/impact_references.py'),*sys.argv[2:]],timeout=300)
+        return
     if len(sys.argv) > 1 and sys.argv[1] in ('benchmark', 'accuracy'):
         if not PYTHON.is_file():
             raise RuntimeError("Missing physics venv. Run this helper's setup command first.")
@@ -116,7 +121,7 @@ def main() -> None:
         run([str(PYTHON), str(ROOT / 'tools/benchmark.py'), *flags, *sys.argv[2:]], timeout=1800)
         return
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("setup", "setup-dev", "selftest", "test", "lint", "docs", "docs-check", "check", "godot-test", "godot-check", "visual-check", "benchmark", "accuracy", "benchmark-visual"))
+    parser.add_argument("command", choices=("setup", "setup-dev", "selftest", "test", "lint", "docs", "docs-check", "check", "godot-test", "godot-check", "visual-check", "benchmark", "accuracy", "benchmark-visual", "impact-references"))
     parser.add_argument("scenario", nargs="?", choices=SCENARIOS, default="solar")
     args, extra = parser.parse_known_args()
     if extra and args.command != "visual-check":

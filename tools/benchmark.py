@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from dataclasses import asdict
+from dataclasses import fields
 import cProfile
 from datetime import datetime, timezone
 import json
@@ -20,9 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'physics_server'))
 import numpy as np
 import rebound
 
-from diagnostics import Ledger, totals
-from body_state import capture_sphere
-from collision_outcomes import collision_budget
+from diagnostics import Ledger, totals,physical_totals
+from collision_outcomes import CollisionBudget
 from server import MAX_EVENTS_PER_PACKET, PHYSICS_BUDGET, TICK_HZ, pack_state
 from validation import run_accuracy
 import world as W
@@ -33,14 +32,13 @@ SCENARIOS = ('solar', 'binary', 'black_hole', 'smash', 'formation', 'galaxies')
 
 
 def physical_inventory(world):
-    states = [capture_sphere(p, world.meta[p.name]['inventory'], world.units) for p in world.sim.particles]
-    if any(s is None for s in states):
-        return dict(available=False, reason='Unknown body inventories or nonphysical units')
     try:
-        budget = collision_budget(states)
+        budget = physical_totals(world)
     except ValueError as exc:
         return dict(available=False, reason=str(exc))
-    return dict(available=True, **asdict(budget), energy_j=budget.energy_j)
+    if budget['energy_j'] is None:
+        return dict(available=False,reason='Unknown body inventories or overlapping surfaces')
+    return dict(available=True,**{f.name:budget[f.name] for f in fields(CollisionBudget)},energy_j=budget['energy_j'])
 
 
 def summary(values):
@@ -85,8 +83,8 @@ def workload(name, ticks, seed, audit=False, settings=None):
     if settings is not None:
         world.configure(settings)
     initial = totals(world)
-    solver = dict(integrator=str(world.sim.integrator), epsilon=world.sim.integrator.epsilon,
-                  minimum_timestep=world.sim.integrator.min_dt, collision=world.sim.collision,
+    solver = dict(integrator=world.solver_name(), epsilon=world.settings['epsilon'],
+                  minimum_timestep=getattr(world.sim.integrator,'min_dt',0.0), collision=world.sim.collision,
                   gravity_constant=world.sim.G, max_bodies=world.max_bodies,
                   units=units.metadata(), radius_model=world.units, physics=world.gravity_summary())
     if audit:

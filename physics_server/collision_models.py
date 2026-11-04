@@ -12,6 +12,7 @@ from collision_outcomes import RemnantSpec, SphereState, _mutual_potential, allo
 from disruption import ContactOutcome, classify_contact
 from impacts import Impact
 from units import G_SI
+from debris_shell import symmetric_directions, form_shell
 
 
 def _impact(a, b):
@@ -112,6 +113,11 @@ def _resolved_layout(contact, classification):
         masses.append(classification.runner_mass_kg)
     remaining = classification.remaining_mass_kg
     count = math.ceil(remaining / masses[0])
+    central = (classification.runner_mass_kg == 0 and 2 <= count <= 30
+               and _impact(*contact).impact_parameter <= 1e-12)
+    directions = symmetric_directions(count) if central else None
+    if central:
+        count = len(directions)
     if len(masses) + count > 32:
         raise ValueError('Resolved impact requires more than 32 remnants; unresolved material is not integrated')
     masses.extend([remaining / count] * count)
@@ -123,7 +129,8 @@ def _resolved_layout(contact, classification):
         z = 1 - 2 * (i + .5) / len(masses)
         phi = i * math.pi * (3 - math.sqrt(5))
         rho = math.sqrt(1 - z*z)
-        direction = ((2*i - 1) * np.array(_impact(a,b).normal) if len(masses) == 2
+        direction = (np.zeros(3) if central and i == 0 else directions[i-1] if central else
+                     (2*i - 1) * np.array(_impact(a,b).normal) if len(masses) == 2
                      else (rho * math.cos(phi), rho * math.sin(phi), z))
         offset = tuple(8 * radius * x for x in direction)
         layout.append(RemnantSpec(mass, radius * (mass / total)**(1 / 3), offset))
@@ -191,6 +198,7 @@ class ConstructedCollision:
     contact: tuple[SphereState, SphereState]
     remnants: tuple[SphereState, ...]
     escape_certificate: str | None
+    central_shell: bool = False
 
 
 def construct_collision(a: SphereState, b: SphereState, *, material: str, body_types: tuple[int, int],
@@ -243,5 +251,14 @@ def construct_collision(a: SphereState, b: SphereState, *, material: str, body_t
         if not math.isclose(s.radius_m, expected_radius, rel_tol=1e-12, abs_tol=0):
             raise ValueError('Remnant radii must retain the incoming mean density')
     remnants = allocate_remnants(*contact, specs, expansion_fraction=expansion_fraction)
-    escape = remnant_escape_check(remnants)
-    return ConstructedCollision(classification, contact, remnants, escape)
+    central = resolved_policy and len(specs) > 2 and specs[0].offset_m == (0.0,0.0,0.0)
+    if central:
+        shell = form_shell(remnants[0],remnants[1:],1)
+        gravity = -G_SI*remnants[0].mass_kg*shell.mass_kg/shell.radius_m
+        kinetic = .5*shell.mass_kg*shell.radial_speed_m_s**2
+        if kinetic+shell.self_potential_j+gravity <= 1e-12*(kinetic-shell.self_potential_j-gravity):
+            raise ValueError('Symmetric shell does not have positive escape energy')
+        escape = 'symmetric_shell_escape'
+    else:
+        escape = remnant_escape_check(remnants)
+    return ConstructedCollision(classification, contact, remnants, escape, central)

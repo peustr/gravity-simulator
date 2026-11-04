@@ -175,11 +175,11 @@ static func valid_packet(f: PackedFloat32Array) -> bool:
 		if not is_finite(value):
 			return false
 	if f[0] == STATE_KIND:
-		if f.size() < 11 or f[4] < 0 or f[4] > 1321 or f[5] < 0 or f[5] > 64:
+		if f.size() < 11 or f[4] < 0 or f[4] > 1329 or f[5] < 0 or f[5] > 64:
 			return false
 		var n := int(f[4])
 		var events := int(f[5])
-		if n < 0 or n > 1321 or events < 0 or events > 64 or f[4] != n or f[5] != events:
+		if n < 0 or n > 1329 or events < 0 or events > 64 or f[4] != n or f[5] != events:
 			return false
 		if f.size() != 11 + n * 12 + events * 8:
 			return false

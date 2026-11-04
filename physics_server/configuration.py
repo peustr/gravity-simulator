@@ -3,13 +3,13 @@ import math
 
 
 DEFAULTS = dict(gravity='full', epsilon=1e-9, forecast_limit=20, escape_distance=15000.0,
-                collisions='auto')
+                collisions='auto',impact_material='fluid_planets')
 LEGACY_DEFAULTS = DEFAULTS | dict(gravity='tracers', collisions='heuristic')
 
 
 def settings(value, partial=False):
     # Earlier version-3/4 files have no collision-mode field.
-    required = DEFAULTS.keys() - {'collisions'}
+    required = DEFAULTS.keys() - {'collisions','impact_material'}
     if not isinstance(value, dict) or set(value) - DEFAULTS.keys() or (not partial and not required <= value.keys()):
         raise ValueError('Invalid physics settings')
     result = DEFAULTS | value
@@ -17,6 +17,8 @@ def settings(value, partial=False):
         result['collisions'] = 'heuristic'
     if result['collisions'] not in ('auto', 'heuristic', 'isolated_mergers', 'isolated_impacts'):
         raise ValueError('Collisions must be auto, heuristic, isolated_mergers or isolated_impacts')
+    if result['impact_material'] not in ('fluid_planets','planetesimals'):
+        raise ValueError('Unknown solid-impact material calibration')
     if result['gravity'] not in ('full', 'tracers'):
         raise ValueError('Gravity must be full or tracers')
     epsilon = result['epsilon']

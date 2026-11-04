@@ -38,6 +38,7 @@ var root: Control
 var physics_menu: PopupMenu
 var physics_settings := {}
 var conservation_dialog: AcceptDialog
+var conservation_text: Label
 var conservation_report := {}
 var ui_visible := true
 var tool_buttons := {}
@@ -293,6 +294,8 @@ func _build_top_bar() -> void:
 	file_menu.add_check_item("Include all bodies in forecasts", 11)
 	file_menu.add_check_item("Remove bodies beyond the boundary", 12)
 	file_menu.add_check_item("Automatic collision models", 14)
+	file_menu.add_radio_check_item("Planet impact calibration", 17)
+	file_menu.add_radio_check_item("Small-body impact calibration (1–100 km)", 18)
 	file_menu.add_item("Waiting for physics settings...", 13)
 	file_menu.set_item_disabled(file_menu.get_item_index(13), true)
 	file_menu.add_separator("Accounting")
@@ -313,6 +316,8 @@ func _experiment_action(id: int) -> void:
 		scene_action.emit(["save_scene", "load_scene", "checkpoint", "restart"][id])
 	elif id in [15, 16]:
 		conservation_requested.emit(id == 16)
+	elif id in [17, 18]:
+		physics_changed.emit({"impact_material": "fluid_planets" if id == 17 else "planetesimals", "gravity": "full", "collisions": "auto"})
 	elif not physics_settings.is_empty():
 		match id:
 			10:
@@ -340,23 +345,38 @@ func show_conservation(report: Dictionary) -> void:
 	conservation_report = report
 	if conservation_dialog == null:
 		conservation_dialog = AcceptDialog.new()
-		conservation_dialog.title = "Resolved-body conservation report"
+		conservation_dialog.title = "Conservation report"
 		root.add_child(conservation_dialog)
+		var scroll := ScrollContainer.new()
+		scroll.custom_minimum_size = Vector2(780, 460)
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		conservation_dialog.add_child(scroll)
+		conservation_text = Label.new()
+		conservation_text.custom_minimum_size.x = 740
+		conservation_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		conservation_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(conservation_text)
 	if not report.get("ok", false):
-		conservation_dialog.dialog_text = str(report.get("error", "Report unavailable"))
+		conservation_text.text = str(report.get("error", "Report unavailable"))
 	else:
 		var current: Dictionary = report.current
 		var change: Dictionary = report.changes
 		var text := "Snapshot: %.3f days · Baseline: %.3f days\n" % [float(current.time_s) / 86400.0, float(report.baseline.time_s) / 86400.0]
-		text += "%d bodies · %d unknown inventories · %d tracers · %d removed since baseline\n\n" % [current.bodies, current.unknown_inventories, current.tracers, report.removed_since_baseline]
+		text += "%d bodies + %d unresolved fragments in %d reservoirs\n" % [current.bodies, current.get("unresolved_fragments",0), current.get("reservoirs",0)]
+		text += "%d unknown inventories · %d tracers · %d removed since baseline\n\n" % [current.unknown_inventories, current.tracers, report.removed_since_baseline]
 		for row in [["Mass", "mass_kg", "kg"], ["Momentum", "momentum_kg_m_s", "kg m/s"], ["Total angular momentum", "angular_momentum_kg_m2_s", "kg m²/s"], ["Total energy", "energy_j", "J"]]:
 			text += "%s: %s\n  Change: %s\n" % [row[0], _budget_value(current[row[1]], row[2]), _budget_value(change[row[1]], row[2])]
+			if current.get("loss_event_count",0) > 0:
+				text += "  After recorded changes: %s\n" % _budget_value(report.conservation_residual[row[1]],row[2])
 		text += "\nOrbital angular momentum: %s\nSpin angular momentum: %s\n" % [_budget_value(current.orbital_angular_momentum_kg_m2_s, "kg m²/s"), _budget_value(current.spin_angular_momentum_kg_m2_s, "kg m²/s")]
-		for row in [["Translational kinetic", "translational_energy_j"], ["Rotational kinetic", "rotational_energy_j"], ["Self-binding", "self_binding_j"], ["Mutual potential", "mutual_potential_j"], ["Internal", "internal_energy_j"]]:
+		for row in [["Translational kinetic", "translational_energy_j"], ["Rotational kinetic", "rotational_energy_j"], ["Self-binding", "self_binding_j"], ["Mutual potential", "mutual_potential_j"], ["Internal", "internal_energy_j"], ["Model potential offset", "model_potential_offset_j"]]:
 			text += "%s energy: %s\n" % [row[0], _budget_value(current[row[1]], "J")]
 		text += "Energy change / component scale: %s\n\n" % _budget_value(report.relative_energy_change)
-		text += "Changes include edits, model effects and removed bodies.\nHomogeneous-sphere binding; excludes radiation and rest-mass energy.\nUnknown inventories or overlapping surfaces make affected totals unavailable."
-		conservation_dialog.dialog_text = text
+		text += "Residual after recorded changes / scale: %s\n" % _budget_value(report.relative_conservation_residual)
+		if current.get("reservoirs",0) > 0:
+			text += "Shell numerical energy change: %s\nOmitted-force impulse budget: %s\n" % [_budget_value(current.shell_numerical_energy_error_j,"J"), _budget_value(current.model_omitted_impulse_m_s,"m/s")]
+		text += "Raw changes include edits and removals; adjusted residuals account for recorded changes.\nModel approximation bounds are separate from numerical conservation residuals.\nHomogeneous-sphere binding; excludes radiation and rest-mass energy.\nUnknown inventories, overlapping surfaces or incomplete loss history make affected values unavailable."
+		conservation_text.text = text
 	conservation_dialog.popup_centered()
 
 
@@ -369,6 +389,9 @@ func set_physics(info: Dictionary) -> void:
 	physics_menu.set_item_checked(physics_menu.get_item_index(12), physics_settings.escape_distance != null)
 	var mode: String = physics_settings.get("collisions", "heuristic")
 	physics_menu.set_item_checked(physics_menu.get_item_index(14), mode != "heuristic")
+	physics_menu.set_item_checked(physics_menu.get_item_index(17), physics_settings.get("impact_material", "fluid_planets") == "fluid_planets")
+	physics_menu.set_item_checked(physics_menu.get_item_index(18), physics_settings.get("impact_material", "fluid_planets") == "planetesimals")
+	physics_menu.set_item_tooltip(physics_menu.get_item_index(18), "Explicit gravity-dominated small-body material assumption. Non-grazing solid contacts only, target radius 1–100 km, equal bulk densities and calibrated mass/speed limits. Unsupported solid encounters pause intact. Presets restore the planet calibration.")
 	var isolated := mode in ["isolated_mergers", "isolated_impacts"]
 	physics_menu.set_item_text(physics_menu.get_item_index(14), "Isolated calibrated experiment" if isolated else "Automatic collision models")
 	physics_menu.set_item_disabled(physics_menu.get_item_index(10), isolated)
@@ -668,11 +691,11 @@ func set_connection(state: String, detail: String) -> void:
 	status_label.text = detail
 
 
-func set_stats(sim_time: float, n: int, max_n: int, speed_mult: float, paused: bool, perf: float) -> void:
+func set_stats(sim_time: float, n: int, max_n: int, speed_mult: float, paused: bool, perf: float, clouds: int = 0) -> void:
 	pause_btn.text = "Play" if paused else "Pause"
 	speed_label.text = "x" + _fmt_mult(speed_mult)
 	time_label.text = "t = %s" % _fmt_time(sim_time)
-	bodies_label.text = "%d bodies" % n
+	bodies_label.text = "%d bodies" % n if clouds == 0 else "%d bodies + %d debris clouds" % [n,clouds]
 	bodies_label.add_theme_color_override("font_color", C_WARN if n > max_n * 0.85 else C_DIM)
 	if status_label.text == "Physics offline":
 		perf_label.text = ""

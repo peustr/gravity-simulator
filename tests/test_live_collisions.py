@@ -121,7 +121,7 @@ def test_callback_defers_all_changes_and_deduplicates_reversed_pair():
 
 
 @pytest.mark.parametrize('failure,reason', [
-    ('unknown', 'known spin'), ('spin', 'nonrotating'), ('type', 'rocky planets'),
+    ('unknown', 'known spin'), ('spin', 'nonrotating'), ('type', 'selected solid-impact calibration'),
     ('third', 'External tidal'), ('external_invalid', 'External gravity mass'),
     ('gravity', 'Newtonian G'), ('legacy', 'physical units'),
     ('deep', 'shallow surface'), ('fragments', 'Multiple remnants'), ('missing_id', 'body IDs'),
@@ -265,15 +265,19 @@ def test_unchanged_smash_preset_runs_calibrated_disruption_and_closes_budgets(ca
     assert w.settings['collisions'] == 'auto'
 
 
-def test_smash_insufficient_capacity_preserves_the_unapplied_encounter():
-    w = W.World(max_bodies=20,seed=42)
+def test_smash_insufficient_particle_capacity_preserves_debris_in_a_live_shell():
+    from diagnostics import conservation_report
+    w = W.World(max_bodies=2,seed=42)
     w.load_preset('smash')
+    initial = conservation_report(w)
     for _ in range(240):
         w.advance(1/60,time.perf_counter()+1)
-    assert w.paused and w.sim.N == 2 and not w.events
-    assert 'Insufficient body capacity' in w.notices[-1]['text']
-    assert sorted(p.m for p in w.sim.particles) == [.0026,.003]
-    assert all(md['inventory'] == BodyInventory() for md in w.meta.values())
+    report = conservation_report(w)
+    assert not w.paused and w.sim.N == 1 and len(w.shells) == 1
+    assert report['current']['unresolved_fragments'] == 20
+    assert report['current']['mass_kg'] == pytest.approx(initial['current']['mass_kg'],rel=1e-14)
+    assert abs(report['relative_energy_change']) < 1e-10
+    assert [e[0] for e in w.events] == [W.EV_SHATTER]
 
 
 @pytest.mark.parametrize('capacity', [21, 22, 600])
@@ -289,7 +293,7 @@ def test_existing_smash_with_added_sun_runs_or_refuses_without_discarding_materi
         w.advance(1/60, time.perf_counter()+1)
     if capacity == 21:
         assert w.paused and w.sim.N == 3 and not w.events
-        assert 'Insufficient body capacity' in w.notices[-1]['text']
+        assert 'Insufficient body or supported reservoir capacity' in w.notices[-1]['text']
         return
     assert not w.paused and not w.notices and w.sim.N == w.sim.N_active == 22
     after = collision_budget(states(w))

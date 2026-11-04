@@ -30,14 +30,14 @@ produces `None` for that member. Later callbacks in the same step see an unknown
 inventory for a previously merged survivor. Classification/construction must check
 model applicability separately; a captured state is not an acceptance certificate.
 
-Version-4 scene files require each body's `inventory` to be either null or an
+Version-4/5 scene files require each body's `inventory` to be either null or an
 object containing exactly `spin_kg_m2_s` (three finite SI components, magnitudes
 at most 10¹⁰⁰) and `internal_energy_j` (finite, 0–10¹⁰⁰ J). Legacy-unit scenes
 permit only null. Versions 1–3 load with unknown inventories while preserving
 their existing body data and version-specific physics settings. Visual heat
 cannot reconstruct missing internal energy. Invalid files are rejected before
-the live world is replaced. Reservoir persistence is not supported yet. Live
-diagnostics and removal accounting still measure orbital quantities only.
+the live world is replaced. Version-5 files also persist [compact ejecta](unresolved-debris.md), solver selection,
+model/numerical history and a complete signed physical-loss ledger.
 
 ## Automatic model selection
 
@@ -56,7 +56,7 @@ still mark affected inventories unknown; visual cooling is not energy evolution.
 External gravity needs only mass, radius and position, so unknown external heat
 or spin does not become an invented inventory or block an otherwise valid pair.
 
-Version-1/2 saves retain tracer/heuristic defaults. Version-3/4 files retain their
+Version-1/2 saves retain tracer/heuristic defaults. Version-3/4/5 files retain their
 stored settings; an omitted collision field means heuristic. Current saves and
 restart points preserve automatic mode explicitly. The old isolated modes retain
 their restrictions, including disabled removal, tides and supernovae.
@@ -94,13 +94,13 @@ Tidal shredding, supernovae and automatic removal are disabled in this mode.
 Orbital stepping and visual cooling continue. A spinning survivor retains its
 inventory, but another collision involving it is rejected because the calibration
 requires nonrotating inputs. Older saves omitting `collisions` use
-`heuristic`; version-4 files persist the selected mode. Existing saves with unknown
+`heuristic`; current files persist the selected mode. Existing saves with unknown
 inventories cannot supply calibrated input states. Switch modes explicitly or
 prepare supported initial conditions before resuming a rejected encounter.
 
 `isolated_impacts`, available through saved settings or the physics command,
 also constructs separated remnants. Automatic mode uses the same construction
-for rocky pairs. It retains the same pairwise, material and spin restrictions.
+for supported solid pairs. It retains the same pairwise, material and spin restrictions.
 For hit-and-run with no stripped mass, both bodies remain at reconstructed
 surface contact with their original masses, radii, spin and existing heat.
 A frictionless normal impulse reverses approach with restitution `sqrt(0.5)`;
@@ -112,13 +112,15 @@ preserves camera follow and selection of either survivor.
 
 For other separated outcomes, the resolved policy keeps the classified largest remnant and
 runner, and divides debris equally into the minimum number of fragments no
-heavier than the largest remnant, at most 32 bodies total. A deterministic
+heavier than the largest remnant, at most 32 bodies total. Head-on single-remnant outcomes use the next supported
+vertex-transitive shell count (4, 6, 8, 12, 20 or 30). A deterministic
 spherical shell at eight combined-volume radii supplies offsets; a two-remnant
 layout follows the contact axis. Half of the available post-binding/rotation
 energy feeds expansion and half becomes internal energy. These are explicit
 resolution/geometry prescriptions, not calibrated ejecta distributions. All
 budgets and the escape certificate must pass before live mutation. Insufficient
-body slots pause the intact encounter; no unresolved reservoir is yet applied.
+body slots select the compact representation for supported symmetric ejecta;
+other layouts pause intact. See [compact ejecta](unresolved-debris.md).
 Constructed radii and inventories survive save/restart. Benchmarks report the
 complete SI body inventory separately from orbital-only diagnostics.
 
@@ -147,15 +149,15 @@ from Planet smash permits the impact; a sufficiently close star is rejected.
 
 ## Spherical energies
 
-The application's **Experiment → Conservation report** uses these same spherical
-inventory conventions for all resolved bodies. Its baseline is saved as optional
-version-4 comparison metadata; older files start without a baseline. Clear and
-preset loading reset it. Values affected by unknown inventories or surface overlap
-are unavailable. Changes compare remaining bodies in the fixed simulation-origin
-frame, without correcting for edits, removal or heuristic transformations.
-The energy-change normalisation uses the larger sum of absolute energy components
-at the baseline and current snapshot. It is a scale for comparison, not a measured
-numerical error or a complete loss/reservoir ledger.
+The application's **Experiment → Conservation report** uses these spherical
+inventory conventions for resolved bodies and compact ejecta. The optional
+baseline is saved; Clear and presets reset it. Unknown inventories or invalid
+surface overlaps make affected quantities unavailable. Reports show raw changes
+and conservation residuals corrected for explicit boundary removal, user edits
+and heuristic transformations. The signed loss ledger retains complete
+aggregates and the last 64 event details. Missing inventories remain unknown.
+Model potential offsets, force-defect impulse and cumulative shell-step energy
+drift are separate diagnostics; none is silently converted to heat.
 
 For mass m, radius R and spin angular momentum **S**, the uniform-sphere model is:
 

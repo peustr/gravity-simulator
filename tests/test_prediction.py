@@ -58,7 +58,7 @@ def test_failed_forecast_returns_only_finite_partial_path(monkeypatch, failure):
             original(sim, *args, **kwargs)
     monkeypatch.setattr(rebound.Simulation, 'steps', step)
     result = predict(w, samples=10, wall_budget=1)
-    assert calls == 2 and len(result['points']) == 1
+    assert calls == 2 and len(result['points']) == (1 if failure == 'nonfinite' else 2)
     assert not result['complete']
     assert np.isfinite(result['points']).all()
     assert w.sim.t == 0 and np.isfinite(w.snapshot()['xyz']).all()

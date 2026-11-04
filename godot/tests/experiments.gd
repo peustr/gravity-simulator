@@ -80,7 +80,7 @@ func _run() -> void:
 	if not main.hud.conservation_report.get("ok", false) or main.hud.conservation_report.current.bodies != 6:
 		_fail("Conservation report lost the current scene")
 		return
-	if not "Internal energy" in main.hud.conservation_dialog.dialog_text:
+	if not "Internal energy" in main.hud.conservation_text.text:
 		_fail("Conservation report omitted intrinsic energy")
 		return
 	main.hud.conservation_dialog.hide()
@@ -210,7 +210,7 @@ func _run() -> void:
 		_fail("Physical inspector fields did not reach the HUD")
 		return
 	# Preserve integer tokens; Godot parses JSON numbers as floats.
-	var legacy := FileAccess.get_file_as_string(path).replace('"version":4', '"version":1')
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":5', '"version":1')
 	var migration_file := FileAccess.open(path, FileAccess.WRITE)
 	migration_file.store_string(legacy)
 	migration_file.close()

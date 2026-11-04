@@ -52,6 +52,7 @@ var server_speed := DEFAULT_SPEED
 var paused := false
 var perf := 1.0
 var max_bodies := 600
+var cloud_count := 0
 
 # Interaction state
 var tool := -1
@@ -295,9 +296,12 @@ func _on_state(f: PackedFloat32Array) -> void:
 
 	var seen := {}
 	var positions := {}
+	cloud_count = 0
 	for i in range(n):
 		var o := HEADER + i * BODY
 		var id := int(f[o])
+		if id < 0:
+			cloud_count += 1
 		var btype := int(f[o + 1])
 		var pos := Vector3(f[o + 2], f[o + 3], f[o + 4])
 		var view = views.get(id)
@@ -340,7 +344,7 @@ func _remove_view(id: int) -> void:
 func _on_event(kind: int, pos: Vector3, magnitude: float, size: float, a: int, b: int) -> void:
 	effects.spawn_event(kind, pos, magnitude, size)
 	# Keep following / inspecting the survivor of a merger.
-	if kind in [Palette.EV_MERGE, Palette.EV_SHATTER, Palette.EV_SWALLOW]:
+	if kind in [Palette.EV_MERGE, Palette.EV_SHATTER, Palette.EV_SWALLOW, Palette.EV_ACCRETION, Palette.EV_EROSION]:
 		if b == follow_id and a >= 0:
 			follow_id = a
 		if b == selected_id and a >= 0:
@@ -381,6 +385,10 @@ func _event_text(kind: int, a: int, b: int) -> Array:
 			return ["Catastrophic impact - debris everywhere!", Color(1.0, 0.65, 0.4)]
 		Palette.EV_HIT_AND_RUN:
 			return ["Hit-and-run impact - both bodies survived", Color(1.0, 0.85, 0.6)]
+		Palette.EV_ACCRETION:
+			return ["Partial accretion - the larger body grew and released debris", Color(1.0, 0.85, 0.6)]
+		Palette.EV_EROSION:
+			return ["Erosive impact - the larger body lost material", Color(1.0, 0.75, 0.5)]
 		Palette.EV_SWALLOW:
 			if small or na == "":
 				return []
@@ -455,7 +463,7 @@ func _process(delta: float) -> void:
 	_stats_timer -= delta
 	if _stats_timer <= 0.0:
 		_stats_timer = 0.2
-		hud.set_stats(display_time, views.size(), max_bodies, server_speed / DEFAULT_SPEED, paused, perf)
+		hud.set_stats(display_time, views.size()-cloud_count, max_bodies, server_speed / DEFAULT_SPEED, paused, perf, cloud_count)
 		hud.time_label.text = "t = " + _physical_value(display_time, "time_s", "days", 1.0 / 86400.0)
 		_update_inspector()
 		if not net.connected and _alive > 1.6:
@@ -477,6 +485,8 @@ func _update_motion(delta: float) -> void:
 	motion.advance(elapsed, server_speed, paused, net.connected)
 	display_time = motion.time
 	for id in views:
+		if id < 0:
+			continue
 		var v = views[id]
 		v.position = motion.position_for(id, v.base_pos)
 		v.set_display_size(display_scale, _world_per_px(v.position))
@@ -757,7 +767,7 @@ func _select(id: int) -> void:
 
 
 func _start_follow(id: int) -> void:
-	if not views.has(id):
+	if id < 0 or not views.has(id):
 		return
 	follow_id = id
 	rig.following = true
