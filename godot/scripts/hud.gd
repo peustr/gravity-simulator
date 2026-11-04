@@ -8,6 +8,7 @@ signal speed_step(direction: int)
 signal preset_chosen(preset: String)
 signal scene_action(action: String)
 signal physics_changed(settings: Dictionary)
+signal conservation_requested(reset: bool)
 signal clear_requested
 signal follow_requested
 signal delete_requested
@@ -36,6 +37,8 @@ const C_BAD := Color(1.0, 0.45, 0.4)
 var root: Control
 var physics_menu: PopupMenu
 var physics_settings := {}
+var conservation_dialog: AcceptDialog
+var conservation_report := {}
 var ui_visible := true
 var tool_buttons := {}
 var _tool_group := ButtonGroup.new()
@@ -292,6 +295,9 @@ func _build_top_bar() -> void:
 	file_menu.add_check_item("Automatic collision models", 14)
 	file_menu.add_item("Waiting for physics settings...", 13)
 	file_menu.set_item_disabled(file_menu.get_item_index(13), true)
+	file_menu.add_separator("Accounting")
+	file_menu.add_item("Conservation report...", 15)
+	file_menu.add_item("Reset conservation baseline", 16)
 	file_menu.id_pressed.connect(_experiment_action)
 	h.add_child(files)
 	var clear := _button("Clear", "Remove everything")
@@ -305,6 +311,8 @@ func _build_top_bar() -> void:
 func _experiment_action(id: int) -> void:
 	if id < 4:
 		scene_action.emit(["save_scene", "load_scene", "checkpoint", "restart"][id])
+	elif id in [15, 16]:
+		conservation_requested.emit(id == 16)
 	elif not physics_settings.is_empty():
 		match id:
 			10:
@@ -318,6 +326,38 @@ func _experiment_action(id: int) -> void:
 					physics_changed.emit({"collisions": "heuristic"})
 				else:
 					physics_changed.emit({"collisions": "auto", "gravity": "full"})
+
+
+func _budget_value(value, unit: String = "") -> String:
+	if value == null:
+		return "Unavailable"
+	if value is Array:
+		return "[%s, %s, %s] %s" % [_budget_value(value[0]), _budget_value(value[1]), _budget_value(value[2]), unit]
+	return ("0" if float(value) == 0.0 else Palette._scientific(float(value))) + (" " + unit if unit != "" else "")
+
+
+func show_conservation(report: Dictionary) -> void:
+	conservation_report = report
+	if conservation_dialog == null:
+		conservation_dialog = AcceptDialog.new()
+		conservation_dialog.title = "Resolved-body conservation report"
+		root.add_child(conservation_dialog)
+	if not report.get("ok", false):
+		conservation_dialog.dialog_text = str(report.get("error", "Report unavailable"))
+	else:
+		var current: Dictionary = report.current
+		var change: Dictionary = report.changes
+		var text := "Snapshot: %.3f days · Baseline: %.3f days\n" % [float(current.time_s) / 86400.0, float(report.baseline.time_s) / 86400.0]
+		text += "%d bodies · %d unknown inventories · %d tracers · %d removed since baseline\n\n" % [current.bodies, current.unknown_inventories, current.tracers, report.removed_since_baseline]
+		for row in [["Mass", "mass_kg", "kg"], ["Momentum", "momentum_kg_m_s", "kg m/s"], ["Total angular momentum", "angular_momentum_kg_m2_s", "kg m²/s"], ["Total energy", "energy_j", "J"]]:
+			text += "%s: %s\n  Change: %s\n" % [row[0], _budget_value(current[row[1]], row[2]), _budget_value(change[row[1]], row[2])]
+		text += "\nOrbital angular momentum: %s\nSpin angular momentum: %s\n" % [_budget_value(current.orbital_angular_momentum_kg_m2_s, "kg m²/s"), _budget_value(current.spin_angular_momentum_kg_m2_s, "kg m²/s")]
+		for row in [["Translational kinetic", "translational_energy_j"], ["Rotational kinetic", "rotational_energy_j"], ["Self-binding", "self_binding_j"], ["Mutual potential", "mutual_potential_j"], ["Internal", "internal_energy_j"]]:
+			text += "%s energy: %s\n" % [row[0], _budget_value(current[row[1]], "J")]
+		text += "Energy change / component scale: %s\n\n" % _budget_value(report.relative_energy_change)
+		text += "Changes include edits, model effects and removed bodies.\nHomogeneous-sphere binding; excludes radiation and rest-mass energy.\nUnknown inventories or overlapping surfaces make affected totals unavailable."
+		conservation_dialog.dialog_text = text
+	conservation_dialog.popup_centered()
 
 
 func set_physics(info: Dictionary) -> void:

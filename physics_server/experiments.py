@@ -8,6 +8,7 @@ from commands import integer, number, vector
 from body_state import BodyInventory
 import world as W
 import units
+from diagnostics import validate_baseline
 
 MAX_FILE_BYTES = 4 * 1024 * 1024
 DEFAULT_CAMERA = dict(focus=[0, 0, 0], distance=400.0, pitch=0.6, yaw=0.5, display_scale=1.0)
@@ -38,7 +39,7 @@ def capture(world, camera):
                 time=world.sim.t, speed=world.speed, paused=world.paused,
                 max_bodies=world.max_bodies, next_id=world._next_id,
                 rng=world.rng.getstate(), supernova_queue=list(world._supernova_queue),
-                camera=camera_state(camera))
+                camera=camera_state(camera), conservation_baseline=validate_baseline(world.conservation_baseline))
 
 
 def restore(data):
@@ -70,6 +71,7 @@ def restore(data):
                 number(value, -1e100, 1e100)
         world.removed = json.loads(json.dumps(removed))
     world.sim.t = number(data['time'], 0, 1e20)
+    world.conservation_baseline = validate_baseline(data.get('conservation_baseline'))
     world.speed = number(data['speed'], 0.05, 2000)
     if type(data['paused']) is not bool:
         raise ValueError('Invalid pause state')

@@ -121,6 +121,7 @@ func _ready() -> void:
 	add_child(scene_files)
 	hud.scene_action.connect(scene_files.choose)
 	hud.physics_changed.connect(func(settings: Dictionary): net.send({"cmd": "physics", "settings": settings}))
+	hud.conservation_requested.connect(func(reset: bool): net.send({"cmd": "conservation", "reset": reset}))
 	hud.tool_selected.connect(_set_tool)
 	hud.mass_changed.connect(func(_t, _m): _clear_prediction())
 	hud.pause_toggled.connect(_toggle_pause)
@@ -236,6 +237,8 @@ func _on_message(msg: Dictionary) -> void:
 		"physics":
 			hud.set_physics(msg)
 			hud.toast("Physics settings updated. Save or set a restart point to keep them.")
+		"conservation":
+			hud.show_conservation(msg)
 		"preset":
 			var cam: Dictionary = msg.get("camera", {})
 			var f: Array = cam.get("focus", [0, 0, 0])

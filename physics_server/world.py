@@ -204,6 +204,7 @@ class World:
 
     # ------------------------------------------------------------------ setup
     def _new_simulation(self):
+        self.conservation_baseline = None
         self.ledger = None  # opt-in accounting applies to one world history
         self.removed = dict(bodies=0, mass=0.0, momentum=[0.0] * 3, angular_momentum=[0.0] * 3,
                             energy=0.0, energy_defined=True)

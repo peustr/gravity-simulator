@@ -263,6 +263,14 @@ New saves use version-4 JSON with an explicit unit/radius-model identifier, phys
 
 New scenes and all presets use **automatic collision models** and **full gravity**. Rocky–rocky impacts use calibrated, conserved outcomes; other body pairs retain their documented heuristic models. Tides, supernovae and distant-body removal remain available. Unsupported rocky impacts pause intact with an explanation, including strong external fields, simultaneous contacts, unknown incoming inventories/spin, insufficient fragment slots or explicitly selected tracer gravity. **Experiment → Automatic collision models** can be unchecked for heuristic-only comparisons. Fragment positions and energy splits remain prescribed approximations. Older saves retain their recorded model; see [configuration and limits](docs/collision-budgets.md#automatic-model-selection).
 
+**Experiment → Conservation report** shows resolved-body mass, momentum, orbital
+and spin angular momentum, and kinetic, binding, mutual and internal energies in
+SI units. The first report sets a comparison baseline; use **Reset conservation
+baseline** for a new comparison. The baseline survives scene save/restart.
+Unknown inventories and overlapping surfaces make affected totals unavailable.
+Changes include edits, model effects and removed bodies; they are not an estimate
+of integrator error. Reports are calculated only when requested.
+
 Version-1 scenes load automatically in **legacy sandbox units**, retaining all original values and exaggerated contact-radius rules; re-saving preserves that label. They are not silently converted to physical scenes. Clear or choose a preset to start a new physical scene.
 
 Saves use versioned JSON (maximum 4 MiB), are validated before loading, and replace existing files atomically. Success is shown only after the physics server confirms it. If confirmation times out, check the connection and file before trying again: an operation may have completed even if its reply was lost. Restart points live in the server session; save to disk to keep an experiment after closing the app.

@@ -37,6 +37,7 @@ except ImportError as exc:  # friendly message instead of a stack trace
 import world as W
 import experiments
 import units
+from diagnostics import conservation_report
 from commands import validate
 
 PROTOCOL_VERSION = 2
@@ -225,6 +226,12 @@ class Server:
         elif cmd == "physics":
             w.configure(msg['settings'])
             self.send_json(dict(type='physics', **w.gravity_summary()), addr)
+        elif cmd == "conservation":
+            try:
+                report = dict(ok=True, **conservation_report(w, reset=msg.get('reset', False)))
+            except ValueError as exc:
+                report = dict(ok=False, error=str(exc))
+            self.send_json(dict(type='conservation', **report), addr)
         elif cmd == "clear":
             w.clear()
             self.checkpoint = experiments.capture(w, experiments.DEFAULT_CAMERA)

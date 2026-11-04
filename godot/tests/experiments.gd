@@ -73,6 +73,26 @@ func _run() -> void:
 	if main.hud.physics_settings.get("collisions") != "auto":
 		_fail("Preset did not enable automatic collision models")
 		return
+	main.hud.physics_menu.id_pressed.emit(15)
+	if not await _until(func(): return not main.hud.conservation_report.is_empty()):
+		_fail("Conservation report did not arrive")
+		return
+	if not main.hud.conservation_report.get("ok", false) or main.hud.conservation_report.current.bodies != 6:
+		_fail("Conservation report lost the current scene")
+		return
+	if not "Internal energy" in main.hud.conservation_dialog.dialog_text:
+		_fail("Conservation report omitted intrinsic energy")
+		return
+	main.hud.conservation_dialog.hide()
+	main.hud.conservation_report = {}
+	main.hud.physics_menu.id_pressed.emit(16)
+	if not await _until(func(): return not main.hud.conservation_report.is_empty()):
+		_fail("Conservation baseline reset did not arrive")
+		return
+	if main.hud.conservation_report.relative_energy_change != 0:
+		_fail("Reset baseline retained an energy difference")
+		return
+	main.hud.conservation_dialog.hide()
 	main.follow_id = 2
 	main.selected_id = 2
 	main._on_event(main.Palette.EV_HIT_AND_RUN, Vector3.ZERO, 1.0, 0.01, 1, 2)

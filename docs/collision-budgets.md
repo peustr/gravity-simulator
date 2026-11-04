@@ -147,6 +147,16 @@ from Planet smash permits the impact; a sufficiently close star is rejected.
 
 ## Spherical energies
 
+The application's **Experiment → Conservation report** uses these same spherical
+inventory conventions for all resolved bodies. Its baseline is saved as optional
+version-4 comparison metadata; older files start without a baseline. Clear and
+preset loading reset it. Values affected by unknown inventories or surface overlap
+are unavailable. Changes compare remaining bodies in the fixed simulation-origin
+frame, without correcting for edits, removal or heuristic transformations.
+The energy-change normalisation uses the larger sum of absolute energy components
+at the baseline and current snapshot. It is a scale for comparison, not a measured
+numerical error or a complete loss/reservoir ledger.
+
 For mass m, radius R and spin angular momentum **S**, the uniform-sphere model is:
 
 ```text
