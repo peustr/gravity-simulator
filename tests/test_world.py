@@ -64,7 +64,7 @@ def test_overlap_check_includes_other_bodies_and_precedes_velocity_kick():
 
 @pytest.mark.parametrize('paused', [False, True])
 @pytest.mark.parametrize('preset, expected', [
-    ('solar', 1), ('binary', 10), ('black_hole', .05), ('smash', .05),
+    ('solar', 1), ('binary', 10), ('black_hole', .005), ('smash', .05),
     ('formation', .005), ('galaxies', 8), ('empty', 10),
 ])
 def test_preset_speed_is_independent_of_previous_scene(preset, expected, paused):

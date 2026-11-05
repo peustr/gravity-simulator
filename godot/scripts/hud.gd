@@ -22,7 +22,7 @@ const ImpactPanel = preload("res://scripts/impact_panel.gd")
 const PRESETS := [
 	["solar", "Solar system", "A Sun, rocky planets, gas giants and moons at physical orbital distances."],
 	["binary", "Binary stars", "Two suns locked in orbit, with planets on the edge of chaos."],
-	["black_hole", "Black hole feast", "Illustrative tidal breakup: some debris is captured, some escapes. No viscous accretion model."],
+	["black_hole", "Black hole feast", "Plunging star: tidal breakup and capture. R: whole system. No viscous accretion model."],
 	["smash", "Planet smash", "Two Earths on a collision course."],
 	["formation", "Planet formation", "Late-stage rocky accretion: four approaching embryo pairs in a disk. R: view whole system."],
 	["galaxies", "Tidal encounter", "Two gravitating particle disks around black holes form tidal tails."],

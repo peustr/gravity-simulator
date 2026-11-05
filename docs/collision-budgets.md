@@ -28,7 +28,8 @@ inputs.
 
 Versions 1–3 load with unknown intrinsic inventories. Version 4 adds per-body
 spin/internal energy; version 5 also saves compact ejecta, ownership IDs, solver,
-error history, explicit-loss ledger and comparison baseline. Legacy-unit bodies
+error history, explicit-loss ledger and comparison baseline. Version 6 preserves
+tidal volume-sample identities and inherited radii across restart. Legacy-unit bodies
 retain null inventories. Restoration validates a separate world before replacing
 the live one. See [compact ejecta](unresolved-debris.md) and
 [orbital restart semantics](orbital-dynamics.md).

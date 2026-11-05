@@ -15,14 +15,19 @@ def _pairs(count):
     return np.triu_indices(count, 1)
 
 
-def _contact_geometry(sim):
+def _contact_geometry(sim, collisionless=()):
     m, r = np.empty(sim.N), np.empty(sim.N)
     sim.serialize_particle_data(m=m, r=r)
     if sim.N_active < sim.N:
         m[sim.N_active:] = 0
     i, j = _pairs(sim.N)
+    radius = r[i] + r[j]
+    if collisionless:
+        gas = np.zeros(sim.N, dtype=bool)
+        gas[list(collisionless)] = True
+        radius[gas[i] & gas[j]] = 0
     vectors = [np.empty((len(i), 3)) for _ in range(3)]
-    return i, j, r[i] + r[j], sim.G * m[i], sim.G * m[j], np.empty(3 * sim.N), np.empty(3 * sim.N), *vectors
+    return i, j, radius, sim.G * m[i], sim.G * m[j], np.empty(3 * sim.N), np.empty(3 * sim.N), *vectors
 
 
 def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION, *, _geometry=None, extra_acceleration=None):
@@ -103,7 +108,8 @@ class ContactGuard:
     The interval is capped by the earliest pair approach scale, and no step
     crosses its end. Recompute after edits, collisions or fragment generation.
     """
-    def __init__(self):
+    def __init__(self, *, collisionless=()):
+        self.collisionless = frozenset(collisionless)
         self.reset()
 
     def reset(self):
@@ -112,12 +118,12 @@ class ContactGuard:
         self.geometry_key = None
 
     def limit(self, sim, maximum, *, extra_acceleration=None):
-        key = (sim.N, sim.N_active, sim.G)
+        key = (sim.N, sim.N_active, sim.G, self.collisionless)
         if key != self.geometry_key:
             self.reset()
             self.geometry_key = key
         if self.geometry is None:
-            self.geometry = _contact_geometry(sim)
+            self.geometry = _contact_geometry(sim, self.collisionless)
         # Refresh before a proposed step crosses the cached interval. Splitting
         # at its old end can leave a tiny remainder that repeatedly shrinks
         # IAS15's next proposed step, even when every surface is still distant.

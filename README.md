@@ -259,7 +259,7 @@ Files preserve body IDs, types, masses, radii, positions, velocities, heat and a
 
 The **Experiment** menu also controls full gravity for debris, inclusion of all bodies in forecasts, and distant-body removal. It shows the collective tracer mass fraction. These choices and cumulative removal losses are stored in version-3 and newer saves and restart points; older saves retain their previous approximation defaults. See [orbital dynamics and accuracy controls](docs/orbital-dynamics.md).
 
-New saves use version-5 JSON with unit/radius models, physics settings, body spin/internal-energy inventories, compact ejecta, solver selection and numerical/model/loss histories. Unknown body inventories are null; versions 1–4 remain readable without inventing missing energy or spin. See [physical inventories and migration](docs/collision-budgets.md#persistent-body-inventories).
+New saves use version-6 JSON with unit/radius models, physics settings, body spin/internal-energy inventories, compact ejecta, solver selection, numerical/model/loss histories and tidal volume-sample identities. Unknown body inventories are null; versions 1–5 remain readable without inventing missing energy or spin. See [physical inventories and migration](docs/collision-budgets.md#persistent-body-inventories).
 
 New scenes and all presets use **automatic collision models** and **full gravity**. Rocky–rocky impacts use calibrated, conserved outcomes; other body pairs retain their documented heuristic models. Tides, supernovae and distant-body removal remain available. Unsupported rocky impacts pause intact with an explanation, including strong external fields, simultaneous contacts, unknown incoming inventories/spin, insufficient fragment slots or explicitly selected tracer gravity. **Experiment → Automatic collision models** can be unchecked for heuristic-only comparisons. Fragment positions and energy splits remain prescribed approximations. Older saves retain their recorded model; see [configuration and limits](docs/collision-budgets.md#automatic-model-selection).
 
@@ -377,7 +377,9 @@ The table below describes heuristic models used for other pairs and in explicit 
 
 ### Tides
 
-A fluid Roche estimate uses the victim’s physical radius R and mass m: `r ≈ 2.44 R (M / m)^(1/3)`, if that limit lies outside both bodies. This is a dimensional disruption heuristic, not a material-strength or tidal-evolution model; legacy saves retain their original rule. Its fragments are laid out along the line to the heavy body (spaghettification) and then shear into a stream.
+Stellar encounters use the tidal estimate `r ≈ R (M / m)^(1/3)`; other fluids retain the circular Roche estimate `2.44 R (M / m)^(1/3)`. Legacy saves retain their original threshold. Gas breakup samples the source volume locally in balanced pairs, preserving its mass, centroid, bulk velocity and effective volume. Gravity stretches the samples; no pre-stretched stream or random kick is inserted. These pressureless samples interpenetrate rather than merge as hard spheres. They never ignite by mass alone. The Black hole feast starts with a deep plunging orbit inside the stellar tidal radius.
+
+Solid tidal debris retains its fragment identity when coalescing, preventing repeated planet promotion and breakup. The feast opens on the encounter at slower playback; **R** frames the full system. This is a coarse Newtonian breakup approximation, not hydrodynamics or a material-strength model. The thermal/spin budget and whole-parcel capture prescription remain unvalidated; effective sample radii are not resolved stellar surfaces. Ordinary cloud coalescence retains its separate heuristic.
 
 ### Growing and dying
 

@@ -199,7 +199,7 @@ def test_kilonova_at_capacity_keeps_mass_in_remnant():
 
 @pytest.mark.parametrize('kind,mass,result', [
     (W.ROCKY, W.ROCKY_TO_GAS, W.GAS_GIANT),
-    (W.PLASMA, W.PLASMA_TO_STAR, W.STAR),
+    (W.PLASMA, 300., W.PLASMA),
     (W.ASTEROID, W.ASTEROID_TO_ROCKY, W.ROCKY),
 ])
 def test_promotion_updates_type_radius_and_partition(kind, mass, result):

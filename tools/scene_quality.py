@@ -86,6 +86,8 @@ def birth_geometry(parent, children):
                 limit=1.05,
             )
         )
+    if max(d + r for d, r in zip(offsets, radii, strict=True)) > 1.05:
+        issues.append(issue("source_volume_escape", "New parcel support extends beyond its source volume"))
     masses = [c["mass"] for c in children]
     centre = np.average([c["position"] for c in children], axis=0, weights=masses)
     centre_error = math.dist(centre, parent["position"]) / radius

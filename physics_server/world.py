@@ -43,6 +43,7 @@ from dynamics import ContactGuard, step
 from debris_shell import MAX_SHELLS, ShellIntegrator, approaching_contacts, form_shell, model_defect, shell_energy
 from dataclasses import replace
 from encounters import DEMO_CASES, demo_initial_conditions, incoming_states
+from tidal_debris import source_samples
 
 # REBOUND rebuilds its name lookup table on its own; the warning is just noise.
 warnings.filterwarnings("ignore", message=".*hash table.*")
@@ -51,7 +52,7 @@ G = 1.0  # units.G is unity to floating-point precision
 _INITIAL_INVENTORY = BodyInventory()
 MAX_BODIES = 1321  # 11 + 12*N + 8*64 float32 values must fit IPv4 UDP (65507 bytes).
 SCENARIOS = ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty")
-PRESET_SPEEDS = dict(solar=1.0, binary=10.0, black_hole=0.05, smash=0.05,
+PRESET_SPEEDS = dict(solar=1.0, binary=10.0, black_hole=0.005, smash=0.05,
                     formation=0.005, galaxies=8.0, empty=10.0)
 
 # --- Body types (must match godot/scripts/palette.gd) -------------------------
@@ -81,7 +82,6 @@ DEFAULT_MASS = {
 ASTEROID_TO_ROCKY = 3e-4    # about a Mars mass: a proper planet
 ROCKY_TO_GAS = 0.03         # ~10 Earths: runaway gas accretion begins
 GAS_TO_STAR = 80.0          # ~80 Jupiters: the hydrogen-burning limit
-PLASMA_TO_STAR = 300.0      # a hot gas cloud that heavy collapses into a star
 NEUTRON_TO_BH = 2300.0      # ~2.3 Suns: the maximum neutron star mass (TOV limit)
 STAR_COLLAPSE = 40000.0     # merged stars this heavy go supernova on the spot
 
@@ -362,6 +362,7 @@ class World:
         n = sim.N
         if n == 0:
             sim.N_active = 0
+            self._contact_guard.collisionless = frozenset()
             return
         self._refresh_names()
         m = np.zeros(n)
@@ -381,6 +382,10 @@ class World:
         if swapped:
             self._names_dirty = True
             self.sim.did_modify_particles = 1
+        self._refresh_names()
+        self._contact_guard.collisionless = frozenset(
+            i for i, name in enumerate(self._names)
+            if self.meta[name]['type'] == PLASMA and self.meta[name].get('tidal_sample', False))
 
     def remove_body(self, bid) -> bool:
         name = str(int(bid))
@@ -597,6 +602,8 @@ class World:
         # the survivor before another callback can capture it this step.
         if s.name in self.meta:
             self.meta[s.name]['inventory'] = None
+            if self.meta[s.name]['type'] in (ASTEROID, PLASMA) and self.meta.get(r.name, {}).get('tidal_sample', False):
+                self.meta[s.name]['tidal_sample'] = True
         if M > 0:
             inv = 1.0 / M
             s.x = (ms * s.x + mr * r.x) * inv
@@ -606,6 +613,9 @@ class World:
             s.vy = (ms * s.vy + mr * r.vy) * inv
             s.vz = (ms * s.vz + mr * r.vz) * inv
             s.m = M
+            if self.meta.get(s.name, {}).get('tidal_sample', False):
+                # Retain the parcel's density/volume scale when it gains mass.
+                s.r *= (M / ms)**(1 / 3)
 
     def _resolve_collision(self, sim_ptr, collision):
         """Called by REBOUND (from C) when two bodies overlap.
@@ -621,6 +631,9 @@ class World:
             if i == j:
                 return 0
             pi, pj = ps[i], ps[j]
+            if all(self.meta.get(p.name, {}).get('type') == PLASMA
+                   and self.meta[p.name].get('tidal_sample', False) for p in (pi, pj)):
+                return 0  # Pressureless volume samples interpenetrate; they are not hard spheres.
             s, r, rec = self._collision_record(pi, pj)
             keep_i = s.name == pi.name
             if self.settings['collisions'] != 'heuristic':
@@ -947,8 +960,6 @@ class World:
             btype = GAS_GIANT
         if btype == GAS_GIANT and m >= GAS_TO_STAR:
             btype = STAR
-        if btype == PLASMA and m >= PLASMA_TO_STAR:
-            btype = STAR
         if btype == NEUTRON_STAR and m >= NEUTRON_TO_BH:
             btype = BLACK_HOLE
         return btype
@@ -958,6 +969,11 @@ class World:
         if meta is None:
             return
         old = meta["type"]
+        if meta.get('tidal_sample', False):
+            # No fragment reassembly law: retain its material/radius instead
+            # of promoting it back into the same tidal breakup repeatedly.
+            self._partition_dirty = True
+            return
         new = self._promoted_type(old, p.m)
         radius = self.radius_for(new, p.m)
         if new != old or radius != p.r:
@@ -1049,8 +1065,10 @@ class World:
                 dens = np.array([TIDAL_DENSITY[types[i]] for i in cand])
                 r_t = TIDAL_K * np.cbrt(m[h] / dens)
             else:
-                # Fluid Roche estimate using the victim's actual bulk radius.
-                r_t = 2.44 * r[cand] * np.cbrt(m[h] / m[cand])
+                # A single stellar encounter uses the stellar tidal radius;
+                # 2.44 is the circular, synchronous fluid Roche coefficient.
+                factor = np.array([1.0 if types[i] == STAR else 2.44 for i in cand])
+                r_t = factor * r[cand] * np.cbrt(m[h] / m[cand])
             valid = r_t > (r[h] + r[cand]) * 1.05
             self._tidal_pairs = h[valid], cand[valid], r_t[valid] ** 2
             self._tidal_xyz = np.empty(3 * self.sim.N)
@@ -1071,8 +1089,8 @@ class World:
         vm = self.meta.get(victim_name)
         if pv is None or ph is None or vm is None:
             return
-        n = min(14, self.capacity + 1)
-        if n < 3:
+        n = min(14, self.capacity + 1) // 2 * 2
+        if n < 4:
             return
         physical_before = self.physical_loss_ledger.capture(self)
         vt = vm["type"]
@@ -1083,23 +1101,16 @@ class World:
         vel = (pv.vx, pv.vy, pv.vz)
         hpos = (ph.x, ph.y, ph.z)
         axis = _unit(_sub(pos, hpos))
-        dist = _norm(_sub(pos, hpos))
-        w = [self.rng.uniform(0.7, 1.3) for _ in range(n)]
-        sw = sum(w)
-        masses = [M * x / sw for x in w]
-        rf = max(self.radius_for(frag_type, mf) for mf in masses)
-        span = max(2.5 * rv, n * 2.3 * rf)
-        span = min(span, max(2.2 * rf * n, 2 * (dist - ph.r - 2 * rf)))
         perp = _unit(_cross(axis, (0.0, 1.0, 0.0)), (0.0, 0.0, 1.0))
+        normal = _cross(axis, perp)
         vid, hid = int(victim_name), int(heavy_name)
         self.remove_body(vid)
-        for k, mf in enumerate(masses):
-            s = (k / (n - 1) - 0.5) * span
-            jitter = _mul(perp, self.rng.uniform(-0.3, 0.3) * rv)
-            fpos = _add(_add(pos, _mul(axis, s)), jitter)
-            fvel = _add(vel, _mul(self._rand_unit(), 0.02 * _norm(vel) + 0.01))
+        for offset, rf in source_samples(rv, n):
+            fpos = _add(pos, _add(_mul(axis, offset[0]), _add(_mul(perp, offset[1]), _mul(normal, offset[2]))))
             # Debris stays debris (no promotion), so tides can't shred it again.
-            self.add_body(frag_type, mf, fpos, fvel, heat=1.0, inventory=None)
+            bid = self.add_body(frag_type, M/n, fpos, vel, heat=vm['heat'], inventory=None)
+            self.particle(str(bid)).r = rf
+            self.meta[str(bid)]['tidal_sample'] = True
         self._event(EV_TIDAL, pos, 1.6, rv * 4, hid, vid)
         self.physical_loss_ledger.record('tidal_disruption',physical_before,self.physical_loss_ledger.capture(self))
 
@@ -1265,9 +1276,14 @@ class World:
             mini.add(m=float(snap["m"][i]), r=float(snap["r"][i]),
                      x=float(x), y=float(y), z=float(z), vx=float(vx), vy=float(vy), vz=float(vz))
         mini.N_active = sum(not passive(i) for i in order)
+        gas = frozenset(k for k, i in enumerate(order)
+                        if i != -1 and self.meta[snap['names'][i]]['type'] == PLASMA
+                        and self.meta[snap['names'][i]].get('tidal_sample', False))
         hit = {"flag": False, "stop": False}
 
         def on_collision(sim_ptr, c):
+            if int(c.p1) in gas and int(c.p2) in gas:
+                return 0
             if int(c.p1) == test or int(c.p2) == test:
                 hit["flag"] = True
             # Any collision changes the system. Do not integrate background
@@ -1308,7 +1324,7 @@ class World:
             if np.isfinite(location).all():
                 points.append(tuple(location))
                 times.append(mini.t)
-        guard = ContactGuard()
+        guard = ContactGuard(collisionless=gas)
         forecast_shells = self.shells
         shell_integrator = ShellIntegrator(mini,forecast_shells,self.settings['epsilon']) if forecast_shells else None
         failed = False
@@ -1457,13 +1473,13 @@ class World:
 
         elif name == "black_hole":
             bh = 20000.0
-            self.add_body(BLACK_HOLE, bh, origin, origin)
+            hole_id = self.add_body(BLACK_HOLE, bh, origin, origin)
             # A star on a plunging orbit: it will be torn apart near periapsis.
-            apo, peri = 12.0, 1.2
+            apo, peri = 3.0, 0.05
             sma = (apo + peri) / 2
             mu = G * (bh + 1000)
             v_apo = math.sqrt(mu * (2 / apo - 1 / sma))
-            self.add_body(STAR, 1000.0, (-apo, 0, 0), (0, 0, -v_apo))
+            source_id = self.add_body(STAR, 1000.0, (-apo, 0, 0), (0, 0, -v_apo))
             bp, bv = self.orbit(origin, origin, bh + 1500, 40, 1.2)
             self.add_body(STAR, 1500.0, bp, bv)
             pp, pv = self.orbit(bp, bv, 1500.003, 0.6, 0.0)
@@ -1475,7 +1491,7 @@ class World:
             for _ in range(45):
                 p, v = self.orbit(origin, origin, bh, rng.uniform(55, 75), rng.uniform(0, 6.283), rng.gauss(0, 0.03))
                 self.add_body(ASTEROID, DEFAULT_MASS[ASTEROID], p, v)
-            cam = {"focus": [0, 0, 0], "distance": 90.0, "pitch": 0.35}
+            cam = {"focus": [0, 0, 0], "distance": 6.0, "pitch": 0.35, "display_scale": 0.05}
 
         elif name == "smash":
             self.add_body(ROCKY, 0.003, (-0.4, 0.0, 0.0), (2.5, 0.0, 0.0))
@@ -1526,6 +1542,12 @@ class World:
         if self.sim.N > 1 and name != "galaxies":
             # Zero the total momentum so the scene stays where the camera is.
             self.sim.move_to_com()
+        if name == 'black_hole':
+            # Frame the encounter after the COM translation, not the distant
+            # companion system. R still exposes the complete system.
+            hole = self.particle(str(hole_id))
+            source = self.particle(str(source_id)) if source_id is not None else hole
+            cam['focus'] = [(a+b)/2 for a,b in zip(hole.xyz,source.xyz,strict=True)]
         self._target_t = self.sim.t
         self.version += 1
         return {"type": "preset", "name": name, "camera": cam, "speed": self.speed}

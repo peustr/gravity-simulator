@@ -68,8 +68,9 @@ def capture(world, camera):
         bodies.append(dict(id=int(p.name), type=md['type'], mass=p.m, radius=p.r,
                            pos=[p.x, p.y, p.z], vel=[p.vx, p.vy, p.vz],
                            heat=md['heat'], born=md['born'], inventory=None if inventory is None else
-                           dict(spin_kg_m2_s=list(inventory.spin_kg_m2_s), internal_energy_j=inventory.internal_energy_j)))
-    return dict(format='gravity-simulator', version=5, units=world.units, bodies=bodies,
+                           dict(spin_kg_m2_s=list(inventory.spin_kg_m2_s), internal_energy_j=inventory.internal_energy_j),
+                           **({'tidal_sample': True} if md.get('tidal_sample', False) else {})))
+    return dict(format='gravity-simulator', version=6, units=world.units, bodies=bodies,
                 physics=world.settings.copy(), removed=json.loads(json.dumps(world.removed)),
                 time=world.sim.t, speed=world.speed, paused=world.paused,
                 max_bodies=world.max_bodies, next_id=world._next_id,
@@ -87,7 +88,7 @@ def capture(world, camera):
 
 def restore(data):
     """Build a separate world; callers swap it in only after all validation succeeds."""
-    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2, 3, 4, 5):
+    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2, 3, 4, 5, 6):
         raise ValueError('Unsupported scene format or version')
     camera = camera_state(data.get('camera'))
     world = W.World(max_bodies=data['max_bodies'])
@@ -114,7 +115,7 @@ def restore(data):
                 number(value, -1e100, 1e100)
         world.removed = json.loads(json.dumps(removed))
     world.sim.t = number(data['time'], 0, 1e20)
-    if data['version'] == 5:
+    if data['version'] >= 5:
         if data.get('solver') not in ('ias15','bs') or data.get('shell_model') != 'homologous_polyhedra_v1':
             raise ValueError('Unsupported solver or unresolved-shell model')
         records = data.get('ejecta_shells')
@@ -201,6 +202,10 @@ def restore(data):
         world.add_body(body['type'], mass, body['pos'], body['vel'], heat, inventory=inventory)
         world.particle(str(bid)).r = radius
         world.meta[str(bid)]['born'] = born
+        if 'tidal_sample' in body:
+            if data['version'] < 6 or body['type'] not in (W.PLASMA, W.ASTEROID) or body['tidal_sample'] is not True:
+                raise ValueError('Invalid tidal volume sample')
+            world.meta[str(bid)]['tidal_sample'] = True
     integer(data['next_id'], max(ids, default=0) + 1)
     world._next_id = data['next_id']
     rng = data['rng']

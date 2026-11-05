@@ -145,7 +145,7 @@ cover the delivery requirements below.
 
 | Component | Available behavior | Remaining limitation |
 |---|---|---|
-| Contact state and saves | Immutable impact state; version-5 spin/internal energy, compact ejecta, solver and error/loss histories | Older or heuristically transformed bodies can have unknown inventories |
+| Contact state and saves | Immutable impact state; spin/internal energy, compact ejecta, solver/error/loss histories and tidal-sample identities | Older or heuristically transformed bodies can have unknown inventories |
 | Classification and construction | Planet and small-body controls; live regimes, prescribed conserved layouts and loadable examples | Published domains, incoming spin, strong fields and simultaneous contacts restrict applicability |
 | Unresolved material | Live symmetric ejecta coupled to resolved bodies, disjoint/nested clouds, bounded storage and transactional refusal | Head-on expanding shells only; no surface crossing, recollapse or automatic reconstruction |
 | Diagnostics | SI inventories across bodies/clouds, explicit-loss residuals, model offsets, force-defect and numerical diagnostics | Unknown intrinsic inventories or incomplete loss history leave affected values unavailable |

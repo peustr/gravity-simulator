@@ -42,6 +42,13 @@ def test_geometry_gate_rejects_unbalanced_impulses_and_volume_expansion():
     assert {"source_com_jump", "source_momentum_change", "instant_volume_expansion"} <= codes
 
 
+def test_parcel_centres_alone_do_not_establish_local_birth():
+    parent, children = local_breakup()
+    for child, x in zip(children, (-.8, .8), strict=True):
+        child['position'] = (x, 0, 0)
+    assert 'source_volume_escape' in {i['code'] for i in birth_geometry(parent, children)}
+
+
 def test_independent_pair_collisions_do_not_count_as_multigeneration_formation():
     assert assembly_check({"a": {"a", "b"}, "c": {"c", "d"}})
     assert not assembly_check({"a": {"a", "b", "c"}})

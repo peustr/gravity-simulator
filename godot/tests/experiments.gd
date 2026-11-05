@@ -331,7 +331,7 @@ func _run() -> void:
 		_fail("Physical inspector fields did not reach the HUD")
 		return
 	# Preserve integer tokens; Godot parses JSON numbers as floats.
-	var legacy := FileAccess.get_file_as_string(path).replace('"version":5', '"version":1')
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":6', '"version":1')
 	var migration_file := FileAccess.open(path, FileAccess.WRITE)
 	migration_file.store_string(legacy)
 	migration_file.close()

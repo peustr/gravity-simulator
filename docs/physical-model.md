@@ -46,9 +46,13 @@ has no well-defined material surface: its radius is an explicit effective parcel
 model, with no pressure or hydrodynamics. These choices are approximations,
 not precision mass–radius predictions.
 
-Disruption uses the fluid Roche estimate `2.44 R_victim (M_primary/m_victim)^(1/3)`.
-Strength, spin and orbit-dependent disruption physics remain outside this model.
-The existing impact, promotion and explosion prescriptions remain approximate.
+Stellar disruption uses `R_victim (M_primary/m_victim)^(1/3)`; other fluids use
+the circular Roche coefficient 2.44. Gas breakup uses local, balanced volume
+samples with inherited radii and bulk velocity. They interpenetrate under full
+gravity; no extended stream or random impulse is inserted. Stellar structure,
+pressure, spin/thermal breakup budgets and whole-parcel capture convergence
+remain unvalidated. Impact, promotion and explosion prescriptions retain their
+documented applicability limits.
 
 ## Scenarios and time resolution
 
