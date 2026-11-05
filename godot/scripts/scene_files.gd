@@ -34,7 +34,7 @@ func replace_scene(command: Dictionary) -> void:
 	if not main.net.connected:
 		main.hud.toast("Connect to the physics server first.")
 		return
-	if command.cmd == "preset" and main.views.is_empty():
+	if command.cmd in ["preset", "collision_demo"] and main.views.is_empty():
 		main.apply_scene_change(command)
 		return
 	_confirmed = command.duplicate(true)
@@ -51,7 +51,7 @@ func _accept_confirmation() -> void:
 	if not main.net.connected or not pending.is_empty():
 		main.hud.toast("Scene unchanged. Wait for the connection or current operation, then try again.")
 		return
-	if command.cmd in ["clear", "preset"]:
+	if command.cmd in ["clear", "preset", "collision_demo"]:
 		main.apply_scene_change(command)
 	else:
 		request(command)
@@ -95,7 +95,8 @@ func request(command: Dictionary) -> void:
 	if pending.cmd in ["save_scene", "checkpoint"]:
 		var f: Vector3 = main.rig.focus
 		pending["camera"] = {"focus": [f.x, f.y, f.z], "distance": main.rig.distance,
-			"pitch": main.rig.pitch, "yaw": main.rig.yaw, "display_scale": main.display_scale}
+			"pitch": main.rig.pitch, "yaw": main.rig.yaw, "display_scale": main.display_scale,
+			"follow": main.follow_id}
 	_elapsed = 0.0
 	_retry = 0.0
 	main.net.send(pending)

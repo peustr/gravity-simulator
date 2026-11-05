@@ -50,7 +50,7 @@ Additional features require a scope decision rather than extending its checklist
 - [x] ~~2. Physical units and independent display sizes~~
 - [x] ~~3. Trustworthy orbital dynamics~~
 - [x] ~~4. Credible impact outcomes~~
-- [ ] **Collision demonstration follow-up — active, before Milestone 5**
+- [x] ~~Collision demonstration follow-up~~
 - [ ] **5. Rotation and tidal evolution**
 - [ ] **6. Composition and thermal history**
 - [ ] **7. Stellar evolution and compact objects**
@@ -205,20 +205,22 @@ Make the existing collision physics accessible and its contact/results legible.
 Reuse Milestone 4's laws and shared construction policy. Rotation-dependent laws
 and thermal/material response are delivered in Milestones 5 and 6 respectively.
 
-- [ ] **Selectable encounters.** Planet smash offers gentle merging, intact
+- [x] **Selectable encounters.** Planet smash offers gentle merging, intact
   hit-and-run and disruptive encounters directly in the application, with replay.
   No generated files or manual placement are required to observe these cases.
-- [ ] **Inspectable contact.** Close camera and slow playback make physical
+- [x] **Inspectable contact.** Close camera and slow playback make physical
   surfaces and contact timing observable. Indicate visual enlargement; ensure
   the transient flash leaves the persistent remnants/debris easy to inspect.
-- [ ] **Results and regression.** Show encounter speed/angle, regime and remnant
+- [x] **Results and regression.** Show encounter speed/angle, regime and remnant
   masses, with access to the conservation report. Identify calibrated mass laws
   and prescribed scattering/ejecta choices. Verify all three live encounters,
   resolved/compact budget agreement and continued operation of all seven presets.
+  Planet formation must demonstrate observable embryo mass growth through shared
+  rocky collisions at documented physical timescales.
 
 Done when these three encounters can be selected, watched and replayed through
-the normal UI, with numerical outcomes matching the existing reference gates.
-This follow-up does not reopen the completed Milestone 4 checklist.
+the normal UI, with numerical outcomes matching the existing reference gates;
+Planet formation visibly grows embryos, and all seven presets pass live checks.
 
 ## 5. Rotation and tidal evolution
 
@@ -271,7 +273,7 @@ These are numerical checks, not empirical calibration-error claims.
 Visible outcome: composition, irradiation and deposited heat explain measured
 temperature, phase, radius and atmosphere changes. Solar System demonstrates
 distance/material dependence; Planet smash shows supported impact heating and
-subsequent cooling; Formation retains material inventories through encounters.
+subsequent cooling; Planet formation retains material inventories through encounters.
 
 Use globally averaged material/thermal models with documented energy references
 and validity ranges. Detailed climate, chemistry, fluid flow and hydrodynamic

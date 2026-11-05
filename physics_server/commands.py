@@ -13,9 +13,10 @@ COMMANDS = {
     "remove": "id",
     "supernova": "id",
     "pause": "value (boolean; omit to toggle)",
-    "speed": "value (clamped to 0.05–2000)",
+    "speed": "value (clamped to 0.00001–2000)",
     "clear": "no fields",
     "preset": "name",
+    "collision_demo": "case (merging/hit_and_run/disruption), play (optional boolean)",
     "physics": "settings (gravity, epsilon, forecast_limit, escape_distance, collisions, impact_material; partial updates allowed)",
     "conservation": "reset (optional boolean; replace the comparison baseline)",
     "save_scene": "path, camera, request",
@@ -78,6 +79,10 @@ def validate(msg):
         number(msg.get("value", 10.0), -1e6, 1e6)
     elif cmd == "preset" and msg.get("name", "empty") not in W.SCENARIOS:
         raise ValueError("Unknown scenario")
+    elif cmd == 'collision_demo':
+        from encounters import DEMO_CASES
+        if msg.get('case') not in DEMO_CASES or type(msg.get('play',False)) is not bool:
+            raise ValueError('Invalid collision demonstration')
     elif cmd == "physics":
         configuration.settings(msg.get('settings'), partial=True)
     elif cmd == "conservation" and type(msg.get('reset', False)) is not bool:

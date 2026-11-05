@@ -296,6 +296,7 @@ func _build_marker() -> void:
 
 
 func set_physical(m: float, r: float, h: float, a: float) -> void:
+	var first_state := mass == 0.0
 	mass = m
 	age = a
 	physical_radius = r
@@ -308,6 +309,11 @@ func set_physical(m: float, r: float, h: float, a: float) -> void:
 			_update_plasma()
 	if body_type == Palette.STAR and absf(m - _last_color_mass) > 0.005 * maxf(m, 1e-6):
 		_update_star_colors()
+	# A new remnant can be drawn before the next display-size update. Start at
+	# its physical radius, never the placeholder one-unit sphere.
+	if first_state:
+		rendered_radius = physical_radius
+		_apply_radius()
 
 
 func set_display_size(enlargement: float, world_per_px: float) -> void:
@@ -342,8 +348,8 @@ func _update_plasma() -> void:
 	else:
 		c = cool.lerp(Color(1.0, 0.9, 0.75), Palette.hash01(id, 4) * 0.6)
 	_glow_mat.set_shader_parameter("color", c)
-	_glow_mat.set_shader_parameter("intensity", 0.6 if id < 0 else 0.9 + 2.5 * heat)
-	_glow_mat.set_shader_parameter("core", 0.0 if id < 0 else 0.6 + heat)
+	_glow_mat.set_shader_parameter("intensity", 0.6 if id < 0 else 0.6 + heat)
+	_glow_mat.set_shader_parameter("core", 0.0 if id < 0 else 0.2 + 0.4 * heat)
 
 
 func _apply_radius() -> void:
@@ -373,7 +379,7 @@ func _apply_radius() -> void:
 				mi.position = Vector3(0, d * length * 0.5, 0)
 				mi.rotation = Vector3(0.0 if d > 0 else PI, 0, 0)
 		Palette.PLASMA:
-			_glow.scale = Vector3.ONE * (r if id < 0 else maxf(r * 5.0, 0.6))
+			_glow.scale = Vector3.ONE * r
 			_update_plasma()
 		_:
 			if _surface != null:

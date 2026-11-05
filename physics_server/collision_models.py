@@ -208,6 +208,27 @@ class ConstructedCollision:
 def construct_collision(a: SphereState, b: SphereState, *, material: str, body_types: tuple[int, int],
                         layout=None, expansion_fraction: float | None = None,
                         resolved_policy: bool = False) -> ConstructedCollision:
+    """Construct in the pair's rest frame to resolve contact at orbital distances."""
+    fraction = b.mass_kg / (a.mass_kg + b.mass_kg)
+    separation = np.subtract(b.position_m, a.position_m)
+    relative = np.subtract(b.velocity_m_s, a.velocity_m_s)
+    centre = np.array(a.position_m) + fraction * separation
+    bulk = np.array(a.velocity_m_s) + fraction * relative
+    local = tuple(replace(s, position_m=weight * separation, velocity_m_s=weight * relative)
+                  for s, weight in ((a, -fraction), (b, 1 - fraction)))
+    result = _construct_collision(*local, material=material, body_types=body_types, layout=layout,
+                                  expansion_fraction=expansion_fraction, resolved_policy=resolved_policy)
+
+    def translated(states):
+        return tuple(replace(s, position_m=np.add(s.position_m, centre),
+                             velocity_m_s=np.add(s.velocity_m_s, bulk)) for s in states)
+
+    return replace(result, contact=translated(result.contact), remnants=translated(result.remnants))
+
+
+def _construct_collision(a: SphereState, b: SphereState, *, material: str, body_types: tuple[int, int],
+                         layout=None, expansion_fraction: float | None = None,
+                         resolved_policy: bool = False) -> ConstructedCollision:
     """Classify a contact and construct only a compatible, feasible outcome.
 
     Nonrotating inputs only, as required by the classifier. Merging needs no

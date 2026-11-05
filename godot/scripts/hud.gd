@@ -6,6 +6,7 @@ signal mass_changed(tool: int, mult: float)
 signal pause_toggled
 signal speed_step(direction: int)
 signal preset_chosen(preset: String)
+signal collision_chosen(case: String, play: bool)
 signal scene_action(action: String)
 signal physics_changed(settings: Dictionary)
 signal conservation_requested(reset: bool)
@@ -16,14 +17,15 @@ signal supernova_requested
 signal relaunch_requested
 
 const Palette = preload("res://scripts/palette.gd")
+const ImpactPanel = preload("res://scripts/impact_panel.gd")
 
 const PRESETS := [
 	["solar", "Solar system", "A Sun, rocky planets, gas giants and moons at physical orbital distances."],
 	["binary", "Binary stars", "Two suns locked in orbit, with planets on the edge of chaos."],
-	["black_hole", "Black hole feast", "A star on a plunging orbit gets spaghettified."],
+	["black_hole", "Black hole feast", "Illustrative tidal breakup: some debris is captured, some escapes. No viscous accretion model."],
 	["smash", "Planet smash", "Two Earths on a collision course."],
-	["formation", "Planet formation", "200 planetesimals collide and grow."],
-	["galaxies", "Tidal encounter", "Two tracer disks around stellar-mass black holes form tidal tails."],
+	["formation", "Planet formation", "Late-stage rocky accretion: four approaching embryo pairs in a disk. R: view whole system."],
+	["galaxies", "Tidal encounter", "Two gravitating particle disks around black holes form tidal tails."],
 	["empty", "Empty space", "Nothing but you and the void."],
 ]
 
@@ -72,6 +74,10 @@ var welcome: Control
 var help: Control
 var toast_label: Label
 var _toast_tw: Tween
+var impact_panel
+var collision_menu: PopupMenu
+var scenario_label: Label
+var scale_label: Label
 
 
 func _ready() -> void:
@@ -82,7 +88,25 @@ func _ready() -> void:
 	root.theme = _make_theme()
 	add_child(root)
 	_build_top_bar()
+	scenario_label = _label("", 13, C_DIM)
+	scenario_label.position = Vector2(18, 68)
+	scenario_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(scenario_label)
+	scale_label = _label("", 13, C_DIM)
+	scale_label.position = Vector2(18, 90)
+	scale_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(scale_label)
 	_build_toolbar()
+	impact_panel = ImpactPanel.new()
+	root.add_child(impact_panel)
+	impact_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	impact_panel.offset_left = 10
+	impact_panel.offset_right = 380
+	impact_panel.offset_top = -215
+	impact_panel.offset_bottom = -36
+	impact_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	impact_panel.replay_requested.connect(func(case: String): collision_chosen.emit(case, true))
+	impact_panel.budgets_requested.connect(func(): conservation_requested.emit(false))
 	_build_inspector()
 	_build_feed()
 	_build_hint()
@@ -276,8 +300,18 @@ func _build_top_bar() -> void:
 	scen.focus_mode = Control.FOCUS_NONE
 	scen.flat = false
 	var pm := scen.get_popup()
+	var encounters := PopupMenu.new()
+	collision_menu = encounters
+	encounters.name = "CollisionEncounters"
+	pm.add_child(encounters)
+	for label in ["Gentle merging", "Hit-and-run", "Disruption"]:
+		encounters.add_item(label)
+	encounters.id_pressed.connect(func(i: int): collision_chosen.emit(["merging", "hit_and_run", "disruption"][i], false))
 	for i in range(PRESETS.size()):
-		pm.add_item(PRESETS[i][1], i)
+		if PRESETS[i][0] == "smash":
+			pm.add_submenu_item(PRESETS[i][1], "CollisionEncounters", i)
+		else:
+			pm.add_item(PRESETS[i][1], i)
 		pm.set_item_tooltip(i, PRESETS[i][2])
 	pm.id_pressed.connect(func(i: int): preset_chosen.emit(PRESETS[i][0]))
 	h.add_child(scen)
@@ -333,6 +367,14 @@ func _experiment_action(id: int) -> void:
 					physics_changed.emit({"collisions": "auto", "gravity": "full"})
 
 
+func show_scenario(name: String) -> void:
+	scenario_label.text = "Saved experiment"
+	for preset in PRESETS:
+		if preset[0] == name:
+			scenario_label.text = preset[1] + " · " + preset[2]
+			return
+
+
 func _budget_value(value, unit: String = "") -> String:
 	if value == null:
 		return "Unavailable"
@@ -381,6 +423,7 @@ func show_conservation(report: Dictionary) -> void:
 
 
 func set_physics(info: Dictionary) -> void:
+	impact_panel.set_state(info.get("collision_demo"), info.get("last_impact"))
 	physics_settings = info.get("settings", {})
 	if physics_settings.is_empty():
 		return
@@ -481,7 +524,8 @@ func _refresh_mass_label() -> void:
 func _fmt_mult(m: float) -> String:
 	if m >= 10.0: return "%d" % int(round(m))
 	if m >= 1.0: return "%.1f" % m
-	return "%.3f" % m if m < 0.01 else "%.2f" % m
+	if m < 0.01: return String.num(m, 6)
+	return "%.2f" % m
 
 
 func mass_mult(tool: int) -> float:
@@ -691,7 +735,9 @@ func set_connection(state: String, detail: String) -> void:
 	status_label.text = detail
 
 
-func set_stats(sim_time: float, n: int, max_n: int, speed_mult: float, paused: bool, perf: float, clouds: int = 0) -> void:
+func set_stats(sim_time: float, n: int, max_n: int, speed_mult: float, paused: bool, perf: float, clouds: int = 0, display_scale: float = 1.0) -> void:
+	feed.offset_left = 400 if impact_panel.visible else 18
+	scale_label.text = "Physical body sizes · markers remain visible" if display_scale == 0 else "Illustrative sizes x%.0f · V for physical sizes" % display_scale
 	pause_btn.text = "Play" if paused else "Pause"
 	speed_label.text = "x" + _fmt_mult(speed_mult)
 	time_label.text = "t = %s" % _fmt_time(sim_time)

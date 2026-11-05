@@ -89,7 +89,7 @@ def test_valid_command_sequence(server):
     server.handle({'cmd': 'speed', 'value': 3000}, addr)
     assert server.world.speed == 2000
     server.handle({'cmd': 'speed', 'value': -2}, addr)
-    assert server.world.speed == .05
+    assert server.world.speed == .00001
     server.handle({'cmd': 'remove', 'id': 2}, addr)
     assert server.world.sim.N == 4
     server.handle({'cmd': 'supernova', 'id': 1}, addr)

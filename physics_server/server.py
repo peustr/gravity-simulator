@@ -37,6 +37,7 @@ except ImportError as exc:  # friendly message instead of a stack trace
 import world as W
 import experiments
 import units
+from configuration import MIN_SPEED
 from diagnostics import conservation_report
 from commands import validate
 
@@ -230,7 +231,7 @@ class Server:
             w.paused = bool(msg.get("value", not w.paused))
             w.version += 1
         elif cmd == "speed":
-            w.speed = min(2000.0, max(0.05, float(msg.get("value", 10.0))))
+            w.speed = min(2000.0, max(MIN_SPEED, float(msg.get("value", 10.0))))
         elif cmd == "physics":
             w.configure(msg['settings'])
             self.send_json(dict(type='physics', **w.gravity_summary()), addr)
@@ -243,6 +244,11 @@ class Server:
         elif cmd == "clear":
             w.clear()
             self.checkpoint = experiments.capture(w, experiments.DEFAULT_CAMERA)
+        elif cmd == 'collision_demo':
+            hint = w.load_collision_demo(msg['case'])
+            self.checkpoint = experiments.capture(w,hint['camera'])
+            w.paused = not msg.get('play',False)
+            self.send_json(hint,addr)
         else:  # validate() guarantees the remaining command is preset.
             hint = w.load_preset(str(msg.get("name", "empty")))
             self.checkpoint = experiments.capture(w, hint["camera"])

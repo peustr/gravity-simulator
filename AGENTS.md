@@ -89,6 +89,7 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 | Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_EROSION=12), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
 | Packet layout: header 11 floats, body 12, event 8; forecast reply header 9 (protocol 2, packet kinds 3/4) | `server.py` `pack_state`/`pack_prediction` ↔ `main.gd` `_on_state`/`_on_prediction` |
 | UDP port 47810 | `server.py` `DEFAULT_PORT` ↔ `net_client.gd` `SERVER_PORT` |
+| Camera distance minimum `1e-4`, playback minimum `1e-5` | `configuration.py`/`experiments.py` ↔ `camera_rig.gd`/`main.gd` |
 | Scenario names | `world.load_preset()` ↔ `hud.gd` `PRESETS` |
 | New body type | also `TYPE_LABELS`, `TYPE_COLORS`, `TOOL_TYPES`, a builder in `body_view.gd`, an icon in `hud.gd`, trail strength in `trails.gd` |
 | User-visible change | README: controls table, scenarios, physics notes |

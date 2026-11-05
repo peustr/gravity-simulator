@@ -38,7 +38,7 @@ The physics runs on **[REBOUND](https://rebound.hanno-rein.de/)**, an open-sourc
 - **Seven kinds of body:** rocky planets, gas giants, stars (coloured by temperature), neutron stars (pulsars), black holes, asteroids, and hot gas clouds.
 - **Collisions with consequences:**
   - Gentle impacts merge, conserving mass and momentum. The survivor glows molten for a while.
-  - Violent impacts shatter planets into fragments using an energy-based heuristic inspired by Leinhardt & Stewart (2012).
+  - Rocky impacts use calibrated mass laws and conserved outcomes; other body pairs use documented heuristic models.
   - Black holes swallow anything that crosses their event horizon, and their accretion disks flare up and fire jets while they feed.
   - Bodies that pass inside a heavier body's Roche limit are torn apart by tides ("spaghettification").
 - **Stellar life cycle:**
@@ -158,7 +158,7 @@ If it prints `Python 3.13.x`, skip to [3.3](#33-set-up-the-physics-server). If i
     [3/4] Installing REBOUND and NumPy (this can take a minute) ...
     [4/4] Running the physics self-test ...
 
-     [ok] scenario 'solar' loads and runs - 112 bodies, 18 ms
+     [ok] scenario 'solar' loads and runs
      ...
      [ok] solar system advances 100 time units within 10 seconds
 
@@ -202,7 +202,7 @@ There is no need to "activate" the environment, and no PowerShell execution-poli
 Press **F5**, or click the ▶ **Play** button at the top right of the editor.
 
 - After about a second the top bar shows a green dot and **"Physics online · REBOUND 5.x · IAS15"**. Godot found `physics_server\.venv` and started the server in the background; it stops it again when you close the game.
-- The welcome screen offers scenarios. Click **Black hole feast** for an immediate spectacle.
+- The welcome screen offers scenarios. Choose **Black hole feast** to watch an illustrative stellar breakup, or **Planet smash** for selectable collision encounters.
 - If you see **"Waiting for the physics server..."** instead, see [section 10](#10-troubleshooting).
 
 **Firewall:** the server only listens on `127.0.0.1`, so nothing is reachable from other computers. If Windows Firewall asks anyway, either answer is fine.
@@ -253,9 +253,9 @@ Use the **Experiment** menu in the top bar:
 - **Set restart point** remembers the current scene and camera for this session without writing a file. Set it after building an experiment, before letting it evolve.
 - **Restart experiment...** returns to that point after confirmation. Choosing a built-in scenario also sets a restart point at its initial conditions; Clear sets an empty restart point.
 
-**Clear** asks for confirmation. Choosing a scenario asks before replacing a nonempty scene; Cancel preserves both the scene and its restart point. Each scenario sets its own starting speed: Solar system uses x0.1 so its short moon orbits remain readable; Binary stars and Empty space use x1; Black hole feast and Planet smash use x0.005 to resolve their much shorter physical timescales, Planet formation x2.5, and Tidal encounter x0.8. Switching scenarios preserves pause/resume state.
+**Clear** asks for confirmation. Choosing a scenario asks before replacing a nonempty scene; Cancel preserves both the scene and its restart point. Each scenario sets its own starting speed: Solar system uses x0.1 so its short moon orbits remain readable; Binary stars and Empty space use x1; Black hole feast uses x0.005, Planet formation x0.0005, and Tidal encounter x0.8. Planet smash encounter choices start paused at x0.0005; press Play to watch contact. Other scenario switches preserve pause/resume state.
 
-Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation and visual enlargement. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. Trails, selection, body-follow mode and transient visual effects are cleared.
+Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation and visual enlargement. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. The followed body is preserved when saved and opens in the inspector on restore; trails and transient effects are cleared.
 
 The **Experiment** menu also controls full gravity for debris, inclusion of all bodies in forecasts, and distant-body removal. It shows the collective tracer mass fraction. These choices and cumulative removal losses are stored in version-3 and newer saves and restart points; older saves retain their previous approximation defaults. See [orbital dynamics and accuracy controls](docs/orbital-dynamics.md).
 
@@ -306,11 +306,11 @@ Restores rebuild REBOUND from the saved physical conditions. They do not preserv
 
 | Scenario | What to watch for |
 |---|---|
-| **Solar system** | A Sun, four rocky planets (Earth has a Moon), an asteroid belt, a Jupiter with moons, Saturn with Titan and a Neptune-like ice giant. Distances and moon separations use physical scales; phases are illustrative. Try dropping a black hole through it. |
+| **Solar system** | A Sun, all eight planets (Earth has a Moon), an asteroid belt, Jupiter with moons and Saturn with Titan. Distances and moon separations use physical scales; phases are illustrative. Try dropping a black hole through it. |
 | **Binary stars** | Two suns in orbit, a planet around one of them on the edge of stability, and circumbinary planets. |
-| **Black hole feast** | A star on a plunging orbit is torn apart near the black hole. The debris streams in and the disk and jets flare. |
-| **Planet smash** | Two Earth-like planets collide at several times their mutual escape speed and shatter into glowing fragments. |
-| **Planet formation** | 200 embryos orbit a young Sun. Physical contact is rare; this is an initial disk, not a calibrated planet-formation model. Runs at 2.5x speed. |
+| **Black hole feast** (`black_hole`) | A plunging star crosses the approximate Roche limit. Some debris is captured; other material follows ballistic orbits or escapes. The two outer stars start bound. Disk/jet flares are artistic; no viscous accretion is modelled. |
+| **Planet smash** | Choose gentle merging, hit-and-run or disruption from the Scenarios submenu. Encounters start paused in physical-size view. Play, inspect the outcome card and use Replay or Conservation report. |
+| **Planet formation** (`formation`) | Late-stage accretion of 32 Mars-sized rocky embryos around a young Sun. Four approaching pairs grow through shared physical collision laws, with contacts roughly 3–9 seconds into default playback. The camera follows the first pair at physical size; press R for the whole disk. Initial encounters are curated, not a forecast from a primordial disk; gas drag and dust growth are not modelled. |
 | **Tidal encounter** | Two disks around stellar-mass black holes make a parabolic encounter. This illustrates tidal tails; it is not a galaxy-scale mass model. The preset key remains `galaxies`. |
 | **Empty space** | Your canvas. |
 
@@ -336,10 +336,12 @@ A shared contact step guard limits approach to physical surfaces before collisio
 
 ### Collisions
 
+Planet smash’s three menu encounters use the shared live engine and the same contact-state builder as the exported references. Close zoom and slower speed steps resolve physical surfaces; display enlargement remains independent of contact. The outcome card reports contact speed/angle, regime, remnant count, largest masses and compact ejecta, with Replay and conservation-report buttons. These summaries and the selected encounter survive save/restart.
+
 Contacts retain pre-merge [impact measurements](docs/impact-measurements.md),
 including encounter angle, relative kinetic energy and pair angular momentum.
-The outcomes below use heuristic disruption and fragment prescriptions; these
-are not calibrated material models.
+The fallback outcomes in the table below use heuristic disruption and fragment
+prescriptions; these are not calibrated material models.
 
 The [impact classification API](docs/impact-scaling.md) estimates outcomes for
 supported solid contacts, including rocky hit-and-run events. The live
@@ -386,6 +388,10 @@ A fluid Roche estimate uses the victim’s physical radius R and mass m: `r ≈ 
 - A **supernova** blows 75% of the star outwards as 48 gas clouds and leaves a neutron star or black hole. In reality only stars above about 8 solar masses do this, and the game tells you so.
 
 ### Visual-only effects
+
+Black-hole display enlargement sets a fixed world-size lens; zoom changes its apparent size naturally. Physical-size mode uses the authoritative Schwarzschild radius. The lens, disk and jets are illustrative and never set capture distances.
+
+The size-mode label distinguishes physical from illustrative sizes. Ambient fill keeps unlit surfaces visible. Close zoom clips very distant graphics while retaining every body's gravitational influence.
 
 None of these affect the physics:
 - Lensing, accretion disks, jets, pulsar beams.
@@ -434,7 +440,7 @@ steps and may shorten the preview without reducing integration accuracy.
 
 The [generated runtime reference](docs/runtime-reference.md) lists checked constants, body IDs, events and scenarios. CI rejects stale generated documentation and compares Python with executed Godot values.
 
-Commands are validated before changing the simulation. Vectors must contain exactly three finite numbers in ±1,000,000; mass multipliers must be between 0.000001 and 1,000,000. IDs and request numbers must be integers up to 16,000,000; belt counts must be 1–1321. Invalid commands are ignored (logged with `--verbose`), including unknown presets. `--max-bodies` is limited to 1–1321 so state packets fit in a UDP datagram.
+Commands are validated before changing the simulation. Playback speed is clamped to 0.00001–2000 simulation units per second; saved camera distances allow 0.0001–40,000 length units. Vectors must contain exactly three finite numbers in ±1,000,000; mass multipliers must be between 0.000001 and 1,000,000. IDs and request numbers must be integers up to 16,000,000; belt counts must be 1–1321. Invalid commands are ignored (logged with `--verbose`), including unknown presets. `--max-bodies` is limited to 1–1321 so state packets fit in a UDP datagram.
 
 **Commands** are UTF-8 JSON, one per UDP packet, sent to port 47810:
 - `hello` — heartbeat; send it about twice a second.
@@ -447,6 +453,7 @@ Commands are validated before changing the simulation. Vectors must contain exac
 - `speed` — `{value}`, in simulation time units per second.
 - `clear`
 - `preset` — `{name}`
+- `collision_demo` — `{case: "merging"|"hit_and_run"|"disruption", play?: boolean}`; load a supported Planet smash encounter, paused by default.
 - `physics` — `{settings}`; partial changes to gravity, tolerance, forecast limit, removal boundary, collision mode and material calibration.
 - `conservation` — `{reset?: boolean}`; return SI inventories and comparison residuals, optionally resetting the baseline.
 - `save_scene` — `{path, camera, request}`; save to a local file and set the restart point.
@@ -454,7 +461,7 @@ Commands are validated before changing the simulation. Vectors must contain exac
 - `checkpoint` — `{camera, request}`; set an in-memory restart point.
 - `restart` — `{request}`; restore the restart point.
 
-Scene-operation `request` values are unique strings (1–80 characters). The camera is `{focus: [x,y,z], distance, pitch, yaw, display_scale}`; `display_scale` defaults to 1 and ranges from 0 (physical sizes) to 4. Replies are JSON `scene_result` messages with `request`, `action`, `ok`, and either an `error` or, for load/restart, the restored `camera`. The client retries once per second for up to ten seconds; the server caches the last 64 replies per server process, keyed by client address and request, so retries do not repeat writes or restores.
+Scene-operation `request` values are unique strings (1–80 characters). The camera is `{focus: [x,y,z], distance, pitch, yaw, display_scale, follow?}`; `display_scale` defaults to 1 and ranges from 0 (physical sizes) to 4; optional `follow` is a body ID (or -1 for a fixed focus). Replies are JSON `scene_result` messages with `request`, `action`, `ok`, and either an `error` or, for load/restart, the restored `camera`. The client retries once per second for up to ten seconds; the server caches the last 64 replies per server process, keyed by client address and request, so retries do not repeat writes or restores.
 - `bye`
 
 **Protocol 2** requires `"protocol": 2` on every command. Older or unversioned commands receive `protocol_error` without mutation. Update both programs together. State kind 3 and forecast kind 4 prevent old clients from interpreting physical radii as enlarged sizes.

@@ -1,6 +1,9 @@
 """Validated, serialisable choices for the physical solver and its approximations."""
 import math
 
+MIN_SPEED = 1e-5
+MIN_CAMERA_DISTANCE = 1e-4
+
 
 DEFAULTS = dict(gravity='full', epsilon=1e-9, forecast_limit=20, escape_distance=15000.0,
                 collisions='auto',impact_material='fluid_planets')

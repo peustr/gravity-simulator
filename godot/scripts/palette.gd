@@ -77,7 +77,7 @@ static func illustrative_radius(body_type: int, m: float) -> float:
 		NEUTRON_STAR:
 			return 0.6
 		BLACK_HOLE:
-			return maxf(0.6, 3.0 * m / 10000.0)
+			return maxf(0.02, 0.1 * m / 10000.0)
 		PLASMA:
 			return clampf(0.35 * pow(m, 1.0 / 3.0), 0.08, 4.0)
 	return 1.0
@@ -87,6 +87,10 @@ static func rendered_radius(kind: int, mass: float, physical: float, enlargement
 	# Zooming in resolves small systems without enlarged meshes hiding satellites.
 	if enlargement == 0.0:
 		return physical
+	# A fixed world-size lens scales naturally with zoom. Screen-size clamping
+	# makes the shadow grow/shrink in world space and appear to swallow neighbours.
+	if kind == BLACK_HOLE:
+		return maxf(physical, illustrative_radius(kind, mass) * enlargement)
 	return maxf(physical, minf(illustrative_radius(kind, mass) * enlargement, world_per_px * 10.0 * enlargement))
 
 

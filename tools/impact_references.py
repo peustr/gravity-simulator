@@ -9,7 +9,6 @@ import sys
 import time
 
 import numpy as np
-import rebound
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "physics_server"))
 from body_state import BodyInventory
@@ -20,6 +19,7 @@ import units as U
 import world as W
 from collision_models import surface_contact, _impact
 from disruption import classify_contact
+from encounters import incoming_states
 
 
 PLANET_CASES = (
@@ -61,18 +61,10 @@ def reference_world(case, material="fluid_planets", *, capacity=600, unsupported
         q = estimate_head_on_disruption(a.m * U.MASS_KG, b.m * U.MASS_KG, 0, material=material).disruption_energy_j_kg
         speed = math.sqrt(2 * ratio * q / (fraction * (1 - fraction))) / U.VELOCITY_M_S
     velocity = speed * np.array([-math.sqrt(1 - angle * angle), 0, angle])
-    back = rebound.Simulation()
-    back.integrator = "ias15"
-    back.integrator.epsilon = 1e-12
-    for p, weight in ((a, -fraction), (b, 1 - fraction)):
-        position = weight * radius * np.array([1, 0, 0])
-        v = weight * velocity
-        back.add(m=p.m, x=position[0], y=position[1], z=position[2], vx=-v[0], vy=-v[1], vz=-v[2])
     lead = min(0.03, 0.1 * radius / speed) if scale == "escape" and ratio < 1 else 0.03
-    back.integrate(lead)
-    for p, q in zip(w.sim.particles, back.particles, strict=True):
-        p.xyz = q.xyz
-        p.vxyz = [-v for v in q.vxyz]
+    states = incoming_states((a.m,b.m),(a.r,b.r),velocity,lead)
+    for p,(position,v) in zip(w.sim.particles,states,strict=True):
+        p.xyz,p.vxyz = position,v
     if unsupported_spin:
         w.meta["1"]["inventory"] = BodyInventory((0, 0, 1e30), 0)
     w.paused = True

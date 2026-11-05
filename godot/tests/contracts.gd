@@ -58,6 +58,22 @@ func _initialize() -> void:
 		quit(1)
 		return
 	body.free()
+	body = preload("res://scripts/body_view.gd").new()
+	body.setup(2, Palette.BLACK_HOLE)
+	body.set_physical(20000, 0.000024, 0, 0)
+	body.set_display_size(1, 10)
+	var hole_radius: float = body.rendered_radius
+	body.set_display_size(1, 0.00001)
+	if body.rendered_radius != hole_radius or body.physical_radius != 0.000024:
+		push_error("Zoom changed the black-hole world size or its contact radius")
+		quit(1)
+		return
+	body.set_display_size(0, 1)
+	if body.rendered_radius != body.physical_radius:
+		push_error("Physical black-hole size was not restored")
+		quit(1)
+		return
+	body.free()
 	var masses := [1e-12, 0.00002, 0.003, 0.03, 1.0, 80.0, 1000.0, 20000.0]
 	var radii := []
 	for kind in range(Palette.TYPE_KEYS.size()):

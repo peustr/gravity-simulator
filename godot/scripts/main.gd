@@ -21,7 +21,7 @@ const SH_STARFIELD := preload("res://shaders/starfield.gdshader")
 const SH_RING := preload("res://shaders/ring.gdshader")
 
 const DEFAULT_SPEED := 10.0
-const SPEED_STEPS := [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
+const SPEED_STEPS := [0.000001, 0.000005, 0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0]
 const HEADER := 11
 const BODY := 12
 const EVENT := 8
@@ -128,6 +128,8 @@ func _ready() -> void:
 	hud.pause_toggled.connect(_toggle_pause)
 	hud.speed_step.connect(_speed_step)
 	hud.preset_chosen.connect(_load_preset)
+	hud.collision_chosen.connect(func(case: String, play: bool):
+		scene_files.replace_scene({"cmd": "collision_demo", "case": case, "play": play}))
 	hud.clear_requested.connect(func():
 		scene_files.replace_scene({"cmd": "clear"}))
 	hud.follow_requested.connect(_toggle_follow)
@@ -173,7 +175,8 @@ func _setup_environment() -> void:
 	sky.radiance_size = Sky.RADIANCE_SIZE_64
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.05, 0.06, 0.09)
+	# Illustrative fill keeps cold bodies inspectable even without a nearby star.
+	env.ambient_light_color = Color(0.4, 0.4, 0.4)
 	env.ambient_light_energy = 1.0
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
@@ -241,12 +244,16 @@ func _on_message(msg: Dictionary) -> void:
 		"conservation":
 			hud.show_conservation(msg)
 		"preset":
+			hud.show_scenario(str(msg.get("name", "")))
 			var cam: Dictionary = msg.get("camera", {})
+			display_scale = float(cam.get("display_scale", 1.0))
+			hud.impact_panel.set_state(msg.get("collision_demo"), null)
 			var f: Array = cam.get("focus", [0, 0, 0])
 			rig.frame(Vector3(f[0], f[1], f[2]), float(cam.get("distance", 400.0)), float(cam.get("pitch", 0.6)))
 			trails.clear_all()
 			_select(-1)
-			follow_id = -1
+			follow_id = int(cam.get("follow", -1))
+			rig.following = follow_id >= 0
 		"notice":
 			hud.push_event(str(msg.get("text", "")), Color(1.0, 0.85, 0.5))
 
@@ -317,6 +324,8 @@ func _on_state(f: PackedFloat32Array) -> void:
 		view.base_pos = pos
 		view.vel = Vector3(f[o + 5], f[o + 6], f[o + 7])
 		view.set_physical(f[o + 8], f[o + 9], f[o + 10], f[o + 11])
+		if is_new and id == follow_id and selected_id < 0:
+			_select(id)
 		seen[id] = true
 		positions[id] = pos
 
@@ -463,7 +472,7 @@ func _process(delta: float) -> void:
 	_stats_timer -= delta
 	if _stats_timer <= 0.0:
 		_stats_timer = 0.2
-		hud.set_stats(display_time, views.size()-cloud_count, max_bodies, server_speed / DEFAULT_SPEED, paused, perf, cloud_count)
+		hud.set_stats(display_time, views.size()-cloud_count, max_bodies, server_speed / DEFAULT_SPEED, paused, perf, cloud_count, display_scale)
 		hud.time_label.text = "t = " + _physical_value(display_time, "time_s", "days", 1.0 / 86400.0)
 		_update_inspector()
 		if not net.connected and _alive > 1.6:
@@ -720,6 +729,9 @@ func _pick_body(screen: Vector2) -> int:
 		var v = views[id]
 		if cam.is_position_behind(v.position):
 			continue
+		var depth := -cam.to_local(v.position).z
+		if depth - v.pick_radius() > cam.far:
+			continue
 		var sp := cam.unproject_position(v.position)
 		var r_px: float = v.pick_radius() / _world_per_px(v.position)
 		var tol := maxf(r_px, 10.0)
@@ -772,7 +784,7 @@ func _start_follow(id: int) -> void:
 	follow_id = id
 	rig.following = true
 	var v = views[id]
-	rig.target_distance = clampf(v.pick_radius() * 14.0, 6.0, 4000.0)
+	rig.target_distance = clampf(v.pick_radius() * 14.0, CameraRig.MIN_DIST * 10.0, 4000.0)
 
 
 func _toggle_follow() -> void:
@@ -816,10 +828,14 @@ func _speed_step(direction: int) -> void:
 
 
 func _load_preset(preset: String) -> void:
-	scene_files.replace_scene({"cmd": "preset", "name": preset})
+	if preset == "smash":
+		scene_files.replace_scene({"cmd": "collision_demo", "case": "disruption"})
+	else:
+		scene_files.replace_scene({"cmd": "preset", "name": preset})
 
 
 func apply_scene_change(command: Dictionary) -> void:
+	_welcome_shown = not _auto.has("welcome")
 	net.send(command)
 	trails.clear_all()
 	_select(-1)
@@ -828,6 +844,9 @@ func apply_scene_change(command: Dictionary) -> void:
 
 
 func restore_scene_view(cam: Dictionary) -> void:
+	_welcome_shown = true
+	hud.show_scenario("")
+	hud.impact_panel.set_state(null, null)
 	display_scale = float(cam.get("display_scale", 1.0))
 	# IDs can be reused after a restore: discard all views and transient effects.
 	for view in views.values():
@@ -861,6 +880,8 @@ func restore_scene_view(cam: Dictionary) -> void:
 	rig.target_yaw = rig.yaw
 	rig._shake = 0.0
 	rig._apply()
+	follow_id = int(cam.get("follow", -1))
+	rig.following = follow_id >= 0
 	hud.show_welcome(false)
 	hud.select_tool(-1)
 
