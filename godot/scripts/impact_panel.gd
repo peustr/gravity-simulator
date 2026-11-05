@@ -9,6 +9,7 @@ var report := {}
 var title: Label
 var details: Label
 var replay: Button
+var model: Label
 
 
 func _ready() -> void:
@@ -22,7 +23,7 @@ func _ready() -> void:
 	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	details.custom_minimum_size.x = 340
 	box.add_child(details)
-	var model := Label.new()
+	model = Label.new()
 	model.text = "Calibrated masses · prescribed rebound/ejecta"
 	model.add_theme_font_size_override("font_size", 12)
 	box.add_child(model)
@@ -47,6 +48,7 @@ func set_state(context, outcome) -> void:
 	visible = not demo.is_empty() or not report.is_empty()
 	if not visible:
 		return
+	model.text = "Bound sticking assumption · conserved spin/energy" if report.get("regime") == "bound_sticking" else "Calibrated masses · prescribed rebound/ejecta"
 	replay.visible = not demo.is_empty()
 	title.text = "Planet smash · " + str(demo.case).capitalize().replace("_", " ") if not demo.is_empty() else "Last solid impact"
 	var source: Dictionary = report if not report.is_empty() else demo

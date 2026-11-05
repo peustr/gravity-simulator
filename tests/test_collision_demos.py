@@ -1,6 +1,7 @@
 """Selectable encounters exercise the shared live engine and physical view."""
 
 import time
+import math
 
 import numpy as np
 import pytest
@@ -116,8 +117,11 @@ def test_formation_grows_embryos_in_orbit_and_survives_restart(seed):
     w.load_preset("binary")  # Body IDs continue across scenario switches.
     hint = w.load_preset("formation")
     camera = hint["camera"]
-    followed = str(camera["follow"])
-    assert w.particle(followed) is not None and camera["display_scale"] == 0
+    assert camera['follow'] == -1 and camera["display_scale"] == 0
+    assert all(math.dist(p.xyz, camera['focus']) < camera['distance']*math.sin(math.radians(27.5))
+               for p in w.sim.particles)
+    followed = next(p.name for p in w.sim.particles if w.meta[p.name]['type'] == W.ROCKY)
+    camera = dict(camera, follow=int(followed))  # Follow a selected embryo before saving.
     initial_mass = sum(p.m for p in w.sim.particles if w.meta[p.name]["type"] == W.ROCKY)
     initial_count = w.sim.N
     radius = w.particle(followed).r

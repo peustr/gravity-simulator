@@ -207,7 +207,7 @@ class ConstructedCollision:
 
 def construct_collision(a: SphereState, b: SphereState, *, material: str, body_types: tuple[int, int],
                         layout=None, expansion_fraction: float | None = None,
-                        resolved_policy: bool = False) -> ConstructedCollision:
+                        resolved_policy: bool = False, allow_bound_sticking: bool = False) -> ConstructedCollision:
     """Construct in the pair's rest frame to resolve contact at orbital distances."""
     fraction = b.mass_kg / (a.mass_kg + b.mass_kg)
     separation = np.subtract(b.position_m, a.position_m)
@@ -217,7 +217,8 @@ def construct_collision(a: SphereState, b: SphereState, *, material: str, body_t
     local = tuple(replace(s, position_m=weight * separation, velocity_m_s=weight * relative)
                   for s, weight in ((a, -fraction), (b, 1 - fraction)))
     result = _construct_collision(*local, material=material, body_types=body_types, layout=layout,
-                                  expansion_fraction=expansion_fraction, resolved_policy=resolved_policy)
+                                  expansion_fraction=expansion_fraction, resolved_policy=resolved_policy,
+                                  allow_bound_sticking=allow_bound_sticking)
 
     def translated(states):
         return tuple(replace(s, position_m=np.add(s.position_m, centre),
@@ -228,10 +229,12 @@ def construct_collision(a: SphereState, b: SphereState, *, material: str, body_t
 
 def _construct_collision(a: SphereState, b: SphereState, *, material: str, body_types: tuple[int, int],
                          layout=None, expansion_fraction: float | None = None,
-                         resolved_policy: bool = False) -> ConstructedCollision:
+                         resolved_policy: bool = False, allow_bound_sticking: bool = False) -> ConstructedCollision:
     """Classify a contact and construct only a compatible, feasible outcome.
 
-    Nonrotating inputs only, as required by the classifier. Merging needs no
+    Calibrated inputs are nonrotating. An explicit bound-sticking policy admits
+    conditional rotating mergers, with no calibrated disruption threshold.
+    Merging needs no
     layout or energy fraction. Other regimes require both; layout order is
     largest remnant, runner (hit-and-run only), then debris. Fragment allocations
     retain mean density; intact runners retain their individual radii. Separated
@@ -240,10 +243,28 @@ def _construct_collision(a: SphereState, b: SphereState, *, material: str, body_
     """
     if resolved_policy and (layout is not None or expansion_fraction is not None):
         raise ValueError('Resolved policy cannot be combined with a prescribed allocation')
-    if any(component != 0 for s in (a, b) for component in s.spin_kg_m2_s):
+    rotating = any(component != 0 for s in (a, b) for component in s.spin_kg_m2_s)
+    if rotating and not allow_bound_sticking:
         raise ValueError('Calibrated construction requires nonrotating inputs')
     contact = surface_contact(a, b)
     classification = classify_contact(_impact(*contact), unit_system='si', material=material, body_types=body_types)
+    if rotating:
+        # A conditional sticking closure, not an extension of the nonrotating
+        # mass law. Require an already bound pair even after including spin.
+        impact = _impact(*contact)
+        relative_energy = .5 * impact.reduced_mass * impact.speed**2
+        binding = G_SI * a.mass_kg * b.mass_kg / impact.separation
+        if (material != 'fluid_planets' or tuple(body_types) != (0, 0)
+                or classification.regime not in ('merging', 'graze_and_merge')
+                or relative_energy + sum(s.rotational_energy_j for s in contact) >= binding):
+            raise ValueError('Rotating contact is outside the bound-sticking approximation; nonrotating calibration required')
+        if layout is not None or expansion_fraction is not None:
+            raise ValueError('Bound sticking does not accept a fragment allocation')
+        remnant = merge_spheres(*contact)
+        classification = replace(classification, regime='bound_sticking',
+                                 largest_remnant_mass_kg=remnant.mass_kg, remaining_mass_kg=0.,
+                                 runner_mass_kg=0., disruption_energy_j_kg=None, merging_speed_m_s=None)
+        return ConstructedCollision(classification, contact, (remnant,), None)
     if classification.regime in ('merging', 'graze_and_merge'):
         if layout is not None or expansion_fraction is not None:
             raise ValueError('A classified merger does not accept a fragment layout or energy split')

@@ -709,7 +709,8 @@ class World:
         if any(s is None for s in rec['spheres']):
             raise ValueError('Both bodies need known spin and internal-energy inventories')
         outcome = construct_collision(*rec['spheres'], material=material, body_types=(rec['ts'],rec['tr']),
-                                      resolved_policy=self.settings['collisions'] != 'isolated_mergers')
+                                      resolved_policy=self.settings['collisions'] != 'isolated_mergers',
+                                      allow_bound_sticking=self.settings['collisions'] == 'auto')
         compact = self.sim.N-2+len(outcome.remnants) > self.max_bodies
         if compact and (not outcome.central_shell or len(self.shells) >= MAX_SHELLS):
             raise ValueError('Insufficient body or supported reservoir capacity; no material was removed')
@@ -1517,9 +1518,7 @@ class World:
                 p, v = self.orbit(origin, origin, sun, r_orb, rng.uniform(0, 6.283), rng.gauss(0, 0.01))
                 v = _add(v, _mul(self._rand_unit(), 0.006 * math.sqrt(sun / r_orb)))
                 self.add_body(ROCKY, rng.uniform(.00032, .00055), p, v)
-            cam = {"focus": [60, 0, 0], "distance": .03, "pitch": .35,
-                   "display_scale": 0.0,
-                   "follow": int(self.sim.particles[1].name) if self.sim.N > 1 else -1}
+            cam = {"focus": [0, 0, 0], "distance": 350.0, "pitch": .6, "display_scale": 0.0, "follow": -1}
 
         elif name == "galaxies":
             mbh, nstars = 8000.0, 110

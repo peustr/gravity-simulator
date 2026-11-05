@@ -24,7 +24,7 @@ const PRESETS := [
 	["binary", "Binary stars", "Two suns locked in orbit, with planets on the edge of chaos."],
 	["black_hole", "Black hole feast", "Plunging star: tidal breakup and capture. R: whole system. No viscous accretion model."],
 	["smash", "Planet smash", "Two Earths on a collision course."],
-	["formation", "Planet formation", "Late-stage rocky accretion: four approaching embryo pairs in a disk. R: view whole system."],
+	["formation", "Planet formation", "Late-stage rocky accretion: four approaching embryo pairs in a disk. Double-click an embryo to follow."],
 	["galaxies", "Tidal encounter", "Two gravitating particle disks around black holes form tidal tails."],
 	["empty", "Empty space", "Nothing but you and the void."],
 ]

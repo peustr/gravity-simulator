@@ -5,6 +5,7 @@ const Main = preload("res://scripts/main.gd")
 var main
 var result := {}
 var path: String
+var accretion_snapshot: Image
 
 
 func _initialize() -> void:
@@ -138,8 +139,11 @@ func _check_collision_demos() -> bool:
 func _check_formation() -> bool:
 	main.hud.preset_chosen.emit("formation")
 	main.scene_files.confirm.get_ok_button().pressed.emit()
-	if not await _until(func(): return main.views.size() == 33 and main.paused and main.views.has(main.follow_id) and absf(log(main.rig.distance / .03)) < .01):
+	if not await _until(func(): return main.views.size() == 33 and main.paused and main.follow_id == -1 and absf(log(main.rig.distance / 350.0)) < .01):
 		return false
+	var embryo: int = main.views.keys()[1]
+	main._select(embryo)
+	main._start_follow(embryo)
 	var followed: int = main.follow_id
 	if main.selected_id != followed:
 		return false
@@ -152,6 +156,28 @@ func _check_formation() -> bool:
 	if not await _until(func(): return main.views.size() == 29 and main.views[followed].mass > 1.75 * mass):
 		push_error("Planet formation did not grow embryos in the live application")
 		return false
+	main.net.send({"cmd": "pause", "value": true})
+	if not await _until(func(): return main.paused):
+		return false
+	var remnant = main.views[followed]
+	var added_mass := .00035
+	var added_radius: float = remnant.physical_radius * pow(added_mass/remnant.mass, 1.0/3.0)
+	var contact_radius: float = remnant.physical_radius + added_radius
+	var position: Vector3 = remnant.base_pos + Vector3(2.0*contact_radius, 0, 0)
+	var initial_mass: float = remnant.mass
+	main.net.send({"cmd":"add", "type":"rocky", "pos":[position.x,position.y,position.z],
+		"mode":"launch", "drag":[-.3*contact_radius,0,0], "mass_mult":added_mass/.003})
+	if not await _until(func(): return main.views.size() == 30):
+		return false
+	main.net.send({"cmd":"pause","value":false})
+	if not await _until(func(): return main.views.size() == 29 and main.views.has(followed) and main.views[followed].mass > initial_mass*1.4):
+		push_error("Spinning formation remnant did not accept a subsequent bound accretion")
+		return false
+	if not await _until(func(): return main.hud.impact_panel.report.get("regime") == "bound_sticking"):
+		return false
+	if DisplayServer.get_name() != "headless":
+		await RenderingServer.frame_post_draw
+		accretion_snapshot = root.get_texture().get_image()
 	if not await _request({"cmd": "restart"}):
 		return false
 	if not await _until(func(): return main.views.size() == 33 and main.paused and main.follow_id == followed):

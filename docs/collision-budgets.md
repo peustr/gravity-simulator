@@ -77,8 +77,15 @@ certificate. It requires known, nonrotating inputs in the published domain.
 `World` validates feasibility, external gravity and capacity before mutation,
 then updates bodies and invalidates contact, forecast and partition caches.
 Unsupported inputs pause with an explanation and leave incoming bodies intact.
-A constructed remnant can carry spin, but a later calibrated encounter involving
-that spin is unsupported.
+A constructed remnant can carry spin. Automatic mode additionally admits
+**bound sticking** for known, rotating rocky inputs in the fluid-planet size,
+density and contact envelope. The zero-spin reference must be a merger; relative
+orbital kinetic plus incoming rotational energy must remain below mutual binding.
+`merge_spheres` then enforces energy availability and the spherical spin limit.
+This is a perfectly sticking prescription, not a rotating-impact calibration or
+a proof of fluid-shape stability. The UI identifies it separately. Faster
+rotating, grazing outcomes outside this branch and excessive angular momentum
+remain unsupported. Explicit isolated modes retain the nonrotating calibration.
 
 ### Contact reconstruction
 

@@ -310,7 +310,7 @@ Restores rebuild REBOUND from the saved physical conditions. They do not preserv
 | **Binary stars** | Two suns in orbit, a planet around one of them on the edge of stability, and circumbinary planets. |
 | **Black hole feast** (`black_hole`) | A plunging star crosses the approximate Roche limit. Some debris is captured; other material follows ballistic orbits or escapes. The two outer stars start bound. Disk/jet flares are artistic; no viscous accretion is modelled. |
 | **Planet smash** | Choose gentle merging, hit-and-run or disruption from the Scenarios submenu. Encounters start paused in physical-size view. Play, inspect the outcome card and use Replay or Conservation report. |
-| **Planet formation** (`formation`) | Late-stage accretion of 32 Mars-sized rocky embryos around a young Sun. Four approaching pairs grow through shared physical collision laws, with contacts roughly 3–9 seconds into default playback. The camera follows the first pair at physical size; press R for the whole disk. Initial encounters are curated, not a forecast from a primordial disk; gas drag and dust growth are not modelled. |
+| **Planet formation** (`formation`) | Late-stage accretion of 32 Mars-sized rocky embryos around a young Sun. Four approaching pairs grow through shared physical collision laws, with contacts roughly 3–9 seconds into default playback. The initial view shows the disk; double-click an embryo to follow it. Initial encounters are curated, not a forecast from a primordial disk; gas drag and dust growth are not modelled. Self-consistent multi-generation disk assembly remains unsupported. |
 | **Tidal encounter** | Two disks around stellar-mass black holes make a parabolic encounter. This illustrates tidal tails; it is not a galaxy-scale mass model. The preset key remains `galaxies`. |
 | **Empty space** | Your canvas. |
 
@@ -356,6 +356,13 @@ remain enforced. Supported head-on disruptions use [compact ejecta](docs/unresol
 when resolved fragments exceed capacity. The conservation report includes both
 representations, explicit source/sink budgets and separate model diagnostics.
 Unsupported encounters pause intact with an explanation.
+
+Automatic mode also offers conditional **bound sticking** for spinning rocky
+remnants: relative kinetic plus incoming spin energy must stay below mutual
+binding, and the constructed sphere must close its energy/spin budgets and pass
+the spin limit. This is a sticking assumption, labelled separately in the impact
+panel; it does not extend the published nonrotating impact calibration. General
+rotating and excessive-angular-momentum outcomes remain unsupported.
 
 Generate sixteen paused experiments covering the live regimes, resolved/compact
 comparisons and an unsupported-spin case:

@@ -30,7 +30,7 @@ def _impact_metadata(value, outcome=False):
     number(value['speed_m_s'],0,1e8)
     number(value['angle_deg'],0,90)
     if outcome:
-        if value['regime'] not in ('merging','graze_and_merge','hit_and_run','partial_accretion','erosion',
+        if value['regime'] not in ('merging','graze_and_merge','bound_sticking','hit_and_run','partial_accretion','erosion',
                                    'disruption','supercatastrophic_disruption'):
             raise ValueError('Unknown impact regime')
         masses = value['remnant_masses_kg']
