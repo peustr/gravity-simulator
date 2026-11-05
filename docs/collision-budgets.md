@@ -6,6 +6,10 @@ allocations. `collision_models.py` connects them to the
 outside REBOUND callbacks. Ejecta layouts, energy fractions and restitution are
 prescriptions, not calibrated fragment distributions or hydrodynamics.
 
+Collision outcomes are constructed in the pair’s centre-of-mass rest frame, then
+translated back to the scene. This resolves physical contact at orbital distances
+without subtracting large absolute coordinates during remnant construction.
+
 ## Persistent body inventories
 
 `SphereState` contains mass, physical radius, position, velocity, spin angular

@@ -52,10 +52,8 @@ func spawn_event(kind: int, pos: Vector3, magnitude: float, size: float) -> void
 			_flash(pos, Color(1.0, 0.7, 0.4), size * 2.5, 0.6 + magnitude, 0.6)
 			_burst(pos, Color(1.0, 0.75, 0.4), Color(0.9, 0.25, 0.05), int(20 + 40 * magnitude), size * 0.6, size * 2.0, 1.2)
 		Palette.EV_SHATTER:
-			_flash(pos, Color(1.0, 0.85, 0.6), size * 6.0, 2.0 + magnitude, 1.0)
-			_burst(pos, Color(1.0, 0.9, 0.6), Color(1.0, 0.3, 0.05), int(120 + 60 * magnitude), size * 0.5, size * 5.0, 2.2)
+			_flash(pos, Color(1.0, 0.85, 0.6), size * 3.0, 1.0 + magnitude, 0.25)
 			_ring(pos, Color(1.0, 0.6, 0.3), size * 8.0, 1.6, 2.0)
-			_light(pos, Color(1.0, 0.6, 0.3), 6.0 * magnitude, size * 40.0, 1.2)
 			_shake_near(pos, 0.6 * magnitude, size)
 		Palette.EV_HIT_AND_RUN:
 			_flash(pos, Color(1.0, 0.85, 0.6), size * 2.0, 0.6 + magnitude, 0.6)
@@ -119,12 +117,12 @@ func _flash(pos: Vector3, color: Color, size: float, intensity: float, duration:
 	mi.mesh = _quad
 	mi.material_override = m
 	mi.position = pos
-	mi.scale = Vector3.ONE * maxf(size, 0.1) * 0.3
+	mi.scale = Vector3.ONE * maxf(size, 1e-7) * 0.3
 	mi.custom_aabb = AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2))
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_track(mi, duration + 0.1)
 	var tw := mi.create_tween().set_parallel(true)
-	tw.tween_property(mi, "scale", Vector3.ONE * maxf(size, 0.1), duration).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tw.tween_property(mi, "scale", Vector3.ONE * maxf(size, 1e-7), duration).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
 	tw.tween_method(func(v: float): m.set_shader_parameter("intensity", v), intensity, 0.0, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
@@ -138,7 +136,7 @@ func _burst(pos: Vector3, c0: Color, c1: Color, amount: int, emit_radius: float,
 	p.randomness = 0.6
 	p.local_coords = false
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-	p.emission_sphere_radius = maxf(emit_radius, 0.01)
+	p.emission_sphere_radius = maxf(emit_radius, 1e-7)
 	p.direction = Vector3.UP
 	p.spread = 180.0
 	p.gravity = Vector3.ZERO
@@ -146,8 +144,8 @@ func _burst(pos: Vector3, c0: Color, c1: Color, amount: int, emit_radius: float,
 	p.initial_velocity_max = speed / lifetime
 	p.damping_min = speed * 0.1 / lifetime
 	p.damping_max = speed * 0.4 / lifetime
-	p.scale_amount_min = maxf(emit_radius, 0.05) * 0.4
-	p.scale_amount_max = maxf(emit_radius, 0.05) * 1.4
+	p.scale_amount_min = maxf(emit_radius, 1e-7) * 0.4
+	p.scale_amount_max = maxf(emit_radius, 1e-7) * 1.4
 	var ramp := Gradient.new()
 	ramp.set_color(0, c0)
 	ramp.set_color(1, Color(c1.r, c1.g, c1.b, 0.0))
@@ -171,7 +169,7 @@ func _ring(pos: Vector3, color: Color, size: float, intensity: float, duration: 
 	mi.mesh = _quad
 	mi.material_override = m
 	mi.position = pos
-	mi.scale = Vector3.ONE * maxf(size, 0.1)
+	mi.scale = Vector3.ONE * maxf(size, 1e-7)
 	mi.custom_aabb = AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2))
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.visible = delay <= 0.0

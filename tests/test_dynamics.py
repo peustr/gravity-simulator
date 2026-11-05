@@ -225,7 +225,9 @@ def test_cached_contact_geometry_matches_fresh_bounds_and_resets_after_edits():
     w.sim.particles[1].m *= 2
     w.sim.particles[1].r *= 2
     guard.reset()
-    assert guard.limit(w.sim, math.inf) == D.contact_step_limit(w.sim, math.inf)
+    expected = D.contact_step_limit(w.sim, math.inf)
+    # Cached absolute time is added then subtracted, which can round by one ULP.
+    assert guard.limit(w.sim, math.inf) == pytest.approx(expected, rel=0, abs=2*math.ulp(expected))
 
 
 def test_safe_step_does_not_stop_at_a_stale_guard_boundary():

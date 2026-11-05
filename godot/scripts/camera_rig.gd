@@ -7,7 +7,7 @@ extends Node3D
 
 signal follow_broken
 
-const MIN_DIST := 1.5
+const MIN_DIST := 0.0001
 const MAX_DIST := 40000.0
 
 var camera: Camera3D
@@ -137,6 +137,10 @@ func _process(delta: float) -> void:
 
 
 func _apply() -> void:
+	# Keep a finite frustum at physical contact scales. A tiny near plane with
+	# the system-wide far plane rounds the far normal to zero in float32.
+	camera.near = clampf(distance * 0.001, 0.00000001, 0.05)
+	camera.far = minf(250000.0, distance * 1000.0)
 	var offset := Vector3(cos(pitch) * sin(yaw), sin(pitch), cos(pitch) * cos(yaw)) * distance
 	var shake_vec := Vector3.ZERO
 	if _shake > 0.0:

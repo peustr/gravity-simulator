@@ -346,7 +346,7 @@ def test_calibrated_merger_in_existing_solar_system_keeps_all_surrounding_bodies
                             (velocity[0]-.5,*velocity[1:]))
     surroundings = set(w.meta)-{name,str(projectile)}
     w.advance(.0001,time.perf_counter()+2)
-    assert not w.paused and not w.notices and w.sim.N == 73
+    assert not w.paused and not w.notices and w.sim.N == 74
     assert set(w.meta) == surroundings|{name}
     assert w.particle(name).m == pytest.approx(1.5*mass)
     assert w.meta[name]['inventory'].internal_energy_j > 0

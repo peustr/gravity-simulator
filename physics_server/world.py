@@ -38,10 +38,11 @@ import configuration
 from impacts import capture as capture_impact
 from body_state import BodyInventory, GravitySource, capture_sphere
 from collision_models import construct_collision, couple_external_gravity
-from diagnostics import totals,PhysicalLossLedger
+from diagnostics import totals,PhysicalLossLedger,conservation_report
 from dynamics import ContactGuard, step
 from debris_shell import MAX_SHELLS, ShellIntegrator, approaching_contacts, form_shell, model_defect, shell_energy
 from dataclasses import replace
+from encounters import DEMO_CASES, demo_initial_conditions, incoming_states
 
 # REBOUND rebuilds its name lookup table on its own; the warning is just noise.
 warnings.filterwarnings("ignore", message=".*hash table.*")
@@ -51,7 +52,7 @@ _INITIAL_INVENTORY = BodyInventory()
 MAX_BODIES = 1321  # 11 + 12*N + 8*64 float32 values must fit IPv4 UDP (65507 bytes).
 SCENARIOS = ("solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty")
 PRESET_SPEEDS = dict(solar=1.0, binary=10.0, black_hole=0.05, smash=0.05,
-                    formation=25.0, galaxies=8.0, empty=10.0)
+                    formation=0.005, galaxies=8.0, empty=10.0)
 
 # --- Body types (must match godot/scripts/palette.gd) -------------------------
 ROCKY, GAS_GIANT, STAR, NEUTRON_STAR, BLACK_HOLE, ASTEROID, PLASMA = range(7)
@@ -208,6 +209,8 @@ class World:
 
     # ------------------------------------------------------------------ setup
     def _new_simulation(self):
+        self.collision_demo = None
+        self.last_impact = None
         self.shells = ()
         self._next_shell_id = 1
         self._shell_integrator = None
@@ -281,7 +284,8 @@ class World:
         total = float(snap['m'].sum())+sum(s.mass_kg/units.MASS_KG for s in self.shells)
         return dict(settings=self.settings.copy(), tracers=sum(passive), tracer_mass=omitted,
                     tracer_mass_fraction=omitted / total if total else 0.0, removed=self.removed.copy(),
-                    reservoirs=len(self.shells),unresolved_fragments=sum(s.fragment_count for s in self.shells))
+                    reservoirs=len(self.shells),unresolved_fragments=sum(s.fragment_count for s in self.shells),
+                    collision_demo=self.collision_demo, last_impact=self.last_impact)
 
     def radius_for(self, btype, mass):
         model = legacy_radius_for if self.units == units.LEGACY else radius_for
@@ -754,6 +758,14 @@ class World:
         if outcome.central_shell:
             self.sim.integrator = 'bs'
             self._set_solver_tolerance()
+        impact = outcome.contact
+        relative = np.subtract(impact[1].velocity_m_s, impact[0].velocity_m_s)
+        separation = np.subtract(impact[1].position_m, impact[0].position_m)
+        b = min(1.,np.linalg.norm(np.cross(separation,relative))/(np.linalg.norm(separation)*np.linalg.norm(relative)))
+        self.last_impact = dict(regime=outcome.classification.regime, speed_m_s=float(np.linalg.norm(relative)),
+                                angle_deg=math.degrees(math.asin(b)),
+                                remnant_masses_kg=[s.mass_kg for s in outcome.remnants],
+                                unresolved_fragments=0 if shell is None else shell.fragment_count)
         self._event(kind, center, 1.0,
                     rec['rs'] + rec['rr'], int(rec['s']), int(rec['r']))
 
@@ -1424,6 +1436,8 @@ class World:
             # Resolve Titan; metre-sized ring material needs a statistical model,
             # not a few massive super-particles forcing every body's timestep.
             self.add_satellite(saturn, ROCKY, 6.77e-5, 1_221_870_000 / units.LENGTH_M, 0.4)
+            up, uv = self.orbit(origin, origin, sun + 0.04365, 1151.4, 4.4)
+            self.add_body(GAS_GIANT, 0.04365, up, uv)
             np_, nv = self.orbit(origin, origin, sun + 0.0515, 1804.2, 5.5)
             self.add_body(GAS_GIANT, 0.0515, np_, nv)
             cam = {"focus": [0, 0, 0], "distance": 1300.0, "pitch": 0.62}
@@ -1471,12 +1485,25 @@ class World:
         elif name == "formation":
             sun = 1000.0
             self.add_body(STAR, sun, origin, origin)
-            for _ in range(200):
+            # A late-stage snapshot with four approaching embryo pairs. Only
+            # initial conditions are curated; ordinary calibrated contacts grow
+            # the embryos, including the star's gravity and potential changes.
+            for pair in range(4):
+                masses = (.0004 + .00005 * pair, .00032 + .00004 * pair)
+                radii = [self.radius_for(ROCKY, m) for m in masses]
+                speed = 1.05 * math.sqrt(2 * G * sum(masses) / sum(radii))
+                states = incoming_states(masses, radii, (-speed, 0, 0), .015 + .01 * pair)
+                centre, bulk = self.orbit(origin, origin, sun + sum(masses), 60 + 30 * pair, 1.4 * pair)
+                for mass, (position, velocity) in zip(masses, states, strict=True):
+                    self.add_body(ROCKY, mass, _add(centre, position), _add(bulk, velocity))
+            for _ in range(24):
                 r_orb = rng.uniform(40, 150)
                 p, v = self.orbit(origin, origin, sun, r_orb, rng.uniform(0, 6.283), rng.gauss(0, 0.01))
                 v = _add(v, _mul(self._rand_unit(), 0.006 * math.sqrt(sun / r_orb)))
-                self.add_body(ASTEROID, 2e-4 * rng.uniform(0.6, 1.4), p, v)
-            cam = {"focus": [0, 0, 0], "distance": 330.0, "pitch": 0.9}
+                self.add_body(ROCKY, rng.uniform(.00032, .00055), p, v)
+            cam = {"focus": [60, 0, 0], "distance": .03, "pitch": .35,
+                   "display_scale": 0.0,
+                   "follow": int(self.sim.particles[1].name) if self.sim.N > 1 else -1}
 
         elif name == "galaxies":
             mbh, nstars = 8000.0, 110
@@ -1502,3 +1529,21 @@ class World:
         self._target_t = self.sim.t
         self.version += 1
         return {"type": "preset", "name": name, "camera": cam, "speed": self.speed}
+
+    def load_collision_demo(self, case):
+        # Use the same live engine and radius model as every sandbox encounter.
+        if case not in DEMO_CASES:
+            raise ValueError('Unknown collision encounter')
+        if self.max_bodies < 2:
+            raise ValueError('Collision demonstrations require two body slots')
+        hint = self.load_preset('smash')
+        particles = list(self.sim.particles)
+        states, camera, info = demo_initial_conditions(case,[p.m for p in particles],[p.r for p in particles])
+        for particle,(position,velocity) in zip(particles,states,strict=True):
+            particle.xyz,particle.vxyz = position,velocity
+        self.speed, self.paused = .005, True
+        self.collision_demo = info
+        conservation_report(self,reset=True)
+        self.version += 1
+        hint.update(camera=camera,speed=self.speed,collision_demo=info)
+        return hint

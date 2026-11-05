@@ -188,7 +188,11 @@ def test_surface_projection_preserves_point_mass_energy_momentum_and_angular_mom
     if offset == 0:
         assert corrected == pair
     result = construct_collision(a, b, material='planetesimals', body_types=(0, 0))
-    assert result.contact == corrected
+    for actual, expected in zip(result.contact, corrected, strict=True):
+        np.testing.assert_allclose(actual.position_m, expected.position_m, rtol=0,
+                                   atol=1e-12 * (a.radius_m + b.radius_m))
+        np.testing.assert_allclose(actual.velocity_m_s, expected.velocity_m_s, rtol=0,
+                                   atol=1e-12 * math.dist(a.velocity_m_s, b.velocity_m_s))
     assert_closed(corrected, result.remnants)
 
 
@@ -389,7 +393,7 @@ def test_symmetric_escape_certificate_rejects_bound_expansion_with_closed_invent
     def bound_allocation(*args, **kwargs):
         kwargs['expansion_fraction'] = 1e-6
         states = allocate(*args, **kwargs)
-        assert_closed(pair, states)
+        assert_closed(args[:2], states)
         return states
     monkeypatch.setattr(model, 'allocate_remnants', bound_allocation)
     with pytest.raises(ValueError, match='positive escape energy'):

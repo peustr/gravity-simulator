@@ -14,6 +14,7 @@ Development supports Windows and Linux. The physics venv is `physics_server/.ven
 - Complete authorized setup, fixes and validation without asking again for routine implementation choices. Ask when missing information or credentials actually block progress.
 - Keep local paths and credentials out of tracked files. Use the `GODOT` environment variable for a custom engine path; otherwise discover `godot` or `godot4` on PATH.
 - Keep simulation claims honest: REBOUND supplies gravity; stellar evolution, collisions and visuals include approximations documented in README.
+- Physics changes need an observable acceptance case in an existing demo, alongside numerical references. Demo variants change initial conditions and use the shared engine; keep every preset in regression checks.
 - Report what changed, what was tested, and any remaining limitation. A headless run does not validate rendered appearance.
 
 ## Documentation
@@ -88,6 +89,7 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 | Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_EROSION=12), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
 | Packet layout: header 11 floats, body 12, event 8; forecast reply header 9 (protocol 2, packet kinds 3/4) | `server.py` `pack_state`/`pack_prediction` ↔ `main.gd` `_on_state`/`_on_prediction` |
 | UDP port 47810 | `server.py` `DEFAULT_PORT` ↔ `net_client.gd` `SERVER_PORT` |
+| Camera distance minimum `1e-4`, playback minimum `1e-5` | `configuration.py`/`experiments.py` ↔ `camera_rig.gd`/`main.gd` |
 | Scenario names | `world.load_preset()` ↔ `hud.gd` `PRESETS` |
 | New body type | also `TYPE_LABELS`, `TYPE_COLORS`, `TOOL_TYPES`, a builder in `body_view.gd`, an icon in `hud.gd`, trail strength in `trails.gd` |
 | User-visible change | README: controls table, scenarios, physics notes |

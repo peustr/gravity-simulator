@@ -9,6 +9,9 @@ from commands import integer, number, vector
 from body_state import BodyInventory
 import world as W
 import units
+from configuration import MIN_SPEED, MIN_CAMERA_DISTANCE
+from copy import deepcopy
+from encounters import DEMO_CASES
 from diagnostics import validate_baseline,PhysicalLossLedger
 from debris_shell import EjectaShell, MAX_SHELLS, model_defect, shell_energy
 
@@ -16,15 +19,45 @@ MAX_FILE_BYTES = 4 * 1024 * 1024
 DEFAULT_CAMERA = dict(focus=[0, 0, 0], distance=400.0, pitch=0.6, yaw=0.5, display_scale=1.0)
 
 
+def _impact_metadata(value, outcome=False):
+    """Optional presentation history; never used to reconstruct physics."""
+    if value is None:
+        return None
+    fields = {'regime','speed_m_s','angle_deg','remnant_masses_kg','unresolved_fragments'} if outcome else {
+        'case','speed_m_s','angle_deg'}
+    if not isinstance(value,dict) or set(value) != fields:
+        raise ValueError('Invalid encounter metadata')
+    number(value['speed_m_s'],0,1e8)
+    number(value['angle_deg'],0,90)
+    if outcome:
+        if value['regime'] not in ('merging','graze_and_merge','hit_and_run','partial_accretion','erosion',
+                                   'disruption','supercatastrophic_disruption'):
+            raise ValueError('Unknown impact regime')
+        masses = value['remnant_masses_kg']
+        if not isinstance(masses,list) or not 1 <= len(masses) <= 32:
+            raise ValueError('Invalid encounter remnant list')
+        for mass in masses:
+            number(mass,1e-30,1e100)
+        integer(value['unresolved_fragments'],0,len(masses))
+    elif value['case'] not in DEMO_CASES:
+        raise ValueError('Unknown encounter case')
+    return deepcopy(value)
+
+
 def camera_state(camera):
     if not isinstance(camera, dict):
         raise ValueError('Invalid camera')
     vector(camera.get('focus'))
-    return dict(focus=list(camera['focus']),
-                distance=number(camera.get('distance'), 1.5, 40000),
+    result = dict(focus=list(camera['focus']),
+                distance=number(camera.get('distance'), MIN_CAMERA_DISTANCE, 40000),
                 pitch=number(camera.get('pitch'), -1.52, 1.52),
                 yaw=number(camera.get('yaw', 0.5), -1e12, 1e12),
                 display_scale=number(camera.get('display_scale', 1.0), 0, 4))
+    follow = camera.get('follow', -1)
+    integer(follow, -1, 16_000_000)
+    if follow != -1:
+        result['follow'] = follow
+    return result
 
 
 def capture(world, camera):
@@ -42,6 +75,8 @@ def capture(world, camera):
                 max_bodies=world.max_bodies, next_id=world._next_id,
                 rng=world.rng.getstate(), supernova_queue=list(world._supernova_queue),
                 camera=camera_state(camera), conservation_baseline=validate_baseline(world.conservation_baseline),
+                collision_demo=_impact_metadata(world.collision_demo),
+                last_impact=_impact_metadata(world.last_impact,outcome=True),
                 solver=str(world.sim.integrator),shell_model='homologous_polyhedra_v1',
                 ejecta_shells=[asdict(s) for s in world.shells],
                 next_shell_id=world._next_shell_id,
@@ -114,7 +149,9 @@ def restore(data):
         world.sim.integrator = data['solver']
         world._set_solver_tolerance()
     world.conservation_baseline = validate_baseline(data.get('conservation_baseline'))
-    world.speed = number(data['speed'], 0.05, 2000)
+    world.collision_demo = _impact_metadata(data.get('collision_demo'))
+    world.last_impact = _impact_metadata(data.get('last_impact'),outcome=True)
+    world.speed = number(data['speed'], MIN_SPEED, 2000)
     if type(data['paused']) is not bool:
         raise ValueError('Invalid pause state')
     world.paused = data['paused']

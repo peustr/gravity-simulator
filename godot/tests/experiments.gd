@@ -88,6 +88,78 @@ func _check_presets() -> bool:
 	return true
 
 
+func _check_collision_demos() -> bool:
+	var distance: float = main.rig.distance
+	for zoom in [0.0001, 0.001, 0.04, 40000.0]:
+		main.rig.distance = zoom
+		main.rig._apply()
+		for plane in main.rig.camera.get_frustum():
+			if not plane.normal.is_finite() or plane.normal.length_squared() < 0.5:
+				push_error("Camera frustum degenerated at close/wide zoom")
+				return false
+	main.rig.distance = distance
+	main.rig._apply()
+	if main.hud._fmt_mult(0.0005) != "0.0005" or main.hud._fmt_mult(0.000001) != "0.000001":
+		return false
+	var cases := ["merging", "hit_and_run", "disruption"]
+	var regimes := ["merging", "hit_and_run", "supercatastrophic_disruption"]
+	for i in range(cases.size()):
+		main.hud.collision_menu.id_pressed.emit(i)
+		main.scene_files.confirm.get_ok_button().pressed.emit()
+		if not await _until(func(): return main.paused and main.views.size() == 2 and main.hud.impact_panel.demo.get("case") == cases[i]):
+			return false
+		if main.display_scale != 0 or main.rig.target_distance >= 1.5:
+			return false
+		main.net.send({"cmd": "pause", "value": false})
+		if not await _until(func(): return main.hud.impact_panel.report.get("regime") == regimes[i]):
+			push_error("Collision menu did not produce expected live outcome: " + cases[i])
+			return false
+		main.net.send({"cmd": "pause", "value": true})
+		if not await _until(func(): return main.paused):
+			return false
+		if not main.hud.impact_panel.details.text.contains("kg"):
+			return false
+		main.hud.conservation_report = {}
+		main.hud.impact_panel.budgets_requested.emit()
+		if not await _until(func(): return not main.hud.conservation_report.is_empty()):
+			return false
+		if absf(main.hud.conservation_report.relative_conservation_residual) > 1e-8:
+			return false
+		main.hud.conservation_dialog.hide()
+		print("Live collision menu PASSED: ", cases[i])
+	main.hud.impact_panel.replay.pressed.emit()
+	main.scene_files.confirm.get_ok_button().pressed.emit()
+	if not await _until(func(): return main.views.size() == 2 and main.packet_time < .015 and not main.paused):
+		return false
+	main.net.send({"cmd": "pause", "value": true})
+	return await _until(func(): return main.paused)
+
+
+func _check_formation() -> bool:
+	main.hud.preset_chosen.emit("formation")
+	main.scene_files.confirm.get_ok_button().pressed.emit()
+	if not await _until(func(): return main.views.size() == 33 and main.paused and main.views.has(main.follow_id) and absf(log(main.rig.distance / .03)) < .01):
+		return false
+	var followed: int = main.follow_id
+	if main.selected_id != followed:
+		return false
+	if main.display_scale != 0 or not await _request({"cmd": "checkpoint"}):
+		return false
+	var mass: float = main.views[followed].mass
+	main._speed_step(1)
+	main._speed_step(1)
+	main.net.send({"cmd": "pause", "value": false})
+	if not await _until(func(): return main.views.size() == 29 and main.views[followed].mass > 1.75 * mass):
+		push_error("Planet formation did not grow embryos in the live application")
+		return false
+	if not await _request({"cmd": "restart"}):
+		return false
+	if not await _until(func(): return main.views.size() == 33 and main.paused and main.follow_id == followed):
+		return false
+	print("Live formation growth/follow/restart PASSED")
+	return true
+
+
 func _run() -> void:
 	main = Main.new()
 	root.add_child(main)
@@ -277,11 +349,17 @@ func _run() -> void:
 		return
 	main.hud.preset_chosen.emit("smash")
 	main.scene_files.confirm.get_ok_button().pressed.emit()
-	if not await _until(func(): return main.views.size() == 2 and is_equal_approx(main.server_speed, 0.05)):
+	if not await _until(func(): return main.views.size() == 2 and is_equal_approx(main.server_speed, 0.005)):
 		_fail("Confirmed scenario change did not apply")
 		return
 	if not await _check_presets():
 		_fail("Live preset control checks failed")
+		return
+	if not await _check_collision_demos():
+		_fail("Collision menu/replay checks failed")
+		return
+	if not await _check_formation():
+		_fail("Planet formation growth/restart checks failed")
 		return
 	var cloud_camera := {"focus": [0, 0, 0], "distance": 3.0, "pitch": 0.3, "yaw": 0.5}
 	main.restore_scene_view(cloud_camera)
