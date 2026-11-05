@@ -255,7 +255,7 @@ Use the **Experiment** menu in the top bar:
 
 **Clear** asks for confirmation. Choosing a scenario asks before replacing a nonempty scene; Cancel preserves both the scene and its restart point. Each scenario sets its own starting speed: Solar system uses x0.1 so its short moon orbits remain readable; Binary stars and Empty space use x1; Black hole feast uses x0.005, Planet formation x0.0005, and Tidal encounter x0.8. Planet smash encounter choices start paused at x0.0005; press Play to watch contact. Other scenario switches preserve pause/resume state.
 
-Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation and visual enlargement. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. The followed body is preserved when saved and opens in the inspector on restore; trails and transient effects are cleared.
+Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation and visual enlargement. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. The followed body is preserved when saved and opens in the inspector on restore. Scene replacement applies its camera immediately, clears trails and transient effects, and rejects queued states from the previous scene.
 
 The **Experiment** menu also controls full gravity for debris, inclusion of all bodies in forecasts, and distant-body removal. It shows the collective tracer mass fraction. These choices and cumulative removal losses are stored in version-3 and newer saves and restart points; older saves retain their previous approximation defaults. See [orbital dynamics and accuracy controls](docs/orbital-dynamics.md).
 
@@ -395,7 +395,7 @@ The size-mode label distinguishes physical from illustrative sizes. Ambient fill
 
 None of these affect the physics:
 - Lensing, accretion disks, jets, pulsar beams.
-- Flashes, shock waves and debris sparks.
+- Localized flashes and shock-wave rings. Their screen extent is bounded during zoom; material debris is drawn only from the physics state.
 - The gravity grid, which shows the Newtonian potential and is a teaching picture rather than literal spacetime.
 
 ### What is *not* simulated

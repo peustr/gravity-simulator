@@ -518,6 +518,24 @@ def main():
         print(
             result["scene"], result["status"], ", ".join(i["code"] for i in result["issues"]) or "backend checks passed"
         )
+    rendered = report.get("rendered", {})
+    if rendered:
+        print("Rendering:", rendered.get("godot"), rendered.get("renderer"), rendered.get("gpu"))
+        for scene in rendered.get("scenes", []):
+            print(
+                scene["scene"],
+                "rendered",
+                scene["status"],
+                "peak white",
+                round(scene["peak_white_fraction"], 4),
+                "issues",
+                scene["issues"],
+            )
+        for problem in rendered.get("issues", []):
+            print(problem["status"], problem["code"], problem["evidence"])
+        if rendered.get("reason"):
+            print("Recording:", rendered["reason"])
+    print("Evidence:", args.output)
     print("Release NOT APPROVED; rendered/interaction/performance review required")
     failed = (
         report["automated_backend_status"] == "FAIL"

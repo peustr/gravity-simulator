@@ -11,9 +11,10 @@ uniform float core = 0.0;        // extra bright pinpoint in the centre
 uniform float rays = 0.0;        // corona streamers
 uniform float falloff = 5.0;
 uniform bool hollow_shell = false;
+uniform float max_screen_radius = 0.0;
 
 void vertex() {
-	MODELVIEW_MATRIX = billboard_modelview(VIEW_MATRIX, INV_VIEW_MATRIX, MODEL_MATRIX);
+	MODELVIEW_MATRIX = limited_billboard_modelview(VIEW_MATRIX, INV_VIEW_MATRIX, MODEL_MATRIX, PROJECTION_MATRIX[1][1], max_screen_radius);
 }
 
 void fragment() {

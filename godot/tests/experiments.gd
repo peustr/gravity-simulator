@@ -390,5 +390,53 @@ func _run() -> void:
 	if main.cloud_count != 0 or not main.views.is_empty():
 		_fail("Restoring a scene retained the previous compact-cloud count")
 		return
+	if not _check_scene_replacement():
+		_fail("Scene replacement retained old camera, bodies or events")
+		return
 	print("Godot experiment save/load/restart check PASSED")
 	_finish(0)
+
+
+func _check_scene_replacement() -> bool:
+	var version: int = main.sim_version + 10
+	var cam := {"focus": [60, 0, 0], "distance": 0.03, "pitch": 0.6}
+	main._on_event(main.Palette.EV_TIDAL, Vector3.ZERO, 1, 1, -1, -1)
+	main.hud.push_event("Previous scene event")
+	main.hud.toast("Previous scene operation")
+	main.hud.conservation_report = {"old": true}
+	var previous_effects = main.effects
+	main._on_message({"type": "preset", "name": "formation", "camera": cam, "version": version})
+	if previous_effects.is_inside_tree() or main.effects.get_child_count() != 0:
+		return false
+	if main.hud.feed.get_child_count() != 0 or not main.hud.conservation_report.is_empty() or main.hud.toast_label.modulate.a != 0:
+		return false
+	if main.rig.focus != Vector3(60, 0, 0) or not is_equal_approx(main.rig.distance, .03):
+		return false
+	if not main.rig.camera.position.is_equal_approx(main.rig.focus + Vector3(cos(.6) * sin(main.rig.yaw), sin(.6), cos(.6) * cos(main.rig.yaw)) * .03):
+		return false
+	# An old queued state carries both a reused ID and a one-off effect. Neither
+	# may enter the replacement scene, even before its first state has arrived.
+	var stale := PackedFloat32Array([3, version - 1, 0, 1, 1, 1, 1, 1, 1, 600, 1,
+		1, 2, 0, 0, 0, 0, 0, 0, 1000, 1, 0, 0,
+		main.Palette.EV_TIDAL, 0, 0, 0, 1, 1, -1, -1])
+	main._on_state(stale)
+	if not main.views.is_empty() or main.effects.get_child_count() != 0:
+		return false
+	var current := stale.duplicate()
+	current[1] = version
+	current[3] = 0
+	current[5] = 0
+	current.resize(23)
+	main._on_state(current)
+	if main.views.size() != 1 or main.sim_version != version:
+		return false
+	var view = main.views[1]
+	main._on_message({"type": "preset", "camera": cam, "version": version - 1})
+	main._on_message({"type": "preset", "camera": cam, "version": version})
+	if main.views.get(1) != view:
+		return false
+	main._server_pid = 1
+	main._on_message({"type": "info", "pid": 2})
+	current[1] = 0
+	main._on_state(current)
+	return main.sim_version == 0 and main.views.size() == 1

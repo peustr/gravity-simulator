@@ -57,8 +57,7 @@ func _process(delta: float) -> void:
 		send({"cmd": "hello"})
 		_hello_timer = HELLO_INTERVAL
 
-	var latest_state := PackedFloat32Array()
-	var have_state := false
+	var states: Array[PackedFloat32Array] = []
 	while udp.get_available_packet_count() > 0:
 		var pkt := udp.get_packet()
 		if udp.get_packet_ip() != SERVER_HOST or udp.get_packet_port() != SERVER_PORT:
@@ -88,16 +87,14 @@ func _process(delta: float) -> void:
 		_last_packet = _now()
 		var kind := int(f[0])
 		if kind == STATE_KIND:
-			# Every state packet may carry one-off events, so pass them all on,
-			# but only the newest one needs to update positions.
-			if have_state:
-				state_received.emit(latest_state)
-			latest_state = f
-			have_state = true
+			# Apply scene/camera acknowledgements before queued state packets.
+			# The client can then reject states from the replaced scene, including
+			# their one-off events, without showing it through the new camera.
+			states.append(f)
 		elif kind == PREDICTION_KIND:
 			prediction_received.emit(f)
-	if have_state:
-		state_received.emit(latest_state)
+	for state in states:
+		state_received.emit(state)
 
 	var now_connected := _now() - _last_packet < TIMEOUT
 	if now_connected != connected:

@@ -665,6 +665,20 @@ func _build_feed() -> void:
 	root.add_child(feed)
 
 
+func clear_scene_history() -> void:
+	for row in feed.get_children():
+		feed.remove_child(row)
+		row.queue_free()
+	if _toast_tw != null and _toast_tw.is_valid():
+		_toast_tw.kill()
+	toast_label.text = ""
+	toast_label.modulate.a = 0.0
+	conservation_report.clear()
+	if conservation_dialog != null:
+		conservation_text.text = ""
+		conservation_dialog.hide()
+
+
 func push_event(text: String, color := C_TEXT) -> void:
 	for c in feed.get_children():
 		if c is Label and c.text == text and c.modulate.a > 0.3:

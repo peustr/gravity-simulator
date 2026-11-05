@@ -98,6 +98,23 @@ def test_valid_command_sequence(server):
     assert server.world.sim.N == 0
 
 
+@pytest.mark.parametrize('command', [
+    {'cmd': 'preset', 'name': 'binary'},
+    {'cmd': 'collision_demo', 'case': 'disruption'},
+    {'cmd': 'clear'},
+])
+def test_scene_camera_ack_identifies_its_first_valid_state(server, command):
+    replies = []
+    server.send_json = lambda message, addr: replies.append(message)
+    server.world.load_preset('solar')
+    old_version = server.world.version
+    server.handle(command, ('127.0.0.1', 12345))
+    hint = replies[-1]
+    state_version = np.frombuffer(S.pack_state(server.world), dtype='<f4')[1]
+    assert hint['type'] == 'preset' and 'camera' in hint
+    assert old_version < hint['version'] == state_version
+
+
 def test_run_sends_state_and_exits_when_idle(server):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.bind(('127.0.0.1', 0))

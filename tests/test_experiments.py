@@ -120,6 +120,7 @@ def test_restart_and_retry_are_idempotent(tmp_path):
         assert replies[-1]['ok']
         restart = dict(cmd='restart', request='restart')
         service.handle(restart, addr)
+        assert replies[-1]['version'] == service.world.version % 16_000_000
         assert service.world.sim.N == len(data['bodies'])
         assert service.world.meta == data_to_meta(data)
         restored = service.world
