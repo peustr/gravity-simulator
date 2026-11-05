@@ -6,6 +6,8 @@ Validation performed (include relevant commands and results):
 - [ ] Regression coverage for changed behavior
 - [ ] Generated reference refreshed with `tools/dev.py docs` if needed
 - [ ] README reviewed for controls, setup, protocol and physics claims
-- [ ] Rendered screenshots inspected if visuals changed
+- [ ] All-preset scene-quality report attached (`python3 tools/dev.py scene-check`)
+- [ ] Full recordings inspected through approach, peak events, aftermath and controls
+- [ ] Target engine/renderer and hardware limits recorded; no blocked gate treated as passed
 
 Known limitations or untested platforms:

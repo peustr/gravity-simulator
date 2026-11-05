@@ -16,6 +16,7 @@ Development supports Windows and Linux. The physics venv is `physics_server/.ven
 - Keep simulation claims honest: REBOUND supplies gravity; stellar evolution, collisions and visuals include approximations documented in README.
 - Physics changes need an observable acceptance case in an existing demo, alongside numerical references. Demo variants change initial conditions and use the shared engine; keep every preset in regression checks.
 - Report what changed, what was tested, and any remaining limitation. A headless run does not validate rendered appearance.
+- Scene acceptance follows `docs/scene-quality.md`. Run the all-preset quality gate for engine or presentation changes; review continuous event sequences, not only final screenshots. Keep failed or blocked scenes open regardless of unit-test coverage.
 
 ## Documentation
 

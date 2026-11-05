@@ -39,6 +39,10 @@ numerical reference and an application check of that result. Demo variants may
 change initial conditions; all use the shared engine. Every preset remains part
 of regression testing, including those unaffected by the new physics.
 
+Release acceptance follows [the scene quality standard](scene-quality.md).
+Failed or blocked scene gates keep the current work open regardless of unit-test
+coverage. Review complete event sequences on the target rendering path.
+
 Use physical time controls, measurements and comparisons to expose slow effects;
 label assumptions and artistic display choices. Freeze the model references,
 numerical tolerances and demo acceptance cases before coding each milestone.
@@ -50,7 +54,7 @@ Additional features require a scope decision rather than extending its checklist
 - [x] ~~2. Physical units and independent display sizes~~
 - [x] ~~3. Trustworthy orbital dynamics~~
 - [x] ~~4. Credible impact outcomes~~
-- [x] ~~Collision demonstration follow-up~~
+- [ ] **Scene quality and collision demonstration — active, before Milestone 5**
 - [ ] **5. Rotation and tidal evolution**
 - [ ] **6. Composition and thermal history**
 - [ ] **7. Stellar evolution and compact objects**
@@ -208,10 +212,10 @@ and thermal/material response are delivered in Milestones 5 and 6 respectively.
 - [x] **Selectable encounters.** Planet smash offers gentle merging, intact
   hit-and-run and disruptive encounters directly in the application, with replay.
   No generated files or manual placement are required to observe these cases.
-- [x] **Inspectable contact.** Close camera and slow playback make physical
+- [ ] **Inspectable contact.** Close camera and slow playback make physical
   surfaces and contact timing observable. Indicate visual enlargement; ensure
   the transient flash leaves the persistent remnants/debris easy to inspect.
-- [x] **Results and regression.** Show encounter speed/angle, regime and remnant
+- [ ] **Results and regression.** Show encounter speed/angle, regime and remnant
   masses, with access to the conservation report. Identify calibrated mass laws
   and prescribed scattering/ejecta choices. Verify all three live encounters,
   resolved/compact budget agreement and continued operation of all seven presets.

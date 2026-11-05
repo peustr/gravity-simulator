@@ -541,6 +541,14 @@ Two caveats:
 
 ## 9. Developing with Codex
 
+Scene acceptance is defined in [the scene quality standard](docs/scene-quality.md).
+Run `python3 tools/dev.py scene-check` for an all-preset physical audit, continuous
+rendered recordings, peak-event frames and sandbox-control checks. It needs a
+display and the documented Godot engine/renderer. Reports and a timed recording
+viewer are written to a fresh ignored `benchmarks/scene-quality-*` directory.
+`--backend-only` runs a diagnostic subset and cannot approve appearance. Failed
+or blocked gates prevent release regardless of the unit-test count.
+
 Development commands support Windows and Linux. [Codex](https://developers.openai.com/codex/) can use the repository guidance and validation skills below.
 
 | File | Purpose |
