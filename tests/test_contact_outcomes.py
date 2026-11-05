@@ -107,7 +107,9 @@ def test_scene_conversion_body_exchange_rotation_and_shallow_overlap():
                       relative_velocity=(-impact.relative_velocity[1], impact.relative_velocity[0], 0))
     shallow = replace(impact, relative_position=tuple(x * .99995 for x in impact.relative_position))
     for outcome in (result, classify(exchanged), classify(rotated), classify(shallow)):
-        assert asdict(outcome) == pytest.approx(asdict(expected), rel=1e-12)
+        actual_values, expected_values = asdict(outcome), asdict(expected)
+        assert actual_values.pop('regime') == expected_values.pop('regime')
+        assert actual_values == pytest.approx(expected_values, rel=1e-12)
 
 
 def test_grazing_boundary_is_excluded_even_for_slow_encounters():
@@ -266,7 +268,9 @@ def test_grazing_results_invariant_under_body_exchange_and_scene_conversion():
                    tuple(x / units.LENGTH_M for x in impact.relative_position),
                    tuple(v / units.VELOCITY_M_S for v in impact.relative_velocity), units.G)
     result = classify_contact(scene, unit_system=units.SYSTEM, material='fluid_planets', body_types=(0, 0))
-    assert asdict(result) == pytest.approx(asdict(original), rel=1e-12)
+    actual_values, expected_values = asdict(result), asdict(original)
+    assert actual_values.pop('regime') == expected_values.pop('regime')
+    assert actual_values == pytest.approx(expected_values, rel=1e-12)
     with pytest.raises(FrozenInstanceError):
         result.runner_mass_kg = 0
 
