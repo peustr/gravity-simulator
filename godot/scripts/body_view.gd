@@ -273,6 +273,7 @@ func _build_asteroid() -> void:
 func _build_plasma() -> void:
 	_glow_mat = _shader_mat(SH_GLOW)
 	_glow_mat.set_shader_parameter("falloff", 5.0)
+	_glow_mat.set_shader_parameter("hollow_shell", id < 0)
 	_glow = _mesh_instance(_quad, _glow_mat)
 	_glow.custom_aabb = BIG_AABB
 
@@ -341,8 +342,8 @@ func _update_plasma() -> void:
 	else:
 		c = cool.lerp(Color(1.0, 0.9, 0.75), Palette.hash01(id, 4) * 0.6)
 	_glow_mat.set_shader_parameter("color", c)
-	_glow_mat.set_shader_parameter("intensity", 0.9 + 2.5 * heat)
-	_glow_mat.set_shader_parameter("core", 0.6 + heat)
+	_glow_mat.set_shader_parameter("intensity", 0.6 if id < 0 else 0.9 + 2.5 * heat)
+	_glow_mat.set_shader_parameter("core", 0.0 if id < 0 else 0.6 + heat)
 
 
 func _apply_radius() -> void:
@@ -372,7 +373,7 @@ func _apply_radius() -> void:
 				mi.position = Vector3(0, d * length * 0.5, 0)
 				mi.rotation = Vector3(0.0 if d > 0 else PI, 0, 0)
 		Palette.PLASMA:
-			_glow.scale = Vector3.ONE * maxf(r * 5.0, 0.6)
+			_glow.scale = Vector3.ONE * (r if id < 0 else maxf(r * 5.0, 0.6))
 			_update_plasma()
 		_:
 			if _surface != null:

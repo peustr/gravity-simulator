@@ -39,6 +39,55 @@ func _request(command: Dictionary) -> bool:
 	return result.get("ok", false)
 
 
+func _check_presets() -> bool:
+	var forecasts: Array[PackedFloat32Array] = []
+	var receive := func(packet: PackedFloat32Array): forecasts.append(packet)
+	main.net.prediction_received.connect(receive)
+	main.net.send({"cmd": "pause", "value": true})
+	if not await _until(func(): return main.paused):
+		return false
+	for preset in ["solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty"]:
+		var previous_version: int = main.sim_version
+		main.hud.preset_chosen.emit(preset)
+		main.scene_files.confirm.get_ok_button().pressed.emit()
+		if not await _until(func(): return main.sim_version > previous_version and main.packet_time == 0 and main.paused):
+			push_error("Preset did not load: " + preset)
+			return false
+		if main.cloud_count != 0 or (main.views.is_empty() != (preset == "empty")):
+			push_error("Preset retained stale bodies/clouds: " + preset)
+			return false
+		if not main.views.is_empty():
+			var id: int = main.views.keys()[0]
+			main._select(id)
+			main._start_follow(id)
+			if main.selected_id != id or main.follow_id != id or not main.hud.insp_values["Physical radius"].text.ends_with(" km"):
+				push_error("Preset selection/follow failed: " + preset)
+				return false
+		main.hud.conservation_report = {}
+		main.net.send({"cmd": "conservation"})
+		if not await _until(func(): return not main.hud.conservation_report.is_empty()):
+			return false
+		if not main.hud.conservation_report.get("ok", false):
+			return false
+		main.hud.conservation_dialog.hide()
+		forecasts.clear()
+		main.net.send({"cmd": "predict", "req": 1000, "type": "rocky", "pos": [400, 50, 0], "mode": "orbit", "drag": [0, 0, 0]})
+		if not await _until(func(): return not forecasts.is_empty()):
+			return false
+		if forecasts[0][1] != 1000 or not main.NetClient.valid_packet(forecasts[0]):
+			push_error("Preset forecast failed: " + preset)
+			return false
+		main.net.send({"cmd": "pause", "value": false})
+		if not await _until(func(): return main.packet_time > 0 and not main.paused):
+			return false
+		main.net.send({"cmd": "pause", "value": true})
+		if not await _until(func(): return main.paused):
+			return false
+		print("Live preset controls PASSED: ", preset)
+	main.net.prediction_received.disconnect(receive)
+	return true
+
+
 func _run() -> void:
 	main = Main.new()
 	root.add_child(main)
@@ -70,6 +119,44 @@ func _run() -> void:
 	if not await _until(func(): return main.views.size() == 6 and main.paused):
 		_fail("Scene test: initial scene did not arrive")
 		return
+	if main.hud.physics_settings.get("collisions") != "auto":
+		_fail("Preset did not enable automatic collision models")
+		return
+	main.hud.physics_menu.id_pressed.emit(15)
+	if not await _until(func(): return not main.hud.conservation_report.is_empty()):
+		_fail("Conservation report did not arrive")
+		return
+	if not main.hud.conservation_report.get("ok", false) or main.hud.conservation_report.current.bodies != 6:
+		_fail("Conservation report lost the current scene")
+		return
+	if not "Internal energy" in main.hud.conservation_text.text:
+		_fail("Conservation report omitted intrinsic energy")
+		return
+	main.hud.conservation_dialog.hide()
+	main.hud.conservation_report = {}
+	main.hud.physics_menu.id_pressed.emit(16)
+	if not await _until(func(): return not main.hud.conservation_report.is_empty()):
+		_fail("Conservation baseline reset did not arrive")
+		return
+	if main.hud.conservation_report.relative_energy_change != 0:
+		_fail("Reset baseline retained an energy difference")
+		return
+	main.hud.conservation_dialog.hide()
+	main.follow_id = 2
+	main.selected_id = 2
+	main._on_event(main.Palette.EV_HIT_AND_RUN, Vector3.ZERO, 1.0, 0.01, 1, 2)
+	if main.follow_id != 2 or main.selected_id != 2:
+		_fail("Hit-and-run switched focus away from the surviving runner")
+		return
+	if not "both bodies survived" in main._event_text(main.Palette.EV_HIT_AND_RUN, 1, 2)[0]:
+		_fail("Hit-and-run was labelled as destruction")
+		return
+	main.follow_id = -1
+	main.selected_id = -1
+	main.hud.physics_menu.id_pressed.emit(10)
+	if not await _until(func(): return main.hud.physics_settings.get("gravity") == "tracers"):
+		_fail("Tracer comparison control did not reach the server")
+		return
 	main.hud.physics_menu.id_pressed.emit(10)
 	if not await _until(func(): return main.hud.physics_settings.get("gravity") == "full"):
 		_fail("Full gravity control did not reach the server")
@@ -81,6 +168,17 @@ func _run() -> void:
 	main.hud.physics_menu.id_pressed.emit(12)
 	if not await _until(func(): return main.hud.physics_settings.get("escape_distance") == null):
 		_fail("Removal boundary control did not reach the server")
+		return
+	main.hud.physics_menu.id_pressed.emit(14)
+	if not await _until(func(): return main.hud.physics_settings.get("collisions") == "heuristic"):
+		_fail("Could not select heuristic comparison mode")
+		return
+	main.hud.physics_menu.id_pressed.emit(14)
+	if not await _until(func(): return main.hud.physics_settings.get("collisions") == "auto"):
+		_fail("Could not restore automatic collision models")
+		return
+	if main.hud.physics_menu.is_item_disabled(main.hud.physics_menu.get_item_index(12)):
+		_fail("Automatic mode disabled the independent removal control")
 		return
 	if not await _request({"cmd": "checkpoint"}):
 		_fail("Could not set paused restart point for cancellation test")
@@ -160,7 +258,8 @@ func _run() -> void:
 	if not main.hud.insp_values["Physical radius"].text.ends_with(" km") or main.hud.insp_values["Display"].text != "Enlarged x2":
 		_fail("Physical inspector fields did not reach the HUD")
 		return
-	var legacy := FileAccess.get_file_as_string(path).replace('"version":3', '"version":1')
+	# Preserve integer tokens; Godot parses JSON numbers as floats.
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":5', '"version":1')
 	var migration_file := FileAccess.open(path, FileAccess.WRITE)
 	migration_file.store_string(legacy)
 	migration_file.close()
@@ -180,6 +279,38 @@ func _run() -> void:
 	main.scene_files.confirm.get_ok_button().pressed.emit()
 	if not await _until(func(): return main.views.size() == 2 and is_equal_approx(main.server_speed, 0.05)):
 		_fail("Confirmed scenario change did not apply")
+		return
+	if not await _check_presets():
+		_fail("Live preset control checks failed")
+		return
+	var cloud_camera := {"focus": [0, 0, 0], "distance": 3.0, "pitch": 0.3, "yaw": 0.5}
+	main.restore_scene_view(cloud_camera)
+	await create_timer(0.05).timeout
+	# Compact clouds share playback even though they cannot be selected as bodies.
+	var cloud := PackedFloat32Array([3, main.sim_version + 1, 0, 1, 1, 0, 1, 1, 1, 600, 1,
+		-2, 6, 0, 0, 0, 1, 0, 0, 0.001, 0.01, 0.5, 0])
+	main._on_state(cloud)
+	cloud[1] += 1
+	cloud[3] = 2
+	cloud[13] = 3
+	main._on_state(cloud)
+	main._update_motion(0)
+	if main.cloud_count != 1 or not main.views[-2].position.is_equal_approx(Vector3(3, 0, 0)):
+		_fail("Compact cloud view did not follow its authoritative position")
+		return
+	cloud[1] += 1
+	cloud[3] = 3
+	cloud[4] = 2
+	cloud[13] = 0
+	cloud.append_array(PackedFloat32Array([1, 0, 0, 0, 0, 0, 0, 0, 0.0001, 0.001, 0, 0]))
+	main._on_state(cloud)
+	main._update_motion(0)
+	if main._pick_body(main.rig.camera.unproject_position(Vector3.ZERO)) != 1:
+		_fail("Compact cloud intercepted selection of the resolved remnant")
+		return
+	main.restore_scene_view(cloud_camera)
+	if main.cloud_count != 0 or not main.views.is_empty():
+		_fail("Restoring a scene retained the previous compact-cloud count")
 		return
 	print("Godot experiment save/load/restart check PASSED")
 	_finish(0)

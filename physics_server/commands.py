@@ -16,7 +16,8 @@ COMMANDS = {
     "speed": "value (clamped to 0.05–2000)",
     "clear": "no fields",
     "preset": "name",
-    "physics": "settings (gravity, epsilon, forecast_limit, escape_distance; partial updates allowed)",
+    "physics": "settings (gravity, epsilon, forecast_limit, escape_distance, collisions, impact_material; partial updates allowed)",
+    "conservation": "reset (optional boolean; replace the comparison baseline)",
     "save_scene": "path, camera, request",
     "load_scene": "path, request",
     "checkpoint": "camera, request",
@@ -79,3 +80,5 @@ def validate(msg):
         raise ValueError("Unknown scenario")
     elif cmd == "physics":
         configuration.settings(msg.get('settings'), partial=True)
+    elif cmd == "conservation" and type(msg.get('reset', False)) is not bool:
+        raise ValueError('Conservation baseline reset must be a boolean')

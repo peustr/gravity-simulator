@@ -10,6 +10,7 @@ uniform float seed = 0.0;
 uniform float core = 0.0;        // extra bright pinpoint in the centre
 uniform float rays = 0.0;        // corona streamers
 uniform float falloff = 5.0;
+uniform bool hollow_shell = false;
 
 void vertex() {
 	MODELVIEW_MATRIX = billboard_modelview(VIEW_MATRIX, INV_VIEW_MATRIX, MODEL_MATRIX);
@@ -27,6 +28,12 @@ void fragment() {
 	float streak = pow(vnoise(vec3(cos(a) * 3.0, sin(a) * 3.0, seed + TIME * 0.05)), 3.0) * rays * exp(-d * 2.5);
 	float pin = exp(-d * d * 120.0) * core;
 	float v = g * (0.8 + 0.4 * n) + streak + pin;
+	if (hollow_shell) {
+		// Project a translucent spherical layer, retaining a visible central remnant.
+		float outer = sqrt(max(0.0, 1.0 - d * d));
+		float inner = sqrt(max(0.0, 0.85 * 0.85 - d * d));
+		v = 2.0 * (outer - inner) * (0.8 + 0.4 * n);
+	}
 	ALBEDO = color * intensity * v;
 	ALPHA = clamp(v, 0.0, 1.0);
 }

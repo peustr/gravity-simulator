@@ -52,6 +52,7 @@ var server_speed := DEFAULT_SPEED
 var paused := false
 var perf := 1.0
 var max_bodies := 600
+var cloud_count := 0
 
 # Interaction state
 var tool := -1
@@ -121,6 +122,7 @@ func _ready() -> void:
 	add_child(scene_files)
 	hud.scene_action.connect(scene_files.choose)
 	hud.physics_changed.connect(func(settings: Dictionary): net.send({"cmd": "physics", "settings": settings}))
+	hud.conservation_requested.connect(func(reset: bool): net.send({"cmd": "conservation", "reset": reset}))
 	hud.tool_selected.connect(_set_tool)
 	hud.mass_changed.connect(func(_t, _m): _clear_prediction())
 	hud.pause_toggled.connect(_toggle_pause)
@@ -236,6 +238,8 @@ func _on_message(msg: Dictionary) -> void:
 		"physics":
 			hud.set_physics(msg)
 			hud.toast("Physics settings updated. Save or set a restart point to keep them.")
+		"conservation":
+			hud.show_conservation(msg)
 		"preset":
 			var cam: Dictionary = msg.get("camera", {})
 			var f: Array = cam.get("focus", [0, 0, 0])
@@ -292,9 +296,12 @@ func _on_state(f: PackedFloat32Array) -> void:
 
 	var seen := {}
 	var positions := {}
+	cloud_count = 0
 	for i in range(n):
 		var o := HEADER + i * BODY
 		var id := int(f[o])
+		if id < 0:
+			cloud_count += 1
 		var btype := int(f[o + 1])
 		var pos := Vector3(f[o + 2], f[o + 3], f[o + 4])
 		var view = views.get(id)
@@ -337,7 +344,7 @@ func _remove_view(id: int) -> void:
 func _on_event(kind: int, pos: Vector3, magnitude: float, size: float, a: int, b: int) -> void:
 	effects.spawn_event(kind, pos, magnitude, size)
 	# Keep following / inspecting the survivor of a merger.
-	if kind in [Palette.EV_MERGE, Palette.EV_SHATTER, Palette.EV_SWALLOW]:
+	if kind in [Palette.EV_MERGE, Palette.EV_SHATTER, Palette.EV_SWALLOW, Palette.EV_ACCRETION, Palette.EV_EROSION]:
 		if b == follow_id and a >= 0:
 			follow_id = a
 		if b == selected_id and a >= 0:
@@ -376,6 +383,12 @@ func _event_text(kind: int, a: int, b: int) -> Array:
 			if na != "" and nb != "" and not small:
 				return ["Catastrophic impact! %s and %s shattered" % [na, nb], Color(1.0, 0.65, 0.4)]
 			return ["Catastrophic impact - debris everywhere!", Color(1.0, 0.65, 0.4)]
+		Palette.EV_HIT_AND_RUN:
+			return ["Hit-and-run impact - both bodies survived", Color(1.0, 0.85, 0.6)]
+		Palette.EV_ACCRETION:
+			return ["Partial accretion - the larger body grew and released debris", Color(1.0, 0.85, 0.6)]
+		Palette.EV_EROSION:
+			return ["Erosive impact - the larger body lost material", Color(1.0, 0.75, 0.5)]
 		Palette.EV_SWALLOW:
 			if small or na == "":
 				return []
@@ -450,7 +463,7 @@ func _process(delta: float) -> void:
 	_stats_timer -= delta
 	if _stats_timer <= 0.0:
 		_stats_timer = 0.2
-		hud.set_stats(display_time, views.size(), max_bodies, server_speed / DEFAULT_SPEED, paused, perf)
+		hud.set_stats(display_time, views.size()-cloud_count, max_bodies, server_speed / DEFAULT_SPEED, paused, perf, cloud_count)
 		hud.time_label.text = "t = " + _physical_value(display_time, "time_s", "days", 1.0 / 86400.0)
 		_update_inspector()
 		if not net.connected and _alive > 1.6:
@@ -702,6 +715,8 @@ func _pick_body(screen: Vector2) -> int:
 	var best := -1
 	var best_score := INF
 	for id in views:
+		if id < 0:
+			continue
 		var v = views[id]
 		if cam.is_position_behind(v.position):
 			continue
@@ -752,7 +767,7 @@ func _select(id: int) -> void:
 
 
 func _start_follow(id: int) -> void:
-	if not views.has(id):
+	if id < 0 or not views.has(id):
 		return
 	follow_id = id
 	rig.following = true
@@ -818,6 +833,7 @@ func restore_scene_view(cam: Dictionary) -> void:
 	for view in views.values():
 		view.queue_free()
 	views.clear()
+	cloud_count = 0
 	trails.clear_all()
 	remove_child(effects)
 	effects.queue_free()

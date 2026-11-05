@@ -8,6 +8,7 @@ signal speed_step(direction: int)
 signal preset_chosen(preset: String)
 signal scene_action(action: String)
 signal physics_changed(settings: Dictionary)
+signal conservation_requested(reset: bool)
 signal clear_requested
 signal follow_requested
 signal delete_requested
@@ -36,6 +37,9 @@ const C_BAD := Color(1.0, 0.45, 0.4)
 var root: Control
 var physics_menu: PopupMenu
 var physics_settings := {}
+var conservation_dialog: AcceptDialog
+var conservation_text: Label
+var conservation_report := {}
 var ui_visible := true
 var tool_buttons := {}
 var _tool_group := ButtonGroup.new()
@@ -289,8 +293,14 @@ func _build_top_bar() -> void:
 	file_menu.add_check_item("Full gravity, including debris", 10)
 	file_menu.add_check_item("Include all bodies in forecasts", 11)
 	file_menu.add_check_item("Remove bodies beyond the boundary", 12)
+	file_menu.add_check_item("Automatic collision models", 14)
+	file_menu.add_radio_check_item("Planet impact calibration", 17)
+	file_menu.add_radio_check_item("Small-body impact calibration (1–100 km)", 18)
 	file_menu.add_item("Waiting for physics settings...", 13)
 	file_menu.set_item_disabled(file_menu.get_item_index(13), true)
+	file_menu.add_separator("Accounting")
+	file_menu.add_item("Conservation report...", 15)
+	file_menu.add_item("Reset conservation baseline", 16)
 	file_menu.id_pressed.connect(_experiment_action)
 	h.add_child(files)
 	var clear := _button("Clear", "Remove everything")
@@ -304,6 +314,10 @@ func _build_top_bar() -> void:
 func _experiment_action(id: int) -> void:
 	if id < 4:
 		scene_action.emit(["save_scene", "load_scene", "checkpoint", "restart"][id])
+	elif id in [15, 16]:
+		conservation_requested.emit(id == 16)
+	elif id in [17, 18]:
+		physics_changed.emit({"impact_material": "fluid_planets" if id == 17 else "planetesimals", "gravity": "full", "collisions": "auto"})
 	elif not physics_settings.is_empty():
 		match id:
 			10:
@@ -312,6 +326,58 @@ func _experiment_action(id: int) -> void:
 				physics_changed.emit({"forecast_limit": 20 if physics_settings.forecast_limit == 0 else 0})
 			12:
 				physics_changed.emit({"escape_distance": 15000.0 if physics_settings.escape_distance == null else null})
+			14:
+				if physics_settings.get("collisions", "heuristic") != "heuristic":
+					physics_changed.emit({"collisions": "heuristic"})
+				else:
+					physics_changed.emit({"collisions": "auto", "gravity": "full"})
+
+
+func _budget_value(value, unit: String = "") -> String:
+	if value == null:
+		return "Unavailable"
+	if value is Array:
+		return "[%s, %s, %s] %s" % [_budget_value(value[0]), _budget_value(value[1]), _budget_value(value[2]), unit]
+	return ("0" if float(value) == 0.0 else Palette._scientific(float(value))) + (" " + unit if unit != "" else "")
+
+
+func show_conservation(report: Dictionary) -> void:
+	conservation_report = report
+	if conservation_dialog == null:
+		conservation_dialog = AcceptDialog.new()
+		conservation_dialog.title = "Conservation report"
+		root.add_child(conservation_dialog)
+		var scroll := ScrollContainer.new()
+		scroll.custom_minimum_size = Vector2(780, 460)
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		conservation_dialog.add_child(scroll)
+		conservation_text = Label.new()
+		conservation_text.custom_minimum_size.x = 740
+		conservation_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		conservation_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(conservation_text)
+	if not report.get("ok", false):
+		conservation_text.text = str(report.get("error", "Report unavailable"))
+	else:
+		var current: Dictionary = report.current
+		var change: Dictionary = report.changes
+		var text := "Snapshot: %.3f days · Baseline: %.3f days\n" % [float(current.time_s) / 86400.0, float(report.baseline.time_s) / 86400.0]
+		text += "%d bodies + %d unresolved fragments in %d reservoirs\n" % [current.bodies, current.get("unresolved_fragments",0), current.get("reservoirs",0)]
+		text += "%d unknown inventories · %d tracers · %d removed since baseline\n\n" % [current.unknown_inventories, current.tracers, report.removed_since_baseline]
+		for row in [["Mass", "mass_kg", "kg"], ["Momentum", "momentum_kg_m_s", "kg m/s"], ["Total angular momentum", "angular_momentum_kg_m2_s", "kg m²/s"], ["Total energy", "energy_j", "J"]]:
+			text += "%s: %s\n  Change: %s\n" % [row[0], _budget_value(current[row[1]], row[2]), _budget_value(change[row[1]], row[2])]
+			if current.get("loss_event_count",0) > 0:
+				text += "  After recorded changes: %s\n" % _budget_value(report.conservation_residual[row[1]],row[2])
+		text += "\nOrbital angular momentum: %s\nSpin angular momentum: %s\n" % [_budget_value(current.orbital_angular_momentum_kg_m2_s, "kg m²/s"), _budget_value(current.spin_angular_momentum_kg_m2_s, "kg m²/s")]
+		for row in [["Translational kinetic", "translational_energy_j"], ["Rotational kinetic", "rotational_energy_j"], ["Self-binding", "self_binding_j"], ["Mutual potential", "mutual_potential_j"], ["Internal", "internal_energy_j"], ["Model potential offset", "model_potential_offset_j"]]:
+			text += "%s energy: %s\n" % [row[0], _budget_value(current[row[1]], "J")]
+		text += "Energy change / component scale: %s\n\n" % _budget_value(report.relative_energy_change)
+		text += "Residual after recorded changes / scale: %s\n" % _budget_value(report.relative_conservation_residual)
+		if current.get("reservoirs",0) > 0:
+			text += "Shell numerical energy change: %s\nMaximum accumulated model impulse: %s\n" % [_budget_value(current.shell_numerical_energy_error_j,"J"), _budget_value(current.model_omitted_impulse_m_s,"m/s")]
+		text += "Raw changes include edits and removals; adjusted residuals account for recorded changes.\nModel approximation bounds are separate from numerical conservation residuals.\nHomogeneous-sphere binding; excludes radiation and rest-mass energy.\nUnknown inventories, overlapping surfaces or incomplete loss history make affected values unavailable."
+		conservation_text.text = text
+	conservation_dialog.popup_centered()
 
 
 func set_physics(info: Dictionary) -> void:
@@ -321,6 +387,16 @@ func set_physics(info: Dictionary) -> void:
 	physics_menu.set_item_checked(physics_menu.get_item_index(10), physics_settings.gravity == "full")
 	physics_menu.set_item_checked(physics_menu.get_item_index(11), physics_settings.forecast_limit == 0)
 	physics_menu.set_item_checked(physics_menu.get_item_index(12), physics_settings.escape_distance != null)
+	var mode: String = physics_settings.get("collisions", "heuristic")
+	physics_menu.set_item_checked(physics_menu.get_item_index(14), mode != "heuristic")
+	physics_menu.set_item_checked(physics_menu.get_item_index(17), physics_settings.get("impact_material", "fluid_planets") == "fluid_planets")
+	physics_menu.set_item_checked(physics_menu.get_item_index(18), physics_settings.get("impact_material", "fluid_planets") == "planetesimals")
+	physics_menu.set_item_tooltip(physics_menu.get_item_index(18), "Explicit gravity-dominated small-body material assumption. Non-grazing solid contacts only, target radius 1–100 km, equal bulk densities and calibrated mass/speed limits. Unsupported solid encounters pause intact. Presets restore the planet calibration.")
+	var isolated := mode in ["isolated_mergers", "isolated_impacts"]
+	physics_menu.set_item_text(physics_menu.get_item_index(14), "Isolated calibrated experiment" if isolated else "Automatic collision models")
+	physics_menu.set_item_disabled(physics_menu.get_item_index(10), isolated)
+	physics_menu.set_item_disabled(physics_menu.get_item_index(12), isolated)
+	physics_menu.set_item_tooltip(physics_menu.get_item_index(14), "Default: calibrated rocky–rocky impacts; heuristic models for other pairs. Tides and supernovae remain available. Unsupported rocky impacts pause intact, including when tracer gravity is selected. Uncheck for heuristic-only comparisons. Older isolated experiments retain their restrictions until switched off.")
 	physics_menu.set_item_text(physics_menu.get_item_index(13), "Tracers: %d · %.6f%% of total mass" % [int(info.get("tracers", 0)), 100.0 * float(info.get("tracer_mass_fraction", 0.0))])
 	physics_menu.set_item_tooltip(physics_menu.get_item_index(10), "Full gravity includes all mutual forces and costs more for large debris clouds. Tracers feel gravity but exert none; their collective mass can matter.")
 	physics_menu.set_item_tooltip(physics_menu.get_item_index(11), "All-body forecasts use the scene's gravity model. The time budget can shorten the path. Limited forecasts omit weaker perturbers and have no general error bound.")
@@ -615,11 +691,11 @@ func set_connection(state: String, detail: String) -> void:
 	status_label.text = detail
 
 
-func set_stats(sim_time: float, n: int, max_n: int, speed_mult: float, paused: bool, perf: float) -> void:
+func set_stats(sim_time: float, n: int, max_n: int, speed_mult: float, paused: bool, perf: float, clouds: int = 0) -> void:
 	pause_btn.text = "Play" if paused else "Pause"
 	speed_label.text = "x" + _fmt_mult(speed_mult)
 	time_label.text = "t = %s" % _fmt_time(sim_time)
-	bodies_label.text = "%d bodies" % n
+	bodies_label.text = "%d bodies" % n if clouds == 0 else "%d bodies + %d debris clouds" % [n,clouds]
 	bodies_label.add_theme_color_override("font_color", C_WARN if n > max_n * 0.85 else C_DIM)
 	if status_label.text == "Physics offline":
 		perf_label.text = ""

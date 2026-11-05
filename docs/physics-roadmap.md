@@ -36,8 +36,8 @@ and make the next milestone active. Store generated measurements in ignored
 - [x] ~~1. Accuracy and performance baseline~~
 - [x] ~~2. Physical units and independent display sizes~~
 - [x] ~~3. Trustworthy orbital dynamics~~
-- [ ] **4. Credible impact outcomes — active**
-- [ ] **5. Rotation and tidal evolution**
+- [x] ~~4. Credible impact outcomes~~
+- [ ] **5. Rotation and tidal evolution — active**
 - [ ] **6. Composition and thermal history**
 - [ ] **7. Stellar evolution and compact objects**
 - [ ] **8. Specialised simulation modes**
@@ -118,23 +118,72 @@ Reference problems, numerical bounds and model limitations:
 
 ## 4. Credible impact outcomes
 
-Start after Milestone 3's contact-detection checks pass: impact speed and geometry
-must be measured reliably before choosing the physical outcome.
+Calibrated solid-body impacts, physical inventories and compact ejecta are
+available in the running sandbox, with explicit model domains and diagnostics.
+Reference encounters, live preset controls, restart and performance workflows
+cover the delivery requirements below.
 
-- [ ] Select and document calibrated impact laws and their mass, velocity,
-  material and geometry domains.
-- [ ] Distinguish accretion, erosion, disruption and hit-and-run outcomes using
-  impact geometry and material properties.
-- [ ] Track impact angular momentum, remnant spin and energy partition;
-  preserve physical budgets across outcome generation.
-- [ ] Preserve unresolved debris in an accounted reservoir/statistical model
-  when particle limits prevent explicit fragments.
-- [ ] Validate reference impacts, grazing encounters and particle-cap changes;
-  measure runtime and migrate saved scenes as new physical state is introduced.
+### Current implementation
 
-Acceptance: representative impacts match reference outcomes and close their
-mass, momentum, angular-momentum, and energy budgets within documented errors;
-particle limits do not silently change the collision regime.
+| Component | Available behavior | Remaining limitation |
+|---|---|---|
+| Contact state and saves | Immutable impact state; version-5 spin/internal energy, compact ejecta, solver and error/loss histories | Older or heuristically transformed bodies can have unknown inventories |
+| Classification and construction | Planet and small-body controls; live regimes, prescribed conserved layouts and loadable examples | Published domains, incoming spin, strong fields and simultaneous contacts restrict applicability |
+| Unresolved material | Live symmetric ejecta coupled to resolved bodies, disjoint/nested clouds, bounded storage and transactional refusal | Head-on expanding shells only; no surface crossing, recollapse or automatic reconstruction |
+| Diagnostics | SI inventories across bodies/clouds, explicit-loss residuals, model offsets, force-defect and numerical diagnostics | Unknown intrinsic inventories or incomplete loss history leave affected values unavailable |
+
+### Delivery requirements
+
+- [x] **Live calibrated outcomes.** Apply merging, graze-and-merge, partial
+  accretion, erosion, disruption and hit-and-run in the existing calibrated
+  solid-body domains. Supply a bounded, documented remnant-layout and energy-split
+  policy so callers do not have to invent fragment states. Label prescribed ejecta
+  parameters honestly. Provide an application control and runnable reference
+  scenes. Validate before mutation; unsupported encounters remain intact with a
+  useful explanation, without silently reverting to heuristic outcomes.
+- [x] **Encounters in populated scenes.** Account for surrounding bodies and
+  changes in their interaction potential, with a quantitative bound on the
+  isolated-impact approximation. Apply supported outcomes outside the native
+  callback, update particle/forecast/contact caches, and handle successive
+  encounters without losing inventories. Demonstrate supported impacts with a
+  third gravitating body and repeated supported contacts; explicitly reject
+  encounters outside the calibration, including unsupported incoming spin.
+- [x] **Operational unresolved debris.** Choose and implement a representation
+  that can evolve the ejecta produced by the live outcome policy, including its
+  interaction with remnants and other bodies. Coordinate shared-body updates,
+  ownership and bounded storage; preserve complete inventories through transfers.
+  Changing explicit-particle capacity must not change the classified regime or
+  discard material. Demonstrate the same impact with resolved and unresolved
+  debris and bounded error against a resolved reference. Full storage or exceeded
+  model limits must leave the encounter unapplied.
+- [x] **Complete accounting and persistence.** Report mass, linear momentum,
+  orbital plus spin angular momentum, and kinetic, binding, mutual and internal
+  energies across bodies and unresolved material. Separate numerical error,
+  approximation error and explicit losses. Save/restart must retain reservoirs,
+  model parameters, error history and ownership without changing future behavior
+  beyond documented integrator restart differences. Preserve old-save migration
+  and clearly expose the active collision model and unsupported states.
+- [x] **Release validation and maintenance.** Exercise every supported regime,
+  grazing boundaries, populated scenes, successive contacts, capacity changes and
+  save/restart through the live path. Require reference agreement and complete
+  budget closure within documented numerical/model tolerances. Measure the
+  existing representative workloads against the performance targets above and
+  verify rendered Solar System smoothness. Pass repository checks, self-tests
+  and CI. Consolidate superseded or unused implementations and duplicate prose;
+  keep one documented runtime path per supported model.
+
+### Scope
+
+Mass-outcome calibrations retain their published applicability limits. Ejecta
+layouts and energy fractions remain explicit modelling prescriptions unless
+independently calibrated. General rotating-impact laws, tidal evolution,
+thermodynamic/composition models, gas/stellar/compact-object collision laws and
+hydrodynamics belong to later milestones. General cloud coalescence and resampling
+are outside the current shell model.
+
+Implementation contracts: [impact measurements](impact-measurements.md),
+[calibration domains](impact-scaling.md), [collision budgets and live mode](collision-budgets.md),
+[compact ejecta and ownership](unresolved-debris.md).
 
 ## 5. Rotation and tidal evolution
 

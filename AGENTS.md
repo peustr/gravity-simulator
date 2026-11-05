@@ -2,7 +2,7 @@
 
 Interactive N-body space sandbox for Windows. Two programs talk over UDP on `127.0.0.1:47810`:
 
-- `physics_server/` — Python 3.10–3.14 + REBOUND 5 (IAS15 integrator) + NumPy. **All physics lives here.**
+- `physics_server/` — Python 3.10–3.14 + REBOUND 5 (IAS15/BS integrators) + NumPy. **All physics lives here.**
 - `godot/` — Godot 4.7.2 project (GDScript, Forward+ renderer). Rendering, input and UI only. Never put physics in GDScript.
 
 Development supports Windows and Linux. The physics venv is `physics_server/.venv` (Python 3.13 on Windows; Python 3.12 on Linux). Keep physics claims consistent with the documented model (see README "What is *not* simulated").
@@ -36,6 +36,7 @@ Use `python3` on Linux/macOS or `py -3.13` on Windows to run `tools/dev.py`. The
 | Create/refresh the venv and validate physics | `python3 tools/dev.py setup` |
 | Install developer tools | `python3 tools/dev.py setup-dev` |
 | All quality checks | `python3 tools/dev.py check` |
+| Generate loadable collision references | `python3 tools/dev.py impact-references --output benchmarks/impact-references` |
 | Physical accuracy references | `python3 tools/dev.py accuracy` |
 | Physics performance baseline | `python3 tools/dev.py benchmark --profile` |
 | Rendered performance baseline | `python3 tools/dev.py benchmark-visual solar` |
@@ -60,6 +61,12 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 | `physics_server/server.py` | UDP loop (60 Hz), JSON commands, binary packing, `--selftest` |
 | `physics_server/diagnostics.py`, `validation.py` | Optional conservation accounting and physical reference problems |
 | `physics_server/dynamics.py`, `configuration.py` | Contact step guards and validated solver/approximation settings |
+| `physics_server/impacts.py` | Immutable pre-merge pair state and impact geometry/energy/angular-momentum measurements |
+| `physics_server/body_state.py` | Persistent intrinsic inventories and SI snapshots; unknown state after unaccounted heuristic transformations |
+| `physics_server/disruption.py` | Head-on curves and solid-body classification, including rocky grazing impacts; limits in `docs/impact-scaling.md` |
+| `physics_server/collision_outcomes.py` | SI spherical inventories, isolated mergers and prescribed remnant allocations; contract in `docs/collision-budgets.md` |
+| `physics_server/collision_models.py` | Classified construction, shallow-contact correction and isolated remnant escape certificates |
+| `physics_server/debris_shell.py` | Live compact symmetric ejecta, coupled gravity and model-error diagnostics; limits in `docs/unresolved-debris.md` |
 | `docs/orbital-dynamics.md` | Accuracy targets, gravity/forecast options, removal boundaries and save migration |
 | `tools/benchmark.py` | Seeded performance workloads, profiling and JSON reports |
 | `docs/physics-roadmap.md` | Ordered realism milestones and current acceptance checklist |
@@ -78,7 +85,7 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 
 | What | Where |
 |---|---|
-| Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_KILONOVA=9), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
+| Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_EROSION=12), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
 | Packet layout: header 11 floats, body 12, event 8; forecast reply header 9 (protocol 2, packet kinds 3/4) | `server.py` `pack_state`/`pack_prediction` ↔ `main.gd` `_on_state`/`_on_prediction` |
 | UDP port 47810 | `server.py` `DEFAULT_PORT` ↔ `net_client.gd` `SERVER_PORT` |
 | Scenario names | `world.load_preset()` ↔ `hud.gd` `PRESETS` |
@@ -89,9 +96,9 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 
 - Never pass `name=` to `sim.add()`: the C side keeps a pointer to a temporary Python buffer. Add first, then `sim.particles[sim.N-1].name = name`. Always go through `World.add_body` / `remove_body`.
 - Reacquire particle references by ID after adding particles: array growth can invalidate references to C storage.
-- Never add particles inside the collision callback. `_resolve_collision` merges and records; `_handle_collision` runs after `sim.steps(1)` and may shatter.
+- Never add particles inside the collision callback. In heuristic mode `_resolve_collision` merges and records, then `_handle_collision` may shatter after the native step. In automatic and isolated modes the callback only records. Automatic mode calibrates rocky pairs and uses heuristic models for other pairs after the step; unsupported rocky encounters pause intact.
 - Collision callback return: 1 removes p1, 2 removes p2. REBOUND reports only *approaching* overlaps, so fragments may start overlapping the remnant.
-- Light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
+- In explicit tracer mode, light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
 - Changes to masses, physical radii, types or particle order must set `_partition_dirty`; `_repartition()` also invalidates the contact and tidal caches.
 - IAS15 has one global timestep, so a single close encounter slows everything. `min_dt` is zero for physical scenes and 1e-4 only for legacy saves. Keep debris counts in check (`SHATTER_MIN_MASS`, fragment caps).
 - Prefer Python 3.13 on Windows (3.12 for cloud development). Check wheel availability before moving to a newer Python; do not silently introduce a compiler requirement.

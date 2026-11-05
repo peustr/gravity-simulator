@@ -16,7 +16,7 @@ Physical scenes: `au60-solar1000-v1`; migrated scenes: `legacy-sandbox-v1`. See 
 | Body | 12 |
 | Event | 8 |
 
-At most 1321 bodies and 64 events fit in one packet.
+At most 1321 physical bodies and eight compact-ejecta views are sent per packet. The event batch shrinks from 64 as needed to stay below 65,507 bytes; remaining events are sent later. Negative body IDs denote non-selectable cloud views.
 
 ## Commands
 
@@ -33,7 +33,8 @@ At most 1321 bodies and 64 events fit in one packet.
 | `speed` | value (clamped to 0.05–2000) |
 | `clear` | no fields |
 | `preset` | name |
-| `physics` | settings (gravity, epsilon, forecast_limit, escape_distance; partial updates allowed) |
+| `physics` | settings (gravity, epsilon, forecast_limit, escape_distance, collisions, impact_material; partial updates allowed) |
+| `conservation` | reset (optional boolean; replace the comparison baseline) |
 | `save_scene` | path, camera, request |
 | `load_scene` | path, request |
 | `checkpoint` | camera, request |
@@ -64,6 +65,9 @@ At most 1321 bodies and 64 events fit in one packet.
 | `EV_COLLAPSE` | 7 |
 | `EV_BH_MERGER` | 8 |
 | `EV_KILONOVA` | 9 |
+| `EV_HIT_AND_RUN` | 10 |
+| `EV_ACCRETION` | 11 |
+| `EV_EROSION` | 12 |
 
 ## Scenarios
 

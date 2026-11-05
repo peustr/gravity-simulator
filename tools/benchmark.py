@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from dataclasses import fields
 import cProfile
 from datetime import datetime, timezone
 import json
@@ -19,7 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'physics_server'))
 import numpy as np
 import rebound
 
-from diagnostics import Ledger, totals
+from diagnostics import Ledger, totals,physical_totals
+from collision_outcomes import CollisionBudget
 from server import MAX_EVENTS_PER_PACKET, PHYSICS_BUDGET, TICK_HZ, pack_state
 from validation import run_accuracy
 import world as W
@@ -27,6 +29,16 @@ import units
 
 ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = ('solar', 'binary', 'black_hole', 'smash', 'formation', 'galaxies')
+
+
+def physical_inventory(world):
+    try:
+        budget = physical_totals(world)
+    except ValueError as exc:
+        return dict(available=False, reason=str(exc))
+    if budget['energy_j'] is None:
+        return dict(available=False,reason='Unknown body inventories or overlapping surfaces')
+    return dict(available=True,**{f.name:budget[f.name] for f in fields(CollisionBudget)},energy_j=budget['energy_j'])
 
 
 def summary(values):
@@ -71,14 +83,15 @@ def workload(name, ticks, seed, audit=False, settings=None):
     if settings is not None:
         world.configure(settings)
     initial = totals(world)
-    solver = dict(integrator=str(world.sim.integrator), epsilon=world.sim.integrator.epsilon,
-                  minimum_timestep=world.sim.integrator.min_dt, collision=world.sim.collision,
+    solver = dict(integrator=world.solver_name(), epsilon=world.settings['epsilon'],
+                  minimum_timestep=getattr(world.sim.integrator,'min_dt',0.0), collision=world.sim.collision,
                   gravity_constant=world.sim.G, max_bodies=world.max_bodies,
                   units=units.metadata(), radius_model=world.units, physics=world.gravity_summary())
     if audit:
         world.ledger = Ledger()
+        initial_physical = physical_inventory(world)
     advance, packing, forecast, tick_times, point_counts = [], [], [], [], []
-    events = Counter()
+    events, notices = Counter(), Counter()
     for tick in range(ticks):
         start = time.perf_counter()
         world.advance(1 / TICK_HZ, start + PHYSICS_BUDGET)
@@ -95,6 +108,7 @@ def workload(name, ticks, seed, audit=False, settings=None):
             forecast.append(time.perf_counter() - forecast_start)
             point_counts.append(len(prediction['points']))
         tick_times.append(time.perf_counter() - start)
+        notices.update(item['text'] for item in world.notices)
         world.notices.clear()
     final = totals(world)
     measured_seconds = sum(tick_times)
@@ -106,9 +120,11 @@ def workload(name, ticks, seed, audit=False, settings=None):
                   advance=summary(advance), packing=summary(packing), forecast=summary(forecast), tick=summary(tick_times),
                   ticks_over_60hz_budget=sum(value > 1 / TICK_HZ for value in tick_times),
                   forecast_point_counts=point_counts, events=dict(events),
+                  paused=world.paused, notices=dict(notices), final_integrator=world.solver_name(),
                   initial_tracers=initial['tracers'], final_tracers=final['tracers'])
     if audit:
         report['accounting'] = world.ledger.report(initial, final)
+        report['physical_inventory_si'] = dict(initial=initial_physical, final=physical_inventory(world))
     return report
 
 
@@ -144,13 +160,20 @@ def main(argv=None):
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--scenario', choices=SCENARIOS, action='append')
     parser.add_argument('--profile', action='store_true')
-    parser.add_argument('--gravity', choices=('tracers', 'full'), default='tracers')
+    parser.add_argument('--gravity', choices=('tracers', 'full'), default=None,
+                        help='Override preset gravity; calibrated impacts require full gravity')
+    parser.add_argument('--collisions', choices=('auto', 'heuristic', 'isolated_mergers', 'isolated_impacts'),
+                        help='Override preset collisions for controlled comparisons')
     parser.add_argument('--forecast-limit', type=bounded_int(0, W.MAX_BODIES), default=20,
                         help='0 includes all bodies; otherwise select this many plus the attractor')
     parser.add_argument('--accuracy-only', action='store_true')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args(argv)
-    settings = dict(gravity=args.gravity, forecast_limit=args.forecast_limit)
+    settings = dict(forecast_limit=args.forecast_limit)
+    if args.gravity is not None:
+        settings['gravity'] = args.gravity
+    if args.collisions is not None:
+        settings['collisions'] = args.collisions
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     path = args.output or ROOT / 'benchmarks' / f'physics-{stamp}.json'
     report = dict(format='gravity-baseline', version=1, created_at_utc=stamp, machine=metadata(),
@@ -165,7 +188,7 @@ def main(argv=None):
                          'Workloads feed 1/60 s ticks without sleeping; they are not live end-to-end latency measurements.',
                          'Seeds reproduce initial conditions; wall budgets can change subsequent trajectories.',
                          'Accounting runs enable expensive inventory sampling and are excluded from timing comparisons.',
-                         'Energy is Newtonian mechanical energy; spin, heat and rest-mass energy are absent.',
+                         'Orbital accounting excludes spin and internal energy. physical_inventory_si includes sphere spin, binding and internal energy when all body inventories are known; it is not a temperature or rest-mass model.',
                          'Tracer-containing systems and collision/explosion scenarios are not closed conservative systems.'])
     for case in report['accuracy']:
         print(f"{'PASS' if case['passed'] else 'FAIL'} {case['name']}: {case['errors']}", flush=True)

@@ -35,6 +35,9 @@ const EV_IGNITION := 6
 const EV_COLLAPSE := 7
 const EV_BH_MERGER := 8
 const EV_KILONOVA := 9
+const EV_HIT_AND_RUN := 10
+const EV_ACCRETION := 11
+const EV_EROSION := 12
 
 const _SYL_A := ["Ka", "Ve", "Lo", "Ri", "Tha", "Zo", "Mi", "Ar", "En", "Sol", "Dra", "Ny", "Or", "Pe", "Qua", "Ul", "Ys", "Tor", "Ae", "Bel", "Cy", "Del", "Fen", "Gal", "Hy", "Io", "Jun", "Kor", "Lyr", "Mor"]
 const _SYL_B := ["ra", "lon", "vis", "dor", "nae", "mir", "tis", "ka", "rus", "phe", "lia", "xen", "on", "ber", "dia", "gos", "lux", "ris", "the", "vax"]

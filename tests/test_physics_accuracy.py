@@ -17,6 +17,7 @@ def test_physical_reference_problems(check):
 
 def test_inventory_has_independent_hand_calculated_values_and_is_read_only():
     w = W.World(seed=9)
+    w.configure(dict(gravity='tracers'))
     w.add_body(W.ROCKY, 2, (-1, 0, 0), (0, -3, 0))
     w.add_body(W.ASTEROID, .1, (1, 0, 0), (0, 4, 0))
     before = w.snapshot()

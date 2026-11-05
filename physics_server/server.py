@@ -37,6 +37,7 @@ except ImportError as exc:  # friendly message instead of a stack trace
 import world as W
 import experiments
 import units
+from diagnostics import conservation_report
 from commands import validate
 
 PROTOCOL_VERSION = 2
@@ -58,9 +59,11 @@ def log(msg: str):
 def pack_state(world: W.World) -> bytes:
     """Binary state packet (little-endian float32), see README 'Protocol'."""
     snap = world.snapshot()
-    n = snap["n"]
-    events = world.events[:MAX_EVENTS_PER_PACKET]
-    del world.events[:MAX_EVENTS_PER_PACKET]
+    resolved = snap["n"]
+    n = resolved+len(world.shells)
+    event_limit = min(MAX_EVENTS_PER_PACKET,(65504//4-HEADER_FLOATS-n*BODY_FLOATS)//EVENT_FLOATS)
+    events = world.events[:event_limit]
+    del world.events[:event_limit]
     t = world.sim.t
     t_hi = float(int(t // 1000.0) * 1000.0)
     header = np.array([
@@ -69,28 +72,32 @@ def pack_state(world: W.World) -> bytes:
         0.0 if world.units == units.LEGACY else 1.0,
     ], dtype="<f4")
     bodies = np.zeros((n, BODY_FLOATS), dtype="<f4")
-    if n:
+    if resolved:
         names = snap["names"]
         meta = world.meta
         now = world.sim.t
-        ids = np.fromiter((int(nm) for nm in names), dtype=np.float64, count=n)
-        types = np.empty(n)
-        heat = np.empty(n)
-        age = np.empty(n)
+        ids = np.fromiter((int(nm) for nm in names), dtype=np.float64, count=resolved)
+        types = np.empty(resolved)
+        heat = np.empty(resolved)
+        age = np.empty(resolved)
         for i, nm in enumerate(names):
             md = meta.get(nm)
             if md is None:
                 types[i], heat[i], age[i] = W.ASTEROID, 0.0, 0.0
             else:
                 types[i], heat[i], age[i] = md["type"], md["heat"], now - md["born"]
-        bodies[:, 0] = ids
-        bodies[:, 1] = types
-        bodies[:, 2:5] = snap["xyz"]
-        bodies[:, 5:8] = snap["v"]
-        bodies[:, 8] = snap["m"]
-        bodies[:, 9] = snap["r"]
-        bodies[:, 10] = heat
-        bodies[:, 11] = age
+        bodies[:resolved, 0] = ids
+        bodies[:resolved, 1] = types
+        bodies[:resolved, 2:5] = snap["xyz"]
+        bodies[:resolved, 5:8] = snap["v"]
+        bodies[:resolved, 8] = snap["m"]
+        bodies[:resolved, 9] = snap["r"]
+        bodies[:resolved, 10] = heat
+        bodies[:resolved, 11] = age
+    for i,shell in enumerate(world.shells,resolved):
+        bodies[i] = (-shell.identifier-1,W.PLASMA,*np.array(shell.centre_m)/units.LENGTH_M,
+                     *np.array(shell.velocity_m_s)/units.VELOCITY_M_S,shell.mass_kg/units.MASS_KG,
+                     shell.radius_m/units.LENGTH_M,.5,(world.sim.t*units.TIME_S-shell.formed_at_s)/units.TIME_S)
     ev = np.array(events, dtype="<f4").reshape(len(events), EVENT_FLOATS)
     return header.tobytes() + bodies.tobytes() + ev.tobytes()
 
@@ -184,6 +191,8 @@ class Server:
         validate(msg)
         cmd = msg.get("cmd")
         w = self.world
+        edited = cmd in ('add','belt','remove','supernova')
+        before_edit = w.physical_loss_ledger.capture(w) if edited else None
         if self.verbose and cmd not in ("hello", "predict"):
             log(f"command: {msg}")
         if cmd in ("save_scene", "load_scene", "checkpoint", "restart"):
@@ -194,7 +203,7 @@ class Server:
             self.client = addr
             self.send_json({
                 "type": "info", "protocol": PROTOCOL_VERSION, "rebound": rebound.__version__,
-                "integrator": "IAS15", "max_bodies": w.max_bodies, "pid": os.getpid(),
+                "integrator": w.solver_name(), "max_bodies": w.max_bodies, "pid": os.getpid(),
                 "physical_units": units.metadata(),
                 "physics": w.gravity_summary(),
             }, addr)
@@ -225,6 +234,12 @@ class Server:
         elif cmd == "physics":
             w.configure(msg['settings'])
             self.send_json(dict(type='physics', **w.gravity_summary()), addr)
+        elif cmd == "conservation":
+            try:
+                report = dict(ok=True, **conservation_report(w, reset=msg.get('reset', False)))
+            except ValueError as exc:
+                report = dict(ok=False, error=str(exc))
+            self.send_json(dict(type='conservation', **report), addr)
         elif cmd == "clear":
             w.clear()
             self.checkpoint = experiments.capture(w, experiments.DEFAULT_CAMERA)
@@ -232,6 +247,8 @@ class Server:
             hint = w.load_preset(str(msg.get("name", "empty")))
             self.checkpoint = experiments.capture(w, hint["camera"])
             self.send_json(hint, addr)
+        if edited:
+            w.physical_loss_ledger.record('user_'+cmd,before_edit,w.physical_loss_ledger.capture(w))
 
     def handle_scene(self, msg, addr):
         # Retries repeat the acknowledgement, never the mutation or disk write.

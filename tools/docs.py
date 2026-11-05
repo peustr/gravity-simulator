@@ -21,7 +21,9 @@ def render():
              '| Record | Floats |', '|---|---:|',
              f'| State header | {server.HEADER_FLOATS} |',
              f'| Body | {server.BODY_FLOATS} |', f'| Event | {server.EVENT_FLOATS} |', '',
-             f'At most {world.MAX_BODIES} bodies and {server.MAX_EVENTS_PER_PACKET} events fit in one packet.', '',
+             f'At most {world.MAX_BODIES} physical bodies and eight compact-ejecta views are sent per packet. '
+             f'The event batch shrinks from {server.MAX_EVENTS_PER_PACKET} as needed to stay below 65,507 bytes; '
+             'remaining events are sent later. Negative body IDs denote non-selectable cloud views.', '',
              '## Commands', '', '| Command | Fields / meaning |', '|---|---|']
     lines.extend(f'| `{key}` | {value} |' for key, value in commands.COMMANDS.items())
     lines += ['', '## Bodies', '', '| Key | ID | Default mass |', '|---|---:|---:|']

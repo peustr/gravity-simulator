@@ -58,7 +58,7 @@ def test_failed_forecast_returns_only_finite_partial_path(monkeypatch, failure):
             original(sim, *args, **kwargs)
     monkeypatch.setattr(rebound.Simulation, 'steps', step)
     result = predict(w, samples=10, wall_budget=1)
-    assert calls == 2 and len(result['points']) == 1
+    assert calls == 2 and len(result['points']) == (1 if failure == 'nonfinite' else 2)
     assert not result['complete']
     assert np.isfinite(result['points']).all()
     assert w.sim.t == 0 and np.isfinite(w.snapshot()['xyz']).all()
@@ -72,6 +72,28 @@ def test_forecast_without_gravitating_attractor():
     assert result['attractor'] == -1 and not result['hit']
     assert len(result['points']) == 3
     assert result['points'][-1][0] > result['points'][0][0]
+
+
+def test_forecast_losing_the_proposed_body_returns_valid_partial_state(monkeypatch):
+    w = star_world()
+    def lost_body(sim, *_args):
+        sim.remove(index=sim.N-1)
+        raise ArithmeticError('Proposed body was lost by the solver')
+    monkeypatch.setattr(rebound.Simulation, 'steps', lost_body)
+    result = predict(w, samples=10, wall_budget=1)
+    assert not result['complete'] and len(result['points']) == 1
+    assert w.sim.N == 1 and w.sim.t == 0
+
+
+def test_live_native_domain_failure_pauses_without_inventing_cloud_history(monkeypatch):
+    w = star_world()
+    def invalid_step(*_args):
+        raise ArithmeticError('Invalid native trial')
+    monkeypatch.setattr(W, 'step', invalid_step)
+    w.advance(.01, W.time.perf_counter()+1)
+    assert w.paused and w.sim.t == 0
+    assert 'Invalid native trial' in w.notices[-1]['text']
+    assert w.shell_error_history['refused_steps'] == 0
 
 
 def test_background_collision_does_not_flag_preview_as_impact(monkeypatch):

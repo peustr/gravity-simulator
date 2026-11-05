@@ -34,11 +34,11 @@ The physics runs on **[REBOUND](https://rebound.hanno-rein.de/)**, an open-sourc
 
 ## 1. What it does
 
-- **True N-body gravity.** Every massive body pulls on every other one, integrated with REBOUND's IAS15, an adaptive 15th-order integrator that stays accurate through close encounters and slingshots.
+- **True N-body gravity.** Every massive body pulls on every other one, integrated with REBOUND's adaptive IAS15/BS solvers that stay accurate through close encounters and slingshots.
 - **Seven kinds of body:** rocky planets, gas giants, stars (coloured by temperature), neutron stars (pulsars), black holes, asteroids, and hot gas clouds.
 - **Collisions with consequences:**
   - Gentle impacts merge, conserving mass and momentum. The survivor glows molten for a while.
-  - Violent impacts shatter planets into fragments, using a simplified version of the Leinhardt & Stewart (2012) law that planetary scientists use.
+  - Violent impacts shatter planets into fragments using an energy-based heuristic inspired by Leinhardt & Stewart (2012).
   - Black holes swallow anything that crosses their event horizon, and their accretion disks flare up and fire jets while they feed.
   - Bodies that pass inside a heavier body's Roche limit are torn apart by tides ("spaghettification").
 - **Stellar life cycle:**
@@ -257,13 +257,25 @@ Use the **Experiment** menu in the top bar:
 
 Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation and visual enlargement. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. Trails, selection, body-follow mode and transient visual effects are cleared.
 
-The **Experiment** menu also controls full gravity for debris, inclusion of all bodies in forecasts, and distant-body removal. It shows the collective tracer mass fraction. These choices and cumulative removal losses are stored in version-3 saves and restart points; older saves retain their previous approximation defaults. See [orbital dynamics and accuracy controls](docs/orbital-dynamics.md).
+The **Experiment** menu also controls full gravity for debris, inclusion of all bodies in forecasts, and distant-body removal. It shows the collective tracer mass fraction. These choices and cumulative removal losses are stored in version-3 and newer saves and restart points; older saves retain their previous approximation defaults. See [orbital dynamics and accuracy controls](docs/orbital-dynamics.md).
 
-New saves use version-3 JSON with an explicit unit/radius-model identifier, physics settings and removal inventory. Version-1 scenes load automatically in **legacy sandbox units**, retaining all original values and exaggerated contact-radius rules; re-saving preserves that label. They are not silently converted to physical scenes. Clear or choose a preset to start a new physical scene.
+New saves use version-5 JSON with unit/radius models, physics settings, body spin/internal-energy inventories, compact ejecta, solver selection and numerical/model/loss histories. Unknown body inventories are null; versions 1–4 remain readable without inventing missing energy or spin. See [physical inventories and migration](docs/collision-budgets.md#persistent-body-inventories).
+
+New scenes and all presets use **automatic collision models** and **full gravity**. Rocky–rocky impacts use calibrated, conserved outcomes; other body pairs retain their documented heuristic models. Tides, supernovae and distant-body removal remain available. Unsupported rocky impacts pause intact with an explanation, including strong external fields, simultaneous contacts, unknown incoming inventories/spin, insufficient fragment slots or explicitly selected tracer gravity. **Experiment → Automatic collision models** can be unchecked for heuristic-only comparisons. Fragment positions and energy splits remain prescribed approximations. Older saves retain their recorded model; see [configuration and limits](docs/collision-budgets.md#automatic-model-selection).
+
+**Experiment → Conservation report** shows resolved-body mass, momentum, orbital
+and spin angular momentum, and kinetic, binding, mutual and internal energies in
+SI units. The first report sets a comparison baseline; use **Reset conservation
+baseline** for a new comparison. The baseline survives scene save/restart.
+Unknown inventories and overlapping surfaces make affected totals unavailable.
+Changes include edits, model effects and removed bodies; they are not an estimate
+of integrator error. Reports are calculated only when requested.
+
+Version-1 scenes load automatically in **legacy sandbox units**, retaining all original values and exaggerated contact-radius rules; re-saving preserves that label. They are not silently converted to physical scenes. Clear or choose a preset to start a new physical scene.
 
 Saves use versioned JSON (maximum 4 MiB), are validated before loading, and replace existing files atomically. Success is shown only after the physics server confirms it. If confirmation times out, check the connection and file before trying again: an operation may have completed even if its reply was lost. Restart points live in the server session; save to disk to keep an experiment after closing the app.
 
-Restores rebuild REBOUND from the saved physical conditions. They do not preserve IAS15's internal timestep history, so subsequent trajectories are not guaranteed to be bit-for-bit identical, particularly in chaotic systems. These files are for the local Python server and Godot client running on the same machine.
+Restores rebuild REBOUND from the saved physical conditions. They do not preserve the integrator's internal timestep history, so subsequent trajectories are not guaranteed to be bit-for-bit identical, particularly in chaotic systems. These files are for the local Python server and Godot client running on the same machine.
 
 ### Controls
 
@@ -299,7 +311,7 @@ Restores rebuild REBOUND from the saved physical conditions. They do not preserv
 | **Black hole feast** | A star on a plunging orbit is torn apart near the black hole. The debris streams in and the disk and jets flare. |
 | **Planet smash** | Two Earth-like planets collide at several times their mutual escape speed and shatter into glowing fragments. |
 | **Planet formation** | 200 embryos orbit a young Sun. Physical contact is rare; this is an initial disk, not a calibrated planet-formation model. Runs at 2.5x speed. |
-| **Tidal encounter** | Two tracer disks around stellar-mass black holes make a parabolic encounter. This illustrates tidal tails; it is not a galaxy-scale mass model. The preset key remains `galaxies`. |
+| **Tidal encounter** | Two disks around stellar-mass black holes make a parabolic encounter. This illustrates tidal tails; it is not a galaxy-scale mass model. The preset key remains `galaxies`. |
 | **Empty space** | Your canvas. |
 
 The top bar shows simulation time, the body count, and **"Real-time"**, which turns amber with a percentage if the physics can't keep up with the requested speed. Lower the speed or remove debris if that happens.
@@ -316,13 +328,42 @@ See [physical units and models](docs/physical-model.md) for constants, radius ap
 
 ### Gravity and integration
 
-All bodies live in one REBOUND simulation using the **IAS15** integrator (Rein & Spiegel 2015). It is adaptive: it takes tiny steps during close encounters and big ones in quiet periods, and the controlled reference problems check its accuracy. Physical scenes allow adaptive steps below the old sandbox minimum; difficult encounters reduce achieved simulation speed. The server targets 60 updates a second and limits each advance to the requested simulation time. Godot buffers about 50 ms of authoritative positions, then interpolates between them. Playback follows achieved simulation speed and stops at the last received state if updates stall; the renderer does not calculate gravitational forces. Very fast moon orbits still require slower playback when zoomed in to resolve them at your display's frame rate.
+Resolved bodies normally use REBOUND **IAS15** (Rein & Spiegel 2015). Symmetric post-impact ejecta and nonadvancing IAS15 steps use **Bulirsch–Stoer (BS)**; compact ejecta and resolved bodies advance together in one coupled BS system. It is adaptive: it takes tiny steps during close encounters and big ones in quiet periods, and the controlled reference problems check its accuracy. Physical scenes allow adaptive steps below the old sandbox minimum; difficult encounters reduce achieved simulation speed. The server targets 60 updates a second and limits each advance to the requested simulation time. Godot buffers about 50 ms of authoritative positions, then interpolates between them. Playback follows achieved simulation speed and stops at the last received state if updates stall; the renderer does not calculate gravitational forces. Very fast moon orbits still require slower playback when zoomed in to resolve them at your display's frame rate.
 
-By default, debris below 0.5 mass units (asteroids and small gas clouds) is treated as **test particles**. It feels active bodies' gravity and collides normally, but exerts no gravitational pull. Enable **Experiment → Full gravity, including debris** for mutual forces. This costs more for large debris clouds; a large collective tracer mass can make the approximation inaccurate. Planets, stars, neutron stars and black holes always exert gravity.
+Full gravity is enabled by default, including mutual forces from debris. For cheaper comparison runs, uncheck **Experiment → Full gravity, including debris**: asteroids and small gas clouds below 0.5 mass units become test particles, feeling active bodies without exerting gravitational pull. Large collective tracer mass can make this approximation inaccurate; calibrated rocky impacts require full gravity. Planets, stars, neutron stars and black holes always exert gravity.
 
 A shared contact step guard limits approach to physical surfaces before collision detection. Long-duration orbit, grazing-contact, capture and forecast checks have documented [accuracy targets and limitations](docs/orbital-dynamics.md). Bodies beyond 15,000 length units (250 AU) are removed by default regardless of binding energy; removal can be disabled and its inventory losses are recorded.
 
-### Collisions (`world.py → _handle_collision`)
+### Collisions
+
+Contacts retain pre-merge [impact measurements](docs/impact-measurements.md),
+including encounter angle, relative kinetic energy and pair angular momentum.
+The outcomes below use heuristic disruption and fragment prescriptions; these
+are not calibrated material models.
+
+The [impact classification API](docs/impact-scaling.md) estimates outcomes for
+supported solid contacts, including rocky hit-and-run events. The live
+[calibrated mode](docs/collision-budgets.md#live-isolated-mergers) constructs
+conserved resolved remnants for rocky–rocky impacts by default. Intact hit-and-run
+survivors separate at contact, retaining their masses and radii; a prescribed
+normal impulse converts half the normal impact kinetic energy into internal
+energy. The event is labelled as hit-and-run and keeps the selected body in focus.
+The Experiment menu selects the default planet calibration or the explicit
+small-body material calibration; their [published domains](docs/impact-scaling.md)
+remain enforced. Supported head-on disruptions use [compact ejecta](docs/unresolved-debris.md)
+when resolved fragments exceed capacity. The conservation report includes both
+representations, explicit source/sink budgets and separate model diagnostics.
+Unsupported encounters pause intact with an explanation.
+
+Generate sixteen paused experiments covering the live regimes, resolved/compact
+comparisons and an unsupported-spin case:
+
+```bash
+python3 tools/dev.py impact-references --output benchmarks/impact-references
+```
+
+Load a generated `.gravity.json` through **Experiment → Load** and resume.
+The table below describes heuristic models used for other pairs and in explicit comparison mode.
 
 | Situation | Outcome |
 |---|---|
@@ -406,6 +447,8 @@ Commands are validated before changing the simulation. Vectors must contain exac
 - `speed` — `{value}`, in simulation time units per second.
 - `clear`
 - `preset` — `{name}`
+- `physics` — `{settings}`; partial changes to gravity, tolerance, forecast limit, removal boundary, collision mode and material calibration.
+- `conservation` — `{reset?: boolean}`; return SI inventories and comparison residuals, optionally resetting the baseline.
 - `save_scene` — `{path, camera, request}`; save to a local file and set the restart point.
 - `load_scene` — `{path, request}`; validate and load a local file.
 - `checkpoint` — `{camera, request}`; set an in-memory restart point.
@@ -420,6 +463,11 @@ Scene-operation `request` values are unique strings (1–80 characters). The cam
 - **Header**, 11 values: `[3, version, t_hi, t_lo, N, E, paused, speed, perf, max_bodies, units]`. `units` is 1 for physical scenes and 0 for legacy sandbox scenes. The simulation time is `t_hi + t_lo`.
 - **N bodies**, 12 values each: `[id, type, x, y, z, vx, vy, vz, mass, physical_radius, heat, age]`.
 - **E events**, 8 values each: `[kind, x, y, z, magnitude, size, id_a, id_b]`.
+
+Negative body IDs denote compact-ejecta views; they cannot be selected, followed
+or sent in body-edit commands. N includes up to 1,321 resolved bodies and eight
+compact views. Event batches shrink as needed to fit the UDP payload; remaining
+events are deferred. See the generated [runtime reference](docs/runtime-reference.md).
 
 **Forecast replies** start with `4`: `[4, req, n_points, hit, attractor_id, vx, vy, vz, physical_radius]`, followed by the points.
 
