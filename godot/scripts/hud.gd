@@ -751,7 +751,7 @@ func set_connection(state: String, detail: String) -> void:
 
 func set_stats(sim_time: float, n: int, max_n: int, speed_mult: float, paused: bool, perf: float, clouds: int = 0, display_scale: float = 1.0) -> void:
 	feed.offset_left = 400 if impact_panel.visible else 18
-	scale_label.text = "Physical body sizes · markers remain visible" if display_scale == 0 else "Illustrative sizes x%.0f · V for physical sizes" % display_scale
+	scale_label.text = "Physical body sizes · markers remain visible" if display_scale == 0 else "Illustrative sizes x%s · V for physical sizes" % _fmt_mult(display_scale)
 	pause_btn.text = "Play" if paused else "Pause"
 	speed_label.text = "x" + _fmt_mult(speed_mult)
 	time_label.text = "t = %s" % _fmt_time(sim_time)
