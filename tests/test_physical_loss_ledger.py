@@ -102,7 +102,8 @@ def test_invalid_saved_history_is_rejected_before_world_replacement(change):
 
 @pytest.mark.parametrize(
     "value",
-    [None, {}, dict(mass_kg=math.inf, momentum_kg_m_s=[0, 0, 0], angular_momentum_kg_m2_s=[0, 0, 0], energy_j=0)],
+    [None, {}, dict(mass_kg=math.inf, momentum_kg_m_s=[0, 0, 0], angular_momentum_kg_m2_s=[0, 0, 0], energy_j=0),
+     dict(mass_kg=0, momentum_kg_m_s=[0, 0], angular_momentum_kg_m2_s=[0, 0, 0], energy_j=0)],
 )
 def test_invalid_physical_loss_shapes_are_rejected(value):
     with pytest.raises(ValueError):

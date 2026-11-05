@@ -116,17 +116,19 @@ _LOSS_KEYS = ('mass_kg','momentum_kg_m_s','angular_momentum_kg_m2_s','energy_j')
 def validate_losses(value):
     if not isinstance(value,dict) or set(value) != set(_LOSS_KEYS):
         raise ValueError('Invalid physical loss inventory')
-    energy = value['energy_j']
-    if value['mass_kg'] is not None and (type(value['mass_kg']) not in (int,float) or not math.isfinite(value['mass_kg'])):
-        raise ValueError('Invalid physical loss mass')
-    baseline = dict(time_s=0,mass_kg=0 if value['mass_kg'] is None else abs(value['mass_kg']),
-                    momentum_kg_m_s=value['momentum_kg_m_s'] if value['momentum_kg_m_s'] is not None else [0,0,0],
-                    angular_momentum_kg_m2_s=value['angular_momentum_kg_m2_s'],energy_j=energy,
-                    energy_scale_j=None if energy is None else abs(energy),removed_bodies=0)
-    valid = validate_baseline(baseline)
-    valid['mass_kg'] = value['mass_kg']
-    valid['momentum_kg_m_s'] = value['momentum_kg_m_s'] if value['momentum_kg_m_s'] is None else valid['momentum_kg_m_s']
-    return {key:valid[key] for key in _LOSS_KEYS}
+    result = {}
+    for key,item in value.items():
+        if item is None:
+            result[key] = None
+            continue
+        vector = key in ('momentum_kg_m_s','angular_momentum_kg_m2_s')
+        values = item if vector else [item]
+        if not isinstance(values,(list,tuple)) or len(values) != (3 if vector else 1):
+            raise ValueError('Invalid physical loss vector')
+        if any(type(v) not in (int,float) or not math.isfinite(v) for v in values):
+            raise ValueError('Physical losses must be finite numbers')
+        result[key] = list(values) if vector else item
+    return result
 
 
 class PhysicalLossLedger:

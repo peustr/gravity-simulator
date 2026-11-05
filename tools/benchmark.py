@@ -91,7 +91,7 @@ def workload(name, ticks, seed, audit=False, settings=None):
         world.ledger = Ledger()
         initial_physical = physical_inventory(world)
     advance, packing, forecast, tick_times, point_counts = [], [], [], [], []
-    events = Counter()
+    events, notices = Counter(), Counter()
     for tick in range(ticks):
         start = time.perf_counter()
         world.advance(1 / TICK_HZ, start + PHYSICS_BUDGET)
@@ -108,6 +108,7 @@ def workload(name, ticks, seed, audit=False, settings=None):
             forecast.append(time.perf_counter() - forecast_start)
             point_counts.append(len(prediction['points']))
         tick_times.append(time.perf_counter() - start)
+        notices.update(item['text'] for item in world.notices)
         world.notices.clear()
     final = totals(world)
     measured_seconds = sum(tick_times)
@@ -119,6 +120,7 @@ def workload(name, ticks, seed, audit=False, settings=None):
                   advance=summary(advance), packing=summary(packing), forecast=summary(forecast), tick=summary(tick_times),
                   ticks_over_60hz_budget=sum(value > 1 / TICK_HZ for value in tick_times),
                   forecast_point_counts=point_counts, events=dict(events),
+                  paused=world.paused, notices=dict(notices), final_integrator=world.solver_name(),
                   initial_tracers=initial['tracers'], final_tracers=final['tracers'])
     if audit:
         report['accounting'] = world.ledger.report(initial, final)

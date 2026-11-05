@@ -334,7 +334,7 @@ Full gravity is enabled by default, including mutual forces from debris. For che
 
 A shared contact step guard limits approach to physical surfaces before collision detection. Long-duration orbit, grazing-contact, capture and forecast checks have documented [accuracy targets and limitations](docs/orbital-dynamics.md). Bodies beyond 15,000 length units (250 AU) are removed by default regardless of binding energy; removal can be disabled and its inventory losses are recorded.
 
-### Collisions (`world.py → _handle_collision`)
+### Collisions
 
 Contacts retain pre-merge [impact measurements](docs/impact-measurements.md),
 including encounter angle, relative kinetic energy and pair angular momentum.
@@ -447,6 +447,8 @@ Commands are validated before changing the simulation. Vectors must contain exac
 - `speed` — `{value}`, in simulation time units per second.
 - `clear`
 - `preset` — `{name}`
+- `physics` — `{settings}`; partial changes to gravity, tolerance, forecast limit, removal boundary, collision mode and material calibration.
+- `conservation` — `{reset?: boolean}`; return SI inventories and comparison residuals, optionally resetting the baseline.
 - `save_scene` — `{path, camera, request}`; save to a local file and set the restart point.
 - `load_scene` — `{path, request}`; validate and load a local file.
 - `checkpoint` — `{camera, request}`; set an in-memory restart point.
@@ -461,6 +463,11 @@ Scene-operation `request` values are unique strings (1–80 characters). The cam
 - **Header**, 11 values: `[3, version, t_hi, t_lo, N, E, paused, speed, perf, max_bodies, units]`. `units` is 1 for physical scenes and 0 for legacy sandbox scenes. The simulation time is `t_hi + t_lo`.
 - **N bodies**, 12 values each: `[id, type, x, y, z, vx, vy, vz, mass, physical_radius, heat, age]`.
 - **E events**, 8 values each: `[kind, x, y, z, magnitude, size, id_a, id_b]`.
+
+Negative body IDs denote compact-ejecta views; they cannot be selected, followed
+or sent in body-edit commands. N includes up to 1,321 resolved bodies and eight
+compact views. Event batches shrink as needed to fit the UDP payload; remaining
+events are deferred. See the generated [runtime reference](docs/runtime-reference.md).
 
 **Forecast replies** start with `4`: `[4, req, n_points, hit, attractor_id, vx, vy, vz, physical_radius]`, followed by the points.
 

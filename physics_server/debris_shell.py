@@ -107,6 +107,8 @@ class EjectaShell:
         for key in ("internal_energy_j", "initial_force_residual_m_s2", "omitted_impulse_m_s"):
             if not math.isfinite(getattr(self, key)) or getattr(self, key) < 0:
                 raise ValueError("Shell inventories and error bounds must be finite and nonnegative")
+        if self.omitted_impulse_m_s > MAX_MODEL_VELOCITY_FRACTION * self.initial_speed_m_s:
+            raise ValueError("Unresolved shell exceeded its 0.5% omitted-impulse budget")
         if not math.isfinite(self.self_binding_j) or not math.isfinite(self.potential_offset_j):
             raise ValueError("Shell energies must be finite")
         if not math.isfinite(self.formed_at_s) or self.formed_at_s < 0:
@@ -453,8 +455,6 @@ class ShellIntegrator:
             )
             positions = state[: 6 * self.n].reshape(-1, 6)[:, :3] * U.LENGTH_M
             model_defect(new, self.masses * U.MASS_KG, positions, self.radii * U.LENGTH_M)
-            if new.omitted_impulse_m_s > MAX_MODEL_VELOCITY_FRACTION * new.initial_speed_m_s:
-                raise ValueError("Unresolved shell exceeded its 0.5% omitted-impulse budget")
             updated.append(new)
         positions = state[: 6 * self.n].reshape(-1, 6)[:, :3] * U.LENGTH_M
         potential = shell_potential_energy(updated, self.masses * U.MASS_KG, positions)

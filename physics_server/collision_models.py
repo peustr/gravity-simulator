@@ -113,25 +113,29 @@ def _resolved_layout(contact, classification):
         masses.append(classification.runner_mass_kg)
     remaining = classification.remaining_mass_kg
     count = math.ceil(remaining / masses[0])
+    impact = _impact(*contact)
     central = (classification.runner_mass_kg == 0 and 2 <= count <= 30
-               and _impact(*contact).impact_parameter <= 1e-12)
+               and impact.impact_parameter <= 1e-12)
     directions = symmetric_directions(count) if central else None
     if central:
         count = len(directions)
     if len(masses) + count > 32:
-        raise ValueError('Resolved impact requires more than 32 remnants; unresolved material is not integrated')
+        raise ValueError('Impact requires more than 32 remnants; no compact layout supports this allocation')
     masses.extend([remaining / count] * count)
     a, b = contact
     radius = (a.radius_m**3 + b.radius_m**3)**(1 / 3)
     total = a.mass_kg + b.mass_kg
     layout = []
     for i, mass in enumerate(masses):
-        z = 1 - 2 * (i + .5) / len(masses)
-        phi = i * math.pi * (3 - math.sqrt(5))
-        rho = math.sqrt(1 - z*z)
-        direction = (np.zeros(3) if central and i == 0 else directions[i-1] if central else
-                     (2*i - 1) * np.array(_impact(a,b).normal) if len(masses) == 2
-                     else (rho * math.cos(phi), rho * math.sin(phi), z))
+        if central:
+            direction = np.zeros(3) if i == 0 else directions[i-1]
+        elif len(masses) == 2:
+            direction = (2*i - 1) * np.array(impact.normal)
+        else:
+            z = 1 - 2 * (i + .5) / len(masses)
+            phi = i * math.pi * (3 - math.sqrt(5))
+            rho = math.sqrt(1 - z*z)
+            direction = (rho * math.cos(phi), rho * math.sin(phi), z)
         offset = tuple(8 * radius * x for x in direction)
         layout.append(RemnantSpec(mass, radius * (mass / total)**(1 / 3), offset))
     return tuple(layout)

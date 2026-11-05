@@ -122,6 +122,7 @@ def test_shell_kernel_matches_shell_theorem_inside_and_outside():
         dict(centre_m=(1, 2)),
         dict(centre_m=(0, 0, math.inf)),
         dict(formed_at_s=-1),
+        dict(omitted_impulse_m_s=6),
         dict(regime="merging"),
     ],
 )

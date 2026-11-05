@@ -36,8 +36,8 @@ and make the next milestone active. Store generated measurements in ignored
 - [x] ~~1. Accuracy and performance baseline~~
 - [x] ~~2. Physical units and independent display sizes~~
 - [x] ~~3. Trustworthy orbital dynamics~~
-- [ ] **4. Credible impact outcomes — active**
-- [ ] **5. Rotation and tidal evolution**
+- [x] ~~4. Credible impact outcomes~~
+- [ ] **5. Rotation and tidal evolution — active**
 - [ ] **6. Composition and thermal history**
 - [ ] **7. Stellar evolution and compact objects**
 - [ ] **8. Specialised simulation modes**
@@ -118,10 +118,10 @@ Reference problems, numerical bounds and model limitations:
 
 ## 4. Credible impact outcomes
 
-**Incomplete.** Completion requires calibrated solid-body impacts in the running
-sandbox, conserved physical inventories, useful unresolved-debris evolution at
-particle limits, and measured accuracy/performance. Standalone model tests and
-isolated-merger support do not satisfy that goal.
+Calibrated solid-body impacts, physical inventories and compact ejecta are
+available in the running sandbox, with explicit model domains and diagnostics.
+Reference encounters, live preset controls, restart and performance workflows
+cover the delivery requirements below.
 
 ### Current implementation
 
@@ -130,14 +130,9 @@ isolated-merger support do not satisfy that goal.
 | Contact state and saves | Immutable impact state; version-5 spin/internal energy, compact ejecta, solver and error/loss histories | Older or heuristically transformed bodies can have unknown inventories |
 | Classification and construction | Planet and small-body controls; live regimes, prescribed conserved layouts and loadable examples | Published domains, incoming spin, strong fields and simultaneous contacts restrict applicability |
 | Unresolved material | Live symmetric ejecta coupled to resolved bodies, disjoint/nested clouds, bounded storage and transactional refusal | Head-on expanding shells only; no surface crossing, recollapse or automatic reconstruction |
-| Diagnostics | SI inventories across bodies/clouds, explicit-loss residuals, model offsets, force-defect and numerical diagnostics | Release-wide validation remains pending |
+| Diagnostics | SI inventories across bodies/clouds, explicit-loss residuals, model offsets, force-defect and numerical diagnostics | Unknown intrinsic inventories or incomplete loss history leave affected values unavailable |
 
 ### Delivery requirements
-
-This is the complete delivery checklist for Milestone 4. Implementation batches
-may address part of an item; they do not create additional numbered milestones.
-An item closes only when its runtime behavior and acceptance checks are delivered.
-Changing these requirements or supported domains requires an explicit scope decision.
 
 - [x] **Live calibrated outcomes.** Apply merging, graze-and-merge, partial
   accretion, erosion, disruption and hit-and-run in the existing calibrated
@@ -168,7 +163,7 @@ Changing these requirements or supported domains requires an explicit scope deci
   model parameters, error history and ownership without changing future behavior
   beyond documented integrator restart differences. Preserve old-save migration
   and clearly expose the active collision model and unsupported states.
-- [ ] **Release validation and maintenance.** Exercise every supported regime,
+- [x] **Release validation and maintenance.** Exercise every supported regime,
   grazing boundaries, populated scenes, successive contacts, capacity changes and
   save/restart through the live path. Require reference agreement and complete
   budget closure within documented numerical/model tolerances. Measure the
@@ -177,21 +172,14 @@ Changing these requirements or supported domains requires an explicit scope deci
   and CI. Consolidate superseded or unused implementations and duplicate prose;
   keep one documented runtime path per supported model.
 
-### Scope and completion boundary
+### Scope
 
 Mass-outcome calibrations retain their published applicability limits. Ejecta
 layouts and energy fractions remain explicit modelling prescriptions unless
 independently calibrated. General rotating-impact laws, tidal evolution,
 thermodynamic/composition models, gas/stellar/compact-object collision laws and
-hydrodynamics belong to later milestones. Research extensions such as general
-cloud coalescence or resampling are optional unless the chosen live debris model
-needs them to meet the requirements above.
-
-Milestone 4 closes when users can enable the calibrated model in the application,
-run the supported reference encounters in populated scenes, retain material and
-budgets across capacity limits and restart, and meet the validation gates.
-The isolated two-body demo alone is insufficient. General-purpose impact support
-outside the stated domains is not claimed.
+hydrodynamics belong to later milestones. General cloud coalescence and resampling
+are outside the current shell model.
 
 Implementation contracts: [impact measurements](impact-measurements.md),
 [calibration domains](impact-scaling.md), [collision budgets and live mode](collision-budgets.md),

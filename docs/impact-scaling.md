@@ -140,7 +140,7 @@ combination of size, density, angle and speed.
 [Genda, Kokubo & Ida (2012)](https://arxiv.org/html/1109.4330), equation 16,
 provides the graze-and-merge boundary for nonspinning rocky protoplanets. Its
 samples cover γ = 1/9–1, θ = 0–75° and v = 1–3 times mutual surface escape speed.
-We use the equation in the linked preprint with **linear** Γ:
+The linked preprint uses linear Γ:
 
 ```text
 Γ = (1−γ)/(1+γ)
@@ -186,7 +186,7 @@ rounding. Runner mass is zero outside hit-and-run; it does not estimate the
 second-largest fragment of a disruptive event. Such fragments remain unassigned.
 The [classified outcome constructor](collision-budgets.md#classified-construction)
 connects these masses to spherical states with conserved budgets and explicit
-escape checks. Its layouts and energy splits are caller prescriptions, and its
-feasibility limits are stricter than classification alone. Live application and
-calibrated ejecta distributions require further models. Classification's mass
+escape checks. The live engine supplies prescribed layouts and energy splits;
+construction feasibility is stricter than classification alone. Calibrated ejecta
+distributions require further models. Classification's mass
 closure alone does not establish momentum, angular-momentum or energy conservation.

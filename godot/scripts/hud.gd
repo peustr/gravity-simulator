@@ -374,7 +374,7 @@ func show_conservation(report: Dictionary) -> void:
 		text += "Energy change / component scale: %s\n\n" % _budget_value(report.relative_energy_change)
 		text += "Residual after recorded changes / scale: %s\n" % _budget_value(report.relative_conservation_residual)
 		if current.get("reservoirs",0) > 0:
-			text += "Shell numerical energy change: %s\nOmitted-force impulse budget: %s\n" % [_budget_value(current.shell_numerical_energy_error_j,"J"), _budget_value(current.model_omitted_impulse_m_s,"m/s")]
+			text += "Shell numerical energy change: %s\nMaximum accumulated model impulse: %s\n" % [_budget_value(current.shell_numerical_energy_error_j,"J"), _budget_value(current.model_omitted_impulse_m_s,"m/s")]
 		text += "Raw changes include edits and removals; adjusted residuals account for recorded changes.\nModel approximation bounds are separate from numerical conservation residuals.\nHomogeneous-sphere binding; excludes radiation and rest-mass energy.\nUnknown inventories, overlapping surfaces or incomplete loss history make affected values unavailable."
 		conservation_text.text = text
 	conservation_dialog.popup_centered()

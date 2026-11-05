@@ -715,6 +715,8 @@ func _pick_body(screen: Vector2) -> int:
 	var best := -1
 	var best_score := INF
 	for id in views:
+		if id < 0:
+			continue
 		var v = views[id]
 		if cam.is_position_behind(v.position):
 			continue
@@ -831,6 +833,7 @@ func restore_scene_view(cam: Dictionary) -> void:
 	for view in views.values():
 		view.queue_free()
 	views.clear()
+	cloud_count = 0
 	trails.clear_all()
 	remove_child(effects)
 	effects.queue_free()

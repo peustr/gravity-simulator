@@ -33,6 +33,17 @@ def test_profile_reports_native_integration_and_forecast():
     assert {'integration_including_collision_callbacks', 'tides', 'forecast', 'packing'} <= phases
 
 
+def test_workload_retains_unexpected_pauses_and_notices(monkeypatch):
+    def pause(world, *_args):
+        world.paused = True
+        world.notice('Unsupported demo encounter')
+    monkeypatch.setattr(benchmark.W.World, 'advance', pause)
+    report = benchmark.workload('binary', 2, 42)
+    assert report['paused'] and report['simulated_time'] == 0
+    assert report['notices'] == {'Unsupported demo encounter': 2}
+    assert report['final_integrator'] == 'IAS15'
+
+
 def test_physical_inventory_reports_unknown_energy_and_supported_smash():
     import world as W
     w=W.World(seed=42)
