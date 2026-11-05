@@ -384,3 +384,111 @@ def test_saved_shell_geometry_and_inventories_are_validated_together(field, valu
     data[field] = value
     with pytest.raises(ValueError):
         EjectaShell(**data)
+
+
+@pytest.mark.parametrize('fault', ['radius', 'body_surface', 'shell_surface'])
+def test_invalid_native_trial_stages_are_refused_without_committing(fault, monkeypatch):
+    primary, _, shell = shell_fixture()
+    sim = rebound.Simulation()
+    sim.add(m=primary.mass_kg / U.MASS_KG, r=primary.radius_m / U.LENGTH_M)
+    shells = (shell, replace(shell, identifier=2, centre_m=(1e11, 0, 0))) if fault == 'shell_surface' else (shell,)
+    driver = ShellIntegrator(sim, shells, 1e-9)
+    derivative = driver._derivatives
+
+    def invalid_trial(ptr, destination, source, t):
+        index = 12 if fault == 'radius' else (0 if fault == 'body_surface' else 15)
+        previous = source[index]
+        source[index] = -1 if fault == 'radius' else shell.radius_m / U.LENGTH_M
+        try:
+            derivative(ptr, destination, source, t)
+        finally:
+            source[index] = previous
+
+    monkeypatch.setattr(driver, '_derivatives', invalid_trial)
+    with pytest.raises(ValueError, match='domain|intersects|Intersecting'):
+        driver.advance(sim, shells, 0.001)
+    assert sim.t == 0 and sim.particles[0].xyz == [0, 0, 0]
+
+
+@pytest.mark.parametrize('fault', [
+    'units', 'solver', 'model', 'storage_type', 'storage_full', 'record_type', 'record_fields',
+    'duplicate_owner', 'next_owner', 'tracer', 'heuristic', 'history_missing', 'refusal_type',
+    'refusal_length', 'history_too_small', 'losses_missing', 'future_formation',
+])
+def test_corrupt_shell_saves_are_rejected_without_changing_the_source_world(fault):
+    _, _, shell = shell_fixture()
+    w = W.World()
+    w.shells = (shell,)
+    w._next_shell_id = 2
+    before = E.capture(w, E.DEFAULT_CAMERA)
+    from copy import deepcopy
+    data = deepcopy(before)
+    if fault in ('solver', 'units'):
+        data[fault] = 'unknown'
+    elif fault == 'model':
+        data['shell_model'] = 'unknown'
+    elif fault == 'storage_type':
+        data['ejecta_shells'] = None
+    elif fault == 'storage_full':
+        data['ejecta_shells'] *= 9
+    elif fault == 'record_type':
+        data['ejecta_shells'] = [None]
+    elif fault == 'record_fields':
+        del data['ejecta_shells'][0]['mass_kg']
+    elif fault == 'duplicate_owner':
+        data['ejecta_shells'] *= 2
+    elif fault == 'next_owner':
+        data['next_shell_id'] = 1
+    elif fault in ('tracer', 'heuristic'):
+        data['physics']['gravity' if fault == 'tracer' else 'collisions'] = 'tracers' if fault == 'tracer' else 'heuristic'
+    elif fault == 'history_missing':
+        del data['shell_error_history']
+    elif fault in ('refusal_type', 'refusal_length'):
+        data['shell_error_history']['last_refusal'] = None if fault == 'refusal_type' else 'x' * 301
+    elif fault == 'history_too_small':
+        data['ejecta_shells'][0]['omitted_impulse_m_s'] = 1
+    elif fault == 'losses_missing':
+        del data['physical_loss_ledger']
+    else:
+        data['ejecta_shells'][0]['formed_at_s'] = 1
+    with pytest.raises(ValueError):
+        E.restore(data)
+    assert E.capture(w, E.DEFAULT_CAMERA) == before
+
+
+def test_supported_merger_inside_a_shell_runs_through_live_contact_and_forecast():
+    from tools.impact_references import reference_world, PLANET_CASES
+    w, _, lead = reference_world(PLANET_CASES[0])
+    _, _, shell = shell_fixture()
+    w.shells = (replace(shell, radius_m=1e12, initial_radius_m=1e12,
+                        initial_force_residual_m_s2=shell.initial_force_residual_m_s2 * 1e-10),)
+    w._next_shell_id = 2
+    w.paused = False
+    baseline = conservation_report(w)
+    advance(w, lead + 0.001)
+    assert not w.paused and w.sim.N == 1 and len(w.shells) == 1
+    assert w.events[-1][0] == W.EV_MERGE and not w.notices
+    report = conservation_report(w)
+    assert report['current']['mass_kg'] == pytest.approx(baseline['current']['mass_kg'], rel=1e-14)
+    assert abs(report['relative_conservation_residual']) < 1e-9
+    p = w.sim.particles[0]
+    forecast = w.predict(W.ROCKY, (3*p.r, 0, 0), 'launch', (-10, 0, 0), .01, samples=10, wall_budget=1)
+    assert forecast['hit'] and np.isfinite(forecast['points']).all()
+    assert w.sim.N == 1 and len(w.shells) == 1
+
+
+def test_removing_a_shell_with_unknown_body_inventories_retains_known_losses():
+    from diagnostics import Ledger
+    _, _, shell = shell_fixture()
+    w = W.World()
+    w.shells = (shell,)
+    w.add_body(W.ROCKY, .003, (0, 0, 0), (0, 0, 0))
+    w.add_body(W.ROCKY, .003, (0, 0, 0), (0, 0, 0))
+    w.meta['1']['inventory'] = None
+    w.ledger = Ledger()
+    w.configure(dict(escape_distance=0.0001))
+    w._cull_escapers()
+    assert not w.shells and w.sim.N == 2 and not w.removed['energy_defined']
+    assert w.removed['mass'] == pytest.approx(shell.mass_kg/U.MASS_KG)
+    assert w.physical_loss_ledger.totals['mass_kg'] == pytest.approx(shell.mass_kg)
+    assert w.physical_loss_ledger.totals['energy_j'] is None and w.ledger.errors

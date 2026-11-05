@@ -231,5 +231,17 @@ func _run() -> void:
 	if not await _until(func(): return main.views.size() == 2 and is_equal_approx(main.server_speed, 0.05)):
 		_fail("Confirmed scenario change did not apply")
 		return
+	# Compact clouds share playback even though they cannot be selected as bodies.
+	var cloud := PackedFloat32Array([3, main.sim_version + 1, 0, 1, 1, 0, 1, 1, 1, 600, 1,
+		-2, 6, 0, 0, 0, 1, 0, 0, 0.001, 0.01, 0.5, 0])
+	main._on_state(cloud)
+	cloud[1] += 1
+	cloud[3] = 2
+	cloud[13] = 3
+	main._on_state(cloud)
+	main._update_motion(0)
+	if main.cloud_count != 1 or not main.views[-2].position.is_equal_approx(Vector3(3, 0, 0)):
+		_fail("Compact cloud view did not follow its authoritative position")
+		return
 	print("Godot experiment save/load/restart check PASSED")
 	_finish(0)

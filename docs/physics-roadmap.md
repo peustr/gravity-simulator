@@ -139,7 +139,7 @@ may address part of an item; they do not create additional numbered milestones.
 An item closes only when its runtime behavior and acceptance checks are delivered.
 Changing these requirements or supported domains requires an explicit scope decision.
 
-- [ ] **Live calibrated outcomes.** Apply merging, graze-and-merge, partial
+- [x] **Live calibrated outcomes.** Apply merging, graze-and-merge, partial
   accretion, erosion, disruption and hit-and-run in the existing calibrated
   solid-body domains. Supply a bounded, documented remnant-layout and energy-split
   policy so callers do not have to invent fragment states. Label prescribed ejecta
@@ -153,17 +153,15 @@ Changing these requirements or supported domains requires an explicit scope deci
   encounters without losing inventories. Demonstrate supported impacts with a
   third gravitating body and repeated supported contacts; explicitly reject
   encounters outside the calibration, including unsupported incoming spin.
-- [ ] **Operational unresolved debris.** Choose and implement a representation
+- [x] **Operational unresolved debris.** Choose and implement a representation
   that can evolve the ejecta produced by the live outcome policy, including its
   interaction with remnants and other bodies. Coordinate shared-body updates,
   ownership and bounded storage; preserve complete inventories through transfers.
   Changing explicit-particle capacity must not change the classified regime or
   discard material. Demonstrate the same impact with resolved and unresolved
   debris and bounded error against a resolved reference. Full storage or exceeded
-  model limits must leave the encounter unapplied. The existing far-field,
-  outward-cloud solver is insufficient for this requirement; resolve that
-  representation mismatch before extending its lifecycle machinery.
-- [ ] **Complete accounting and persistence.** Report mass, linear momentum,
+  model limits must leave the encounter unapplied.
+- [x] **Complete accounting and persistence.** Report mass, linear momentum,
   orbital plus spin angular momentum, and kinetic, binding, mutual and internal
   energies across bodies and unresolved material. Separate numerical error,
   approximation error and explicit losses. Save/restart must retain reservoirs,

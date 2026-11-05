@@ -266,3 +266,25 @@ def test_forecast_radial_contact_matches_live_capture():
     impact_speed = math.sqrt(40000 * (1 / radius - 1 / 20))
     assert abs(preview['times'][-1] - expected_time) * impact_speed / radius < .002
     assert w.sim.N == 1 and w.sim.t == 0
+
+
+@pytest.mark.parametrize('eccentricity', [0, .7, .9])
+def test_bs_fallback_converges_to_the_analytic_kepler_return(eccentricity):
+    errors = []
+    for epsilon in (1e-6, 1e-9):
+        w = W.World()
+        w.configure(dict(epsilon=epsilon))
+        sim = w.sim
+        mass, radius = .001, 1-eccentricity
+        speed = math.sqrt(sim.G*(1+mass)*(1+eccentricity)/(1-eccentricity))
+        sim.add(m=1, x=-mass/(1+mass)*radius, vy=-mass/(1+mass)*speed)
+        sim.add(m=mass, x=radius/(1+mass), vy=speed/(1+mass))
+        sim.N_active = sim.N
+        initial = np.array([p.xyz+p.vxyz for p in sim.particles])
+        sim.dt = 0
+        D.step(sim, .001, D.ContactGuard())
+        assert str(sim.integrator) == 'bs'
+        sim.integrate(20*2*math.pi/math.sqrt(sim.G*(1+mass)))
+        final = np.array([p.xyz+p.vxyz for p in sim.particles])
+        errors.append(float(np.max(abs(final-initial))/np.max(abs(initial))))
+    assert errors[1] < 2e-8 and errors[1] < .02*errors[0]

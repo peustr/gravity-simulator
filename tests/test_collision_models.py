@@ -380,3 +380,17 @@ def test_escape_cannot_certify_nonfinite_arithmetic(position, velocity):
     b = SphereState(1e20, 2e5, position, velocity)
     with pytest.raises(ValueError, match='numerical range'):
         remnant_escape_check((a, b))
+
+
+def test_symmetric_escape_certificate_rejects_bound_expansion_with_closed_inventories(monkeypatch):
+    import collision_models as model
+    pair = rocky_pair(0, 3)
+    allocate = model.allocate_remnants
+    def bound_allocation(*args, **kwargs):
+        kwargs['expansion_fraction'] = 1e-6
+        states = allocate(*args, **kwargs)
+        assert_closed(pair, states)
+        return states
+    monkeypatch.setattr(model, 'allocate_remnants', bound_allocation)
+    with pytest.raises(ValueError, match='positive escape energy'):
+        model.construct_collision(*pair, material='fluid_planets', body_types=(0, 0), resolved_policy=True)

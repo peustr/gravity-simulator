@@ -485,8 +485,6 @@ func _update_motion(delta: float) -> void:
 	motion.advance(elapsed, server_speed, paused, net.connected)
 	display_time = motion.time
 	for id in views:
-		if id < 0:
-			continue
 		var v = views[id]
 		v.position = motion.position_for(id, v.base_pos)
 		v.set_display_size(display_scale, _world_per_px(v.position))

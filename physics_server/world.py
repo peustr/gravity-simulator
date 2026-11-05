@@ -526,18 +526,19 @@ class World:
         far = np.nonzero(d2 > boundary ** 2)[0]
         shell_far = tuple(s for s in self.shells if s.radius_m-math.dist(s.centre_m,(0,0,0)) > boundary*units.LENGTH_M)
         physical_before = self.physical_loss_ledger.capture(self) if len(far) or shell_far else None
-        before = self.ledger.capture(self) if self.ledger is not None and len(far) else None
+        before = self.ledger.capture(self) if self.ledger is not None and (len(far) or shell_far) else None
         energy = None
+        if len(far) or shell_far:
+            try:
+                energy = totals(self)['energy']
+            except ValueError:
+                self.removed['energy_defined'] = False
         if len(far):
             mass, pos, vel = snap['m'][far], snap['xyz'][far], snap['v'][far]
             self.removed['bodies'] += len(far)
             self.removed['mass'] += float(mass.sum())
             for key, vectors in (('momentum', vel), ('angular_momentum', np.cross(pos, vel))):
                 self.removed[key] = (np.asarray(self.removed[key]) + (mass[:, None] * vectors).sum(axis=0)).tolist()
-            try:
-                energy = totals(self)['energy']
-            except ValueError:
-                self.removed['energy_defined'] = False
         if shell_far:
             for shell in shell_far:
                 self.removed['bodies'] += shell.fragment_count
@@ -546,11 +547,6 @@ class World:
                 self.removed['momentum'] = (np.array(self.removed['momentum'])+p/(units.MASS_KG*units.VELOCITY_M_S)).tolist()
                 self.removed['angular_momentum'] = (np.array(self.removed['angular_momentum'])+
                     np.cross(shell.centre_m,p)/(units.MASS_KG*units.LENGTH_M*units.VELOCITY_M_S)).tolist()
-            if energy is None:
-                try:
-                    energy = totals(self)['energy']
-                except ValueError:
-                    self.removed['energy_defined'] = False
         for i in sorted(far, reverse=True):
             self.remove_body(int(snap["names"][i]))
         if shell_far:

@@ -67,8 +67,10 @@ rebuilt; restart is not bitwise identical. Older formats remain readable.
 Boundary removal transfers a whole record to the loss inventory only when all
 member centres lie beyond the boundary; it never clips part of a record.
 
-Godot receives negative-ID diffuse views that cannot be selected or followed as
-individual bodies. Display radius is artistic; physics uses saved SI geometry.
+Godot receives negative-ID translucent shell views that cannot be selected or
+followed as individual bodies. Centres follow buffered authoritative positions.
+Brightness, layer thickness and display enlargement are artistic; physics uses
+saved SI geometry.
 
 Generate loadable resolved/compact comparisons with
 `python3 tools/dev.py impact-references --output benchmarks/impact-references`.

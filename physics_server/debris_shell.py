@@ -356,10 +356,7 @@ class ShellIntegrator:
             distance = np.linalg.norm(delta, axis=1)
             radius = cloud[6]
             if not np.isfinite(cloud).all() or radius <= 0:
-                self.failure = "Unresolved shell left its numerical domain"
-                continue
-            if np.any(np.abs(distance - radius) <= self.radii + shell.fragment_radius_m / U.LENGTH_M):
-                self.failure = "A resolved body intersects the unresolved ejecta shell"
+                raise ValueError("Unresolved shell left its numerical domain")
             outside = distance > radius
             force = np.zeros((self.n, 3))
             force[outside] = (
@@ -392,11 +389,9 @@ class ShellIntegrator:
                     field = self.context.G * delta / distance**3
                     derivative[ia + 3 : ia + 6] += b.mass_kg / U.MASS_KG * field
                     derivative[ib + 3 : ib + 6] -= a.mass_kg / U.MASS_KG * field
-                elif distance < abs(ra - rb):
+                else:  # other_shell_defect already excludes intersecting surfaces.
                     outer, inner = (ia, b) if ra > rb else (ib, a)
                     derivative[outer + 7] -= self.context.G * inner.mass_kg / U.MASS_KG / state[outer + 6] ** 2
-                else:
-                    self.failure = "Intersecting unresolved shells require a different debris model"
 
     def step_limit(self, sim, shells, maximum):
         for shell in shells:
@@ -461,8 +456,6 @@ class ShellIntegrator:
             if new.omitted_impulse_m_s > MAX_MODEL_VELOCITY_FRACTION * new.initial_speed_m_s:
                 raise ValueError("Unresolved shell exceeded its 0.5% omitted-impulse budget")
             updated.append(new)
-        if self.failure:
-            raise ValueError(self.failure)
         positions = state[: 6 * self.n].reshape(-1, 6)[:, :3] * U.LENGTH_M
         potential = shell_potential_energy(updated, self.masses * U.MASS_KG, positions)
         self.context.set_serialized_particle_data(xyzvxvyvz=state[: 6 * self.n])
