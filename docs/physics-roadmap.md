@@ -31,13 +31,27 @@ required checks pass. Mark its checklist entry `[x]`, strike through its title,
 and make the next milestone active. Store generated measurements in ignored
 `benchmarks/`.
 
+## Delivery rule: visible, shared physics
+
+Each checklist item must name its physical effect, supported domain, existing
+demo and observable result before implementation. Completion requires both a
+numerical reference and an application check of that result. Demo variants may
+change initial conditions; all use the shared engine. Every preset remains part
+of regression testing, including those unaffected by the new physics.
+
+Use physical time controls, measurements and comparisons to expose slow effects;
+label assumptions and artistic display choices. Freeze the model references,
+numerical tolerances and demo acceptance cases before coding each milestone.
+Additional features require a scope decision rather than extending its checklist.
+
 ## Milestones
 
 - [x] ~~1. Accuracy and performance baseline~~
 - [x] ~~2. Physical units and independent display sizes~~
 - [x] ~~3. Trustworthy orbital dynamics~~
 - [x] ~~4. Credible impact outcomes~~
-- [ ] **5. Rotation and tidal evolution — active**
+- [ ] **Collision demonstration follow-up — active, before Milestone 5**
+- [ ] **5. Rotation and tidal evolution**
 - [ ] **6. Composition and thermal history**
 - [ ] **7. Stellar evolution and compact objects**
 - [ ] **8. Specialised simulation modes**
@@ -185,24 +199,122 @@ Implementation contracts: [impact measurements](impact-measurements.md),
 [calibration domains](impact-scaling.md), [collision budgets and live mode](collision-budgets.md),
 [compact ejecta and ownership](unresolved-debris.md).
 
+## Before Milestone 5: collision demonstration
+
+Make the existing collision physics accessible and its contact/results legible.
+Reuse Milestone 4's laws and shared construction policy. Rotation-dependent laws
+and thermal/material response are delivered in Milestones 5 and 6 respectively.
+
+- [ ] **Selectable encounters.** Planet smash offers gentle merging, intact
+  hit-and-run and disruptive encounters directly in the application, with replay.
+  No generated files or manual placement are required to observe these cases.
+- [ ] **Inspectable contact.** Close camera and slow playback make physical
+  surfaces and contact timing observable. Indicate visual enlargement; ensure
+  the transient flash leaves the persistent remnants/debris easy to inspect.
+- [ ] **Results and regression.** Show encounter speed/angle, regime and remnant
+  masses, with access to the conservation report. Identify calibrated mass laws
+  and prescribed scattering/ejecta choices. Verify all three live encounters,
+  resolved/compact budget agreement and continued operation of all seven presets.
+
+Done when these three encounters can be selected, watched and replayed through
+the normal UI, with numerical outcomes matching the existing reference gates.
+This follow-up does not reopen the completed Milestone 4 checklist.
+
 ## 5. Rotation and tidal evolution
 
-Track spin and orientation; implement validated tidal dissipation,
-circularisation, synchronisation, and relevant rotational flattening. Improve
-disruption criteria and debris energy/angular-momentum distributions. Expose
-uncertain material/dissipation parameters.
+Visible outcome: planets/moons and impact remnants rotate according to physical
+spin; spin-orbit exchange, precession and tidal heating are measurable in the
+existing Solar System and Planet smash demos. Slow secular effects use measured
+rates/history and documented time controls rather than hidden coefficient boosts.
 
-Acceptance: benchmark systems reproduce expected secular evolution at measured
-cost, with explicit validity limits.
+Begin with solid planets, moons and resolved solid remnants. Use a documented
+constant-time-lag equilibrium-tide model and a bounded axisymmetric gravity/shape
+model. Declare material parameters, small-deformation limits and a published
+rotating-impact law/domain before implementation; unsupported states remain
+explicit. General deformable bodies and gas/stellar tides are outside this scope.
+
+- [ ] **Physical spin and orientation.** Extend the existing angular-momentum
+  inventories with authoritative orientation and consistent moments of inertia.
+  Solar System textures/axes and Planet smash remnants follow simulation time;
+  inspector period/axis values, protocol migration and save/restart agree with
+  the physical state.
+- [ ] **Coupled tidal evolution.** Apply equal/reaction forces and torques;
+  transfer angular momentum between orbit and spin and record nonnegative tidal
+  heating. Expose Love numbers and time lags. A supported Solar System satellite
+  variant demonstrates synchronisation/circularisation through measured changes.
+- [ ] **Rotational flattening and gravity.** Derive bounded flattening and J2
+  from the declared interior/spin model, with consistent force, torque and energy
+  accounting. Solar System moon orbits show the predicted precession; displayed
+  shape, physical reference radii and any spherical-contact approximation are
+  identified separately.
+- [ ] **Rotating solid impacts.** Extend the supported input domain using the
+  selected published law, initially a bounded aligned-spin case. Planet smash
+  compares otherwise identical encounters with different spins and shows the
+  resulting remnant motion/rotation. Retain total angular momentum and energy;
+  revise ejecta partitions consistently. Unsupported compact allocations must
+  resolve within capacity or refuse intact, preserving their inventories.
+- [ ] **Reference and live release checks.** Verify free rotation, analytic
+  small-eccentricity tidal rates, synchronisation and J2 precession; compare
+  spinning/zero-spin impacts and their inventories. Inspect the named live demos,
+  test all seven presets separately, migration/restart and runtime costs, and
+  pass repository checks and CI. Clean up superseded paths in the same change.
+
+Acceptance gates for controlled references: orientation error below `1e-6` rad
+after 100 rotations; tidal/precession rates within 1% of same-model analytic
+limits with convergence under tighter stepping. Angular-momentum and total-energy
+residuals, including deposited heat, stay below `1e-8` of uncancelled component
+scales; instantaneous collision budgets retain their `1e-12` closure gates.
+These are numerical checks, not empirical calibration-error claims.
 
 ## 6. Composition and thermal history
 
-Track bulk rock/metal/ice/gas, irradiation, albedo, thermal emission, internal and
-impact heating, approximate phase changes, atmosphere retention/loss, and
-consistent radius changes. Begin with globally averaged thermal models.
+Visible outcome: composition, irradiation and deposited heat explain measured
+temperature, phase, radius and atmosphere changes. Solar System demonstrates
+distance/material dependence; Planet smash shows supported impact heating and
+subsequent cooling; Formation retains material inventories through encounters.
 
-Acceptance: stellar flux, orbital distance, and deposited energy produce
-quantitatively checked responses. Detailed climate is a separate model.
+Use globally averaged material/thermal models with documented energy references
+and validity ranges. Detailed climate, chemistry, fluid flow and hydrodynamic
+atmospheric escape remain outside this scope. Existing collision fits retain
+their applicability limits; material labels alone do not extend a calibration.
+
+- [ ] **Material inventories and physical radii.** Track rock, metal, ice and gas
+  masses through creation, impacts, debris, removal and restart. Expose assumed
+  properties in the inspector. Use supported density/compressibility relations;
+  radius changes account for self-binding work and invalidate geometry caches.
+- [ ] **Thermal state and heating.** Define heat capacity, reference energy and
+  the conversion between thermal energy and temperature. Account for impact and
+  tidal heating plus absorbed radiation from declared stellar luminosities.
+  Set explicit preset initial conditions; migrated unknown states remain unknown
+  until initialised rather than deriving temperatures from artistic glow.
+- [ ] **Radiative cooling and presentation.** Include albedo, emissivity and
+  outgoing thermal radiation in the energy balance. Solar System reports flux,
+  effective temperatures and cooling histories; Planet smash's supported hot
+  remnants cool visibly when they emit in visible wavelengths. Keep model-driven
+  emission distinguishable from transient artistic impact effects.
+- [ ] **Phase changes.** Include latent heat and bounded solid/liquid/vapour
+  fractions for the selected materials. A supported Planet smash case shows the
+  heating/cooling phase plateau and associated material/radius change. Expose
+  limits where a spherical globally averaged remnant ceases to be applicable.
+- [ ] **Atmosphere retention/loss.** Begin with Jeans escape for a specified
+  isothermal exobase in its supported regime; expose exobase assumptions rather
+  than equating them with bulk temperature. A Solar System body variant compares
+  retention/loss rates. Account for escaping material, energy and angular
+  momentum, with consistent radius/atmosphere display and saved state.
+- [ ] **Reference and live release checks.** Check inverse-square flux,
+  radiative equilibrium, constant-property cooling, latent-heat plateaus and
+  escape limiting cases. Demonstrate the named effects through existing demos,
+  verify material/energy inventories, protocol migration and restart, test all
+  seven presets, measure runtime and pass repository checks/CI. Remove obsolete
+  thermal/display paths.
+
+Acceptance gates for controlled references: flux/equilibrium/cooling agree with
+same-model analytic solutions within 0.1% and converge under tighter stepping;
+material masses close within `1e-12` and energy within `1e-8` of uncancelled
+component scales, including absorbed/emitted radiation and explicit losses.
+Phase/escape rates must also match the chosen published prescription within its
+declared numerical tolerance. Effective temperature is labelled separately from
+surface/climate predictions; model-parameter uncertainty remains explicit.
 
 ## 7. Stellar evolution and compact objects
 

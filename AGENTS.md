@@ -14,6 +14,7 @@ Development supports Windows and Linux. The physics venv is `physics_server/.ven
 - Complete authorized setup, fixes and validation without asking again for routine implementation choices. Ask when missing information or credentials actually block progress.
 - Keep local paths and credentials out of tracked files. Use the `GODOT` environment variable for a custom engine path; otherwise discover `godot` or `godot4` on PATH.
 - Keep simulation claims honest: REBOUND supplies gravity; stellar evolution, collisions and visuals include approximations documented in README.
+- Physics changes need an observable acceptance case in an existing demo, alongside numerical references. Demo variants change initial conditions and use the shared engine; keep every preset in regression checks.
 - Report what changed, what was tested, and any remaining limitation. A headless run does not validate rendered appearance.
 
 ## Documentation
