@@ -30,6 +30,7 @@ func _until(predicate: Callable, timeout_s := 7.5) -> bool:
 		if predicate.call():
 			return true
 		await create_timer(0.05).timeout
+	push_error("Live interaction timed out: " + str(get_stack()))
 	return false
 
 
@@ -111,6 +112,7 @@ func _check_collision_demos() -> bool:
 		if not await _until(func(): return main.paused and main.views.size() == 2 and main.hud.impact_panel.demo.get("case") == cases[i]):
 			return false
 		if main.display_scale != 0 or main.rig.target_distance >= 1.5:
+			push_error("Collision camera did not use physical close view: " + cases[i])
 			return false
 		main.net.send({"cmd": "pause", "value": false})
 		if not await _until(func(): return main.hud.impact_panel.report.get("regime") == regimes[i]):
@@ -120,12 +122,14 @@ func _check_collision_demos() -> bool:
 		if not await _until(func(): return main.paused):
 			return false
 		if not main.hud.impact_panel.details.text.contains("kg"):
+			push_error("Collision report omitted remnant masses: " + cases[i])
 			return false
 		var survivor: int = main.hud.impact_panel.report.get("survivor_id", -1)
 		main.hud.impact_panel.inspect.pressed.emit()
 		if not await _until(func(): return main.follow_id == survivor and main.selected_id == survivor and main.server_speed <= .005):
 			return false
 		if main.display_scale != 0 or main.rig.target_distance > 14.01*main.views[survivor].physical_radius:
+			push_error("Inspect did not frame the physical remnant: " + cases[i])
 			return false
 		main.hud.conservation_report = {}
 		main.hud.impact_panel.budgets_requested.emit()

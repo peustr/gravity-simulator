@@ -388,6 +388,9 @@ def capture_rendered(project, folder, godot, renderer, seed=42):
         line.lstrip().startswith(("ERROR:", "SCRIPT ERROR:"))
         for line in (completed.stdout + completed.stderr).splitlines()
     )
+    if engine_error:
+        print("Rendered check failed; engine output (last 100 lines):")
+        print("\n".join((completed.stdout + completed.stderr).splitlines()[-100:]))
     return assess_rendered(data, engine_error=engine_error, evidence_root=folder)
 
 
