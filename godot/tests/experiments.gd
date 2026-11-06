@@ -49,7 +49,8 @@ func _check_presets() -> bool:
 	main.net.send({"cmd": "pause", "value": true})
 	if not await _until(func(): return main.paused):
 		return false
-	for preset in ["solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty"]:
+	for entry in main.hud.PRESETS:
+		var preset: String = entry[0]
 		var previous_version: int = main.sim_version
 		main.hud.preset_chosen.emit(preset)
 		main.scene_files.confirm.get_ok_button().pressed.emit()

@@ -37,6 +37,11 @@ The reference interval and performance budget are part of each scene's contract.
 The backend observes 12 seconds of preset playback, or 40 seconds for Formation's
 cold embryo concentration within a disk. It finishes the requested physical interval
 within a separate wall-time cutoff; achieved interactive rate is measured separately.
+The recorder uses the same playback contract and finishes both its wall-time
+window and physical interval, with a separate timeout. Merely advancing the clock
+does not establish scene purpose: the audit requires completed binary orbits,
+local stellar breakup and capture, multi-source accretion, and disk approach and
+stretching in the tidal encounter.
 Long physical timescales require suitable model/time controls and honest labels;
 visual flashes, hidden force changes and geometric enlargement cannot substitute
 for the promised process.
@@ -63,3 +68,15 @@ CI must publish per-scene reports and rendered evidence and fail on automated
 regressions. Release additionally requires review of the complete sequences and
 documented performance evidence on an accessible hardware class. An unvalidated
 physical prescription remains a model gap even if the image is attractive.
+
+Run `python3 tools/dev.py scene-check` for the full gate. `--backend-only` is a
+diagnostic subset. Reports distinguish failures from blocked evidence; neither
+can satisfy full acceptance. The assessor checks image metrics independently of
+reported issue lists, complete per-scene durations, sampling gaps, unique scene
+records, PNG headers and paths, peak images and control evidence.
+
+When adding a preset, extend the contract registry and its observable physics
+checks; an unregistered scene fails validation. When changing a physical model,
+add its independent reference and a negative case showing that QA detects the
+corresponding broken behavior. Keep consumer performance and human sequence
+review separate from automated numerical and image gates.

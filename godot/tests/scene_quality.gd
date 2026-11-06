@@ -16,6 +16,7 @@ var overlays := 0
 var visible_initial := -1.0
 var capture_errors := 0
 var seed_value := 42
+var contract_path := ""
 
 
 func _run() -> void:
@@ -24,8 +25,15 @@ func _run() -> void:
 			output = arg.trim_prefix("--qa-output=")
 		if arg.begins_with("--qa-seed="):
 			seed_value = int(arg.trim_prefix("--qa-seed="))
-	if output.is_empty() or DisplayServer.get_name() == "headless":
+		if arg.begins_with("--qa-contract="):
+			contract_path = arg.trim_prefix("--qa-contract=")
+	if output.is_empty() or contract_path.is_empty() or DisplayServer.get_name() == "headless":
 		push_error("Scene quality requires an output directory and a real display")
+		quit(2)
+		return
+	var contracts = JSON.parse_string(FileAccess.get_file_as_string(contract_path))
+	if not contracts is Dictionary or contracts.is_empty():
+		push_error("Missing scene recording contracts")
 		quit(2)
 		return
 	DirAccess.make_dir_recursive_absolute(output)
@@ -38,7 +46,7 @@ func _run() -> void:
 		_fail("Scene quality could not connect to physics")
 		return
 	RenderingServer.frame_post_draw.connect(_capture)
-	for preset in ["solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty"]:
+	for preset in contracts:
 		active = ""
 		main.net.send({"cmd": "pause", "value": true})
 		if not await _until(func(): return main.paused):
@@ -68,13 +76,21 @@ func _run() -> void:
 			return
 		stage = "watch"
 		var initial_time: float = main.packet_time
+		var playback_speed: float = main.server_speed
 		main.hud.pause_btn.pressed.emit()
-		var watch_seconds := 40 if preset == "formation" else 12
+		var watch_seconds: float = contracts[preset].seconds
 		var end := Time.get_ticks_usec() + watch_seconds*1000000
-		while Time.get_ticks_usec() < end:
+		var target: float = initial_time+watch_seconds*contracts[preset].speed
+		while Time.get_ticks_usec() < end or main.packet_time < target:
+			if Time.get_ticks_usec() > end+30000000:
+				break
 			await process_frame
-		stage = "aftermath"
 		main.net.send({"cmd": "pause", "value": true})
+		if not await _until(func(): return main.paused, 7.5, "recording pause"):
+			_fail("Could not pause recorded scene: " + preset)
+			return
+		var final_time: float = main.packet_time
+		stage = "aftermath"
 		await create_timer(.5).timeout
 		var problems: Array = []
 		if main.packet_time <= initial_time: problems.append("watch_did_not_advance")
@@ -143,6 +159,7 @@ func _run() -> void:
 		if preset == "formation" and visible_initial < .8:
 			problems.append("disk_context_missing")
 		records.append({"scene": preset, "frames": frames.duplicate(), "peak_white_fraction": max_white,
+			"initial_time": initial_time, "final_time": final_time, "playback_speed": playback_speed,
 			"peak_frame": peak_path, "initial_visible_fraction": visible_initial,
 			"overlay_frames": overlays, "issues": problems,
 			"status": "PASS" if problems.is_empty() else "FAIL"})
@@ -156,12 +173,13 @@ func _run() -> void:
 	if controls:
 		controls = accretion_snapshot != null and accretion_snapshot.save_png(output.path_join("formation-accretion.png")) == OK
 	var version_info := Engine.get_version_info()
-	var report := {"format": "scene-render-quality", "version": 1, "scenes": records,
+	var report := {"format": "scene-render-quality", "version": 2, "scenes": records,
 		"seed": seed_value,
 		"controls_passed": controls, "godot": Engine.get_version_info().string,
 		"control_evidence": {"formation_accretion": "formation-accretion.png", "manual_body_addition": true},
 		"engine_version": {"major": version_info.major, "minor": version_info.minor, "patch": version_info.patch},
 		"renderer": RenderingServer.get_current_rendering_method(),
+		"resolution": [root.get_texture().get_width(),root.get_texture().get_height()],
 		"gpu": RenderingServer.get_video_adapter_name(), "display": DisplayServer.get_name(),
 		"capture_note": "Every displayed frame analysed; timed PNG sequence sampled at up to 10 Hz. Recording adds overhead."}
 	var file := FileAccess.open(output.path_join("render.json"), FileAccess.WRITE)
@@ -170,10 +188,7 @@ func _run() -> void:
 	_finish(0 if controls else 1)
 
 
-func _capture() -> void:
-	if active.is_empty(): return
-	var now := Time.get_ticks_usec()
-	var picture := root.get_texture().get_image()
+static func white_fraction(picture: Image) -> float:
 	var reduced := picture.duplicate() as Image
 	reduced.resize(160, 90, Image.INTERPOLATE_NEAREST)
 	reduced.convert(Image.FORMAT_RGB8)
@@ -182,7 +197,14 @@ func _capture() -> void:
 	for pixel in range(0, bytes.size(), 3):
 		if mini(bytes[pixel], mini(bytes[pixel+1], bytes[pixel+2])) > 242:
 			white += 1
-	var fraction := float(white) / (160 * 90)
+	return float(white)/(160*90)
+
+
+func _capture() -> void:
+	if active.is_empty(): return
+	var now := Time.get_ticks_usec()
+	var picture := root.get_texture().get_image()
+	var fraction := white_fraction(picture)
 	max_white = maxf(max_white, fraction)
 	var new_peak := fraction > peak
 	if main.hud.welcome.visible or main.hud.overlay.visible:

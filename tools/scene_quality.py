@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 import shutil
+import struct
 
 import numpy as np
 
@@ -26,6 +27,23 @@ PROMISES = {
     "galaxies": "Continuous gravitational interaction of two particle disks",
     "empty": "An empty, advancing sandbox with no inherited objects",
 }
+SCENE_SECONDS = {name: 40 if name == "formation" else 12 for name in PROMISES}
+WHITE_LIMIT = 0.35
+
+
+def recording_contracts():
+    """One playback contract for both the recorder and evidence assessor."""
+    import world as W
+
+    contracts = {}
+    for name in PROMISES:
+        world = W.World(seed=42)
+        if name == "smash":
+            world.load_collision_demo("disruption")
+        else:
+            world.load_preset(name)
+        contracts[name] = dict(seconds=SCENE_SECONDS[name], speed=world.speed)
+    return contracts
 
 
 def issue(code, message, *, status="FAIL", **evidence):
@@ -41,8 +59,12 @@ def status(issues):
 def snapshot(world):
     return {
         p.name: dict(
-            mass=p.m, radius=world.body_radius(p), position=tuple(p.xyz), velocity=tuple(p.vxyz), type=world.meta[p.name]["type"],
-            point_sample=world.meta[p.name]['type'] == 6 and world.meta[p.name].get('tidal_sample',False)
+            mass=p.m,
+            radius=world.body_radius(p),
+            position=tuple(p.xyz),
+            velocity=tuple(p.vxyz),
+            type=world.meta[p.name]["type"],
+            point_sample=world.meta[p.name]["type"] == 6 and world.meta[p.name].get("tidal_sample", False),
         )
         for p in world.sim.particles
     }
@@ -59,7 +81,7 @@ def valid_sample(data):
 def birth_geometry(parent, children):
     """An instantaneous breakup starts within its source, not an extended stream."""
     if not children:
-        return []
+        return [issue("missing_debris", "Breakup removed the source without material children")]
     radius = parent["radius"]
     for body in (parent, *children):
         values = [body["mass"], body["radius"], *body["position"], *body["velocity"]]
@@ -87,7 +109,13 @@ def birth_geometry(parent, children):
                 limit=1.05,
             )
         )
-    if max(d + (0 if c.get('point_sample',False) else r) for d, r, c in zip(offsets, radii, children, strict=True)) > 1.05:
+    mass_error = abs(math.fsum(c["mass"] for c in children) / parent["mass"] - 1)
+    if mass_error > 1e-12:
+        issues.append(issue("birth_mass_change", "Breakup does not preserve source mass", relative_error=mass_error))
+    if (
+        max(d + (0 if c.get("point_sample", False) else r) for d, r, c in zip(offsets, radii, children, strict=True))
+        > 1.05
+    ):
         issues.append(issue("source_volume_escape", "New parcel support extends beyond its source volume"))
     masses = [c["mass"] for c in children]
     centre = np.average([c["position"] for c in children], axis=0, weights=masses)
@@ -138,7 +166,7 @@ def audit_scene(name, *, seed=42, seconds=None, wall_limit=120):
 
     world = W.World(seed=seed)
     if seconds is None:
-        seconds = 40 if name == 'formation' else 12
+        seconds = SCENE_SECONDS[name]
     if name == "smash":
         world.load_collision_demo("disruption")  # The application's default menu path.
     else:
@@ -150,13 +178,25 @@ def audit_scene(name, *, seed=42, seconds=None, wall_limit=120):
         return np.sum([np.array(b["velocity"]) * b["mass"] for b in states.values()], axis=0) if states else np.zeros(3)
 
     momentum_scale = math.fsum(b["mass"] * math.hypot(*b["velocity"]) for b in initial.values())
-    angular_scale = math.fsum(b['mass']*math.hypot(*b['position'])*math.hypot(*b['velocity']) for b in initial.values())
-    angular_scale *= units.MASS_KG*units.LENGTH_M*units.VELOCITY_M_S
+    angular_scale = math.fsum(
+        b["mass"] * math.hypot(*b["position"]) * math.hypot(*b["velocity"]) for b in initial.values()
+    )
+    angular_scale *= units.MASS_KG * units.LENGTH_M * units.VELOCITY_M_S
     initial_momentum = momentum(initial)
     issues, transitions = [], []
     lineages = {n: {n} for n, b in initial.items() if b["type"] == W.ROCKY}
     stars = [n for n, b in initial.items() if b["type"] == W.STAR]
     holes = [n for n, b in initial.items() if b["type"] == W.BLACK_HOLE]
+    orbit_angle = 0.0
+    previous_orbit = orbit_normal = None
+    if name == "binary" and len(stars) == 2:
+        a, b = (initial[n] for n in stars)
+        previous_orbit = np.subtract(b["position"], a["position"])
+        orbit_normal = np.cross(previous_orbit, np.subtract(b["velocity"], a["velocity"]))
+        orbit_normal /= np.linalg.norm(orbit_normal)
+    initial_separation = minimum_separation = None
+    if name == "galaxies" and len(holes) == 2:
+        initial_separation = minimum_separation = math.dist(*(initial[n]["position"] for n in holes))
     original = world._disrupt
 
     def observe(victim, heavy):
@@ -167,7 +207,14 @@ def audit_scene(name, *, seed=42, seconds=None, wall_limit=120):
             children = [b for n, b in after.items() if n not in before]
             found = birth_geometry(before[victim], children)
             transitions.append(
-                dict(kind="tidal_disruption", time=world.sim.t, source=victim, children=len(children), issues=found)
+                dict(
+                    kind="tidal_disruption",
+                    time=world.sim.t,
+                    source=victim,
+                    source_type=before[victim]["type"],
+                    children=len(children),
+                    issues=found,
+                )
             )
             issues.extend(found)
 
@@ -181,7 +228,7 @@ def audit_scene(name, *, seed=42, seconds=None, wall_limit=120):
     while world.sim.t < target:
         # The physical reference interval is independent of the runner's speed.
         # Finish outstanding work without requesting ever more simulation time.
-        request = min(1 / 60, max(0., (target - world._target_t) / world.speed))
+        request = min(1 / 60, max(0.0, (target - world._target_t) / world.speed))
         world.advance(request, min(deadline, time.perf_counter() + 0.05))
         steps += 1
         if not valid_sample(world.snapshot()):
@@ -194,6 +241,19 @@ def audit_scene(name, *, seed=42, seconds=None, wall_limit=120):
                 if survivor in lineages and removed in lineages:
                     lineages[survivor] |= lineages.pop(removed)
         world.events.clear()
+        if any(
+            md["type"] == W.STAR and (n not in initial or initial[n]["type"] != W.STAR) for n, md in world.meta.items()
+        ):
+            issues.append(issue("unexplained_stellar_birth", "New stellar identity appeared during the interval"))
+            break
+        if previous_orbit is not None and all(world.particle(n) is not None for n in stars):
+            current = np.subtract(world.particle(stars[1]).xyz, world.particle(stars[0]).xyz)
+            orbit_angle += math.atan2(
+                float(orbit_normal @ np.cross(previous_orbit, current)), float(previous_orbit @ current)
+            )
+            previous_orbit = current
+        if minimum_separation is not None and all(world.particle(n) is not None for n in holes):
+            minimum_separation = min(minimum_separation, math.dist(*(world.particle(n).xyz for n in holes)))
         if world.paused or world.notices or time.perf_counter() >= deadline:
             break
     final = snapshot(world)
@@ -224,7 +284,7 @@ def audit_scene(name, *, seed=42, seconds=None, wall_limit=120):
             issue("momentum_change", "Default interval has unexplained momentum change", relative_error=momentum_error)
         )
     budget = conservation_report(world)
-    if budget["current"]["energy_j"] is None or budget['relative_conservation_residual'] is None:
+    if budget["current"]["energy_j"] is None or budget["relative_conservation_residual"] is None:
         issues.append(issue("unknown_energy_budget", "Physical energy accounting became unavailable", status="BLOCKED"))
     elif budget["relative_conservation_residual"] is not None and abs(budget["relative_conservation_residual"]) > 1e-8:
         issues.append(
@@ -234,12 +294,18 @@ def audit_scene(name, *, seed=42, seconds=None, wall_limit=120):
                 relative_error=budget["relative_conservation_residual"],
             )
         )
-    angular_residual = budget['conservation_residual']['angular_momentum_kg_m2_s']
-    angular_error = None if angular_residual is None else float(np.linalg.norm(angular_residual))/max(angular_scale,1e-300)
+    angular_residual = budget["conservation_residual"]["angular_momentum_kg_m2_s"]
+    angular_error = (
+        None if angular_residual is None else float(np.linalg.norm(angular_residual)) / max(angular_scale, 1e-300)
+    )
     if angular_error is None:
-        issues.append(issue('unknown_angular_budget','Total angular momentum accounting is unavailable',status='BLOCKED'))
+        issues.append(
+            issue("unknown_angular_budget", "Total angular momentum accounting is unavailable", status="BLOCKED")
+        )
     elif angular_error > 1e-9:
-        issues.append(issue('angular_momentum_change','Unexplained total angular momentum change',relative_error=angular_error))
+        issues.append(
+            issue("angular_momentum_change", "Unexplained total angular momentum change", relative_error=angular_error)
+        )
     if events[W.EV_IGNITION] or sum(b["type"] == W.STAR for b in final.values()) > len(stars):
         issues.append(issue("unexplained_stellar_birth", "New stars appeared during the default interval"))
     if name in ("solar", "binary"):
@@ -280,8 +346,36 @@ def audit_scene(name, *, seed=42, seconds=None, wall_limit=120):
                 issues.append(issue("unbound_primary", "A promised bound primary escaped", body=b))
     if name == "formation":
         issues.extend(assembly_check({n: s for n, s in lineages.items() if n in final}))
+    if name == "binary" and abs(orbit_angle) < 4 * math.pi:
+        issues.append(
+            issue("missing_binary_orbits", "Binary did not complete two orbits", turns=orbit_angle / (2 * math.pi))
+        )
     if name == "black_hole" and not any(final[n]["mass"] > initial[n]["mass"] for n in holes if n in final):
         issues.append(issue("no_capture", "No material was captured during the feeding reference interval"))
+    if name == "black_hole" and not any(t["source_type"] == W.STAR for t in transitions):
+        issues.append(issue("missing_disruption", "Feeding must include observed local tidal disruption"))
+    disk_stretch = None
+    if name == "galaxies":
+        if minimum_separation is None or minimum_separation > 0.5 * initial_separation:
+            issues.append(
+                issue(
+                    "missing_disk_encounter", "Two disk primaries did not approach within half their initial separation"
+                )
+            )
+        stretches = []
+        for n, body in initial.items():
+            if n not in holes and n in final and holes:
+                host = min(holes, key=lambda h: math.dist(body["position"], initial[h]["position"]))
+                if host in final:
+                    stretches.append(
+                        math.dist(final[n]["position"], final[host]["position"])
+                        / math.dist(body["position"], initial[host]["position"])
+                    )
+        disk_stretch = max(stretches, default=0.0)
+        if disk_stretch < 1.5:
+            issues.append(
+                issue("missing_tidal_tails", "No disk material stretched to 1.5 times its initial host distance")
+            )
     if name == "smash" and (world.last_impact is None or world.last_impact["regime"] != "supercatastrophic_disruption"):
         issues.append(issue("missing_contact_outcome", "The selected disruption encounter did not occur"))
     if name == "empty" and final:
@@ -298,11 +392,14 @@ def audit_scene(name, *, seed=42, seconds=None, wall_limit=120):
         observed_time=world.sim.t,
         ticks=steps,
         seed=seed,
+        binary_turns=orbit_angle / (2 * math.pi),
+        minimum_primary_separation=minimum_separation,
+        maximum_disk_stretch=disk_stretch,
         mass_error=mass_error,
         momentum_error=momentum_error,
         angular_momentum_error=angular_error,
-        ballistic_samples=budget['current']['ballistic_samples'],
-        ballistic_mass_kg=budget['current']['ballistic_mass_kg'],
+        ballistic_samples=budget["current"]["ballistic_samples"],
+        ballistic_mass_kg=budget["current"]["ballistic_mass_kg"],
         gas_capture_radius_rs=W.GAS_SINK_RADII,
         final_types=dict(Counter(b["type"] for b in final.values())),
     )
@@ -321,6 +418,8 @@ def capture_rendered(project, folder, godot, renderer, seed=42):
         except OSError:
             return dict(status="BLOCKED", reason="Physics port occupied; close the existing session before QA")
     env = os.environ.copy()
+    contract_file = folder / "contract.json"
+    contract_file.write_text(json.dumps(recording_contracts()), encoding="utf-8")
     if sys.platform.startswith("linux"):
         for key, subdir in (("XDG_DATA_HOME", "data"), ("XDG_CACHE_HOME", "cache")):
             env.setdefault(key, str(folder / subdir))
@@ -340,6 +439,7 @@ def capture_rendered(project, folder, godot, renderer, seed=42):
         "--",
         "--qa-output=" + str(folder),
         "--qa-seed=" + str(seed),
+        "--qa-contract=" + str(contract_file),
     ]
     # Own a seeded server and verify its PID before allowing the GUI to mutate it.
     with (folder / "physics.log").open("w") as log:
@@ -394,54 +494,136 @@ def capture_rendered(project, folder, godot, renderer, seed=42):
     return assess_rendered(data, engine_error=engine_error, evidence_root=folder)
 
 
+def _finite(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _png_exists(root, relative, resolution):
+    if not isinstance(relative, str) or Path(relative).is_absolute():
+        return False
+    path = (root / relative).resolve()
+    if not path.is_relative_to(root.resolve()) or not path.is_file():
+        return False
+    with path.open("rb") as file:
+        header = file.read(24)
+        if len(header) < 24:
+            return False
+        file.seek(-12, os.SEEK_END)
+        end = file.read()
+    return (
+        len(header) == 24
+        and header[:16] == b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        and struct.unpack(">II", header[16:24]) == tuple(resolution)
+        and end == b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+
+
 def assess_rendered(data, *, engine_error=False, evidence_root=None):
+    """Fail closed on incomplete, inconsistent or nonfinite recording evidence."""
     problems = []
+    contracts = recording_contracts()
+    resolution = data.get("resolution", [])
+    if (
+        not isinstance(resolution, list)
+        or len(resolution) != 2
+        or not all(isinstance(v, int) and not isinstance(v, bool) for v in resolution)
+        or not 160 <= resolution[0] <= 16384
+        or not 90 <= resolution[1] <= 16384
+    ):
+        problems.append(issue("recording_resolution", "Missing or invalid framebuffer size", status="BLOCKED"))
+        resolution = [0, 0]
     if engine_error:
         problems.append(issue("engine_error", "Renderer or interaction suite reported errors"))
-    if {s["scene"] for s in data["scenes"]} != set(PROMISES):
-        problems.append(issue("missing_scenes", "Rendered report did not include all presets", status="BLOCKED"))
+    if data.get("format") != "scene-render-quality" or data.get("version") != 2:
+        problems.append(issue("recording_format", "Unsupported recording schema", status="BLOCKED"))
+    names = [s.get("scene") for s in data.get("scenes", [])]
+    if Counter(names) != Counter(PROMISES.keys()):
+        problems.append(issue("missing_scenes", "Require exactly one recording per preset", status="BLOCKED"))
     if (
-        data.get("display") == "headless"
+        data.get("display") not in ("x11", "X11", "wayland", "Wayland", "windows", "Windows", "macos", "macOS")
         or data.get("renderer") != "forward_plus"
         or data.get("engine_version") != dict(major=4, minor=7, patch=2)
     ):
         problems.append(
-            issue(
-                "different_rendering_path", "Diagnostic rendering does not match Godot 4.7.2 Forward+", status="BLOCKED"
-            )
+            issue("different_rendering_path", "Require Godot 4.7.2 Forward+ on a real display", status="BLOCKED")
         )
-    if not data.get("controls_passed"):
+    if data.get("controls_passed") is not True:
         problems.append(issue("interaction_failure", "The all-preset controls suite failed"))
-    for scene in data["scenes"]:
-        for problem in scene["issues"]:
-            problems.append(issue(problem, "Rendered scene failed acceptance", scene=scene["scene"]))
+    assessed = []
+    for scene in data.get("scenes", []):
+        name = scene.get("scene")
+        if name not in contracts:
+            assessed.append(dict(scene, status="BLOCKED", issues=["unknown_scene"]))
+            continue
+        first_problem = len(problems)
+        contract = contracts[name]
+        for problem in scene.get("issues", []):
+            problems.append(issue(problem, "Rendered scene failed acceptance", scene=name))
+        peak = scene.get("peak_white_fraction")
+        overlays = scene.get("overlay_frames")
+        if not _finite(peak) or not 0 <= peak <= 1 or not _finite(overlays) or overlays < 0:
+            problems.append(issue("invalid_metrics", "Missing or nonfinite image metrics", scene=name))
+        elif peak > WHITE_LIMIT or overlays > 0:
+            problems.append(issue("image_metrics", "Brightness or overlay gate exceeded", scene=name))
         frames = scene.get("frames", [])
         complete = bool(frames) and all(
-            isinstance(f.get("path"), str) and isinstance(f.get("time_s"), (float, int)) for f in frames
+            isinstance(f.get("path"), str)
+            and f["path"].startswith(name + "/")
+            and _finite(f.get("time_s"))
+            and f["time_s"] >= 0
+            and _finite(f.get("frame_ms"))
+            and f["frame_ms"] >= 0
+            and _finite(f.get("sim_time"))
+            and _finite(f.get("display_time"))
+            and _finite(f.get("white_fraction"))
+            and 0 <= f["white_fraction"] <= 1
+            for f in frames
         )
         if complete:
             times = [f["time_s"] for f in frames]
             stages = {f.get("stage") for f in frames}
             watch = [f["time_s"] for f in frames if f.get("stage") == "watch"]
             complete = (
-                all(b > a for a, b in zip(times[:-1], times[1:], strict=True))
+                len({f["path"] for f in frames}) == len(frames)
+                and all(
+                    0 < b - a <= max(0.5, frame["frame_ms"] / 1000 + 0.15)
+                    for a, b, frame in zip(times[:-1], times[1:], frames[1:], strict=True)
+                )
                 and {"initial", "watch", "aftermath", "save_edit_restart_load"} <= stages
                 and len(watch) >= 2
-                and max(watch) - min(watch) >= 10
+                and max(watch) - min(watch) >= contract["seconds"] - 0.5
             )
-        if evidence_root is not None and complete:
-            complete = all((evidence_root / f["path"]).is_file() for f in frames)
+            if _finite(peak) and any(f["white_fraction"] > peak + 1e-9 for f in frames):
+                problems.append(issue("inconsistent_peak", "Peak metric is below a recorded frame", scene=name))
+        start, end, speed = (scene.get(k) for k in ("initial_time", "final_time", "playback_speed"))
+        if not all(_finite(v) for v in (start, end, speed)) or not math.isclose(speed, contract["speed"], rel_tol=1e-6):
+            complete = False
+        elif min(start, end) < 0 or end - start < contract["seconds"] * speed * (1 - 1e-6):
+            problems.append(
+                issue("incomplete_playback", "Rendered scene did not finish its physical interval", scene=name)
+            )
+        if name == "formation" and (
+            not _finite(scene.get("initial_visible_fraction")) or scene["initial_visible_fraction"] < 0.8
+        ):
+            problems.append(issue("disk_context_missing", "Formation disk was not framed in context", scene=name))
+        if evidence_root is not None:
+            complete = complete and all(_png_exists(evidence_root, f["path"], resolution) for f in frames)
+            complete = complete and _png_exists(evidence_root, scene.get("peak_frame"), resolution)
         if not complete:
             problems.append(
                 issue(
                     "missing_sequence",
-                    "Complete timed evidence through startup, event, aftermath and controls is missing",
+                    "Incomplete timed sequence, metrics or PNG evidence",
                     status="BLOCKED",
-                    scene=scene["scene"],
+                    scene=name,
                 )
             )
-    data.update(status=status(problems), issues=problems)
-    return data
+        found = problems[first_problem:]
+        assessed.append(dict(scene, status=status(found), issues=[p["code"] for p in found]))
+    control = data.get("control_evidence", {}).get("formation_accretion")
+    if evidence_root is not None and not _png_exists(evidence_root, control, resolution):
+        problems.append(issue("missing_control_evidence", "Formation inspection image missing", status="BLOCKED"))
+    return dict(data, scenes=assessed, status=status(problems), issues=problems)
 
 
 def write_viewer(path, rendered):
@@ -546,12 +728,13 @@ def main():
     if rendered:
         print("Rendering:", rendered.get("godot"), rendered.get("renderer"), rendered.get("gpu"))
         for scene in rendered.get("scenes", []):
+            peak = scene.get("peak_white_fraction")
             print(
-                scene["scene"],
+                scene.get("scene", "unknown"),
                 "rendered",
                 scene["status"],
                 "peak white",
-                round(scene["peak_white_fraction"], 4),
+                round(peak, 4) if _finite(peak) else "unavailable",
                 "issues",
                 scene["issues"],
             )
