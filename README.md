@@ -358,9 +358,11 @@ representations, explicit source/sink budgets and separate model diagnostics.
 Unsupported encounters pause intact with an explanation.
 
 Automatic mode offers labelled **conditional sticking** and **elastic rebound**
-for gentle rocky contacts, including spinning inputs. Sticking requires a feasible
-energy/spin inventory and a speed below 1.08 times mutual escape; rebound
-retains both bodies when a single sphere cannot be constructed. These are contact
+for gentle rocky contacts, including spinning inputs below 1.08 times mutual
+escape. Sticking requires feasible energy/spin and surface-retention budgets;
+rebound retains both bodies when a single sphere cannot be constructed. A
+nonrotating classified merger can also use prescribed spherical sticking in
+surrounding gravity, with exact external-work accounting. These are contact
 prescriptions, not rotating-impact calibrations. Faster rotating impacts remain
 unsupported. **Inspect · slow motion** follows the reported remnant at physical
 size and slows playback for close inspection.

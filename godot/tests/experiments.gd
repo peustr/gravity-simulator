@@ -24,13 +24,13 @@ func _finish(code: int) -> void:
 	quit(code)
 
 
-func _until(predicate: Callable, timeout_s := 7.5) -> bool:
+func _until(predicate: Callable, timeout_s := 7.5, context := "interaction") -> bool:
 	var deadline := Time.get_ticks_usec() + int(timeout_s*1000000)
 	while Time.get_ticks_usec() < deadline:
 		if predicate.call():
 			return true
 		await create_timer(0.05).timeout
-	push_error("Live interaction timed out: " + str(get_stack()))
+	push_error("Live check timed out (%s): bodies=%d, t=%s, paused=%s, follow=%d, online=%s, distance=%s, impact=%s" % [context,main.views.size(),str(main.packet_time),str(main.paused),main.follow_id,str(main.net.connected),str(main.rig.distance),str(main.hud.impact_panel.report.get("regime","none"))])
 	return false
 
 
@@ -158,7 +158,7 @@ func _largest_rocky() -> int:
 func _check_formation() -> bool:
 	main.hud.preset_chosen.emit("formation")
 	main.scene_files.confirm.get_ok_button().pressed.emit()
-	if not await _until(func(): return main.views.size() == 65 and main.paused and main.follow_id == -1 and absf(log(main.rig.distance / 150.0)) < .01):
+	if not await _until(func(): return main.views.size() == 65 and main.paused and main.follow_id == -1 and absf(log(main.rig.distance / 150.0)) < .01, 7.5, "formation load/camera"):
 		return false
 	var embryo: int = main.views.keys()[1]
 	main._select(embryo)
@@ -176,7 +176,7 @@ func _check_formation() -> bool:
 		push_error("Planet formation did not demonstrate natural growth from at least three embryos")
 		return false
 	main.net.send({"cmd": "pause", "value": true})
-	if not await _until(func(): return main.paused):
+	if not await _until(func(): return main.paused, 7.5, "formation growth pause"):
 		return false
 	var grown := _largest_rocky()
 	main._select(grown)
@@ -191,20 +191,20 @@ func _check_formation() -> bool:
 	var initial_mass: float = remnant.mass
 	main.net.send({"cmd":"add", "type":"rocky", "pos":[position.x,position.y,position.z],
 		"mode":"launch", "drag":[-.3*contact_radius,0,0], "mass_mult":added_mass/.003})
-	if not await _until(func(): return main.views.size() == count+1):
+	if not await _until(func(): return main.views.size() == count+1, 7.5, "formation placement"):
 		return false
 	main.net.send({"cmd":"pause","value":false})
 	if not await _until(func(): return main.views.size() == count and main.views.has(grown) and main.views[grown].mass > initial_mass+.99*added_mass):
 		push_error("Spinning formation remnant did not accept a subsequent bound accretion")
 		return false
-	if not await _until(func(): return main.hud.impact_panel.report.get("regime") == "bound_sticking"):
+	if not await _until(func(): return main.hud.impact_panel.report.get("regime") == "bound_sticking", 7.5, "formation impact report"):
 		return false
 	if DisplayServer.get_name() != "headless":
 		await RenderingServer.frame_post_draw
 		accretion_snapshot = root.get_texture().get_image()
 	if not await _request({"cmd": "restart"}):
 		return false
-	if not await _until(func(): return main.views.size() == 65 and main.paused and main.follow_id == followed):
+	if not await _until(func(): return main.views.size() == 65 and main.paused and main.follow_id == followed, 7.5, "formation restart/follow"):
 		return false
 	print("Live formation growth/follow/restart PASSED")
 	return true

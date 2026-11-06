@@ -100,8 +100,10 @@ func _process(delta: float) -> void:
 		state_received.emit(state)
 
 	# State callbacks may compile shaders or build hundreds of views. Their
-	# processing time must not turn packets received in this poll into a timeout.
-	var now_connected := received or _now() - _last_packet < TIMEOUT
+	# processing time must not consume the next poll's disconnect window.
+	if received:
+		_last_packet = _now()
+	var now_connected := _now() - _last_packet < TIMEOUT
 	if now_connected != connected:
 		connected = now_connected
 		connection_changed.emit(connected)

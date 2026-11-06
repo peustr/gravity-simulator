@@ -49,7 +49,7 @@ heuristic-only handling and planet versus small-body material assumptions.
 - Small-body calibration selects solid pairs (rocky and asteroid), within its
   1–100 km target-radius and other published limits.
 - Other pairs use the documented heuristic rules. A selected solid pair outside
-  its calibration or construction domain pauses intact; there is no heuristic
+  all supported contact prescriptions pauses intact; there is no heuristic
   fallback.
 
 Automatic callbacks only record contacts. A simultaneous batch containing a
@@ -149,6 +149,9 @@ nonnegative and `(L/I)² + H < GM/R³`. Here H bounds the external acceleration
 gradient across the entire remnant. This is a necessary surface-retention
 condition, not a fluid equilibrium calculation; the result is labelled
 `gentle_sticking` or `bound_sticking`, without calibrated rotating mass claims.
+The 1.08-escape-speed limit applies to the gentle fallback, including spinning
+inputs; nonrotating classified single-merger outcomes retain their original
+calibration domain before this external coupling.
 An intact hit-and-run can instead apply its normal impulse at the native sampled
 positions: unchanged masses/positions leave external potential unchanged. This
 is labelled `contact_rebound`, without an isolated escape certificate. Calibrated

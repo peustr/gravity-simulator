@@ -27,10 +27,13 @@ static func check(tree: SceneTree) -> bool:
 	client._process(0)
 	var received: bool = client.connected
 	client._process(0)
+	var still_connected: bool = client.connected
+	client.clock += TIMEOUT+.1
+	client._process(0)
 	var timed_out: bool = not client.connected
 	client.udp.close()
 	sender.close()
 	client.free()
-	if not received or not timed_out:
+	if not received or not still_connected or not timed_out:
 		push_error("Slow packet handling caused a false timeout or hid a real disconnect")
-	return received and timed_out
+	return received and still_connected and timed_out

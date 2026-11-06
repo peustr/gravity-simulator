@@ -94,13 +94,19 @@ func _run() -> void:
 		if not main.views.is_empty():
 			stage = "follow_zoom"
 			var selected: int = main.views.keys()[0]
+			var survivor: int = main.hud.impact_panel.report.get("survivor_id", -1)
+			if main.views.has(survivor):
+				selected = survivor
 			if preset == "solar":
 				for id in main.views:
 					if main.views[id].body_type == main.Palette.ROCKY and main.views[id].mass < .0001:
 						selected = id
 						break
-			main._select(selected)
-			main._start_follow(selected)
+			if selected == survivor:
+				main.hud.impact_panel.inspect.pressed.emit()
+			else:
+				main._select(selected)
+				main._start_follow(selected)
 			main.rig.zoom(.5)
 			main.hud.select_tool(-1)
 			main.hud.pause_btn.pressed.emit()
@@ -176,6 +182,8 @@ func _capture() -> void:
 	max_white = maxf(max_white, fraction)
 	var new_peak := fraction > peak
 	if main.hud.welcome.visible or main.hud.overlay.visible:
+		if overlays == 0:
+			print("Unexpected overlay: ",active," stage=",stage," online=",main.net.connected," welcome=",main.hud.welcome.visible," packet_age=",main.net._now()-main.net._last_packet)
 		overlays += 1
 	if stage == "initial" and absf(log(main.rig.distance / main.rig.target_distance)) < .01:
 		var visible := 0
