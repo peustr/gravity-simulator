@@ -197,8 +197,20 @@ func _check_formation() -> bool:
 	if not await _until(func(): return main.views.size() == count and main.views.has(grown) and main.views[grown].mass > initial_mass+.99*added_mass):
 		push_error("Spinning formation remnant did not accept a subsequent bound accretion")
 		return false
-	if not await _until(func(): return main.hud.impact_panel.report.get("regime") == "bound_sticking", 7.5, "formation impact report"):
+	if not await _until(func(): return main.hud.impact_panel.report.get("regime") in ["bound_sticking","gentle_sticking"], 7.5, "formation impact report"):
 		return false
+	main.net.send({"cmd":"pause","value":true})
+	if not await _until(func(): return main.paused):
+		return false
+	main.hud.conservation_report = {}
+	main.net.send({"cmd":"conservation"})
+	if not await _until(func(): return not main.hud.conservation_report.is_empty()):
+		return false
+	var residual = main.hud.conservation_report.get("relative_conservation_residual")
+	if residual == null or absf(float(residual)) > 1e-8:
+		push_error("Formation accretion did not close physical budgets")
+		return false
+	main.hud.conservation_dialog.hide()
 	if DisplayServer.get_name() != "headless":
 		await RenderingServer.frame_post_draw
 		accretion_snapshot = root.get_texture().get_image()

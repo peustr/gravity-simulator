@@ -26,7 +26,9 @@ var server_info: Dictionary = {}
 var server_pid := -1
 var launch_status := ""   # human-readable note about auto-launch
 var _last_packet := -1000.0
-var _hello_timer := 0.0
+var _next_hello := 0.0
+var _last_poll := -1.0
+var _resume_probe := false
 var _launch_tried := false
 var _start_time := 0.0
 
@@ -51,12 +53,19 @@ func send(cmd: Dictionary) -> void:
 	udp.put_packet(JSON.stringify(cmd).to_utf8_buffer())
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	var received := false
-	_hello_timer -= delta
-	if _hello_timer <= 0.0:
+	var now := _now()
+	# Godot caps frame delta during shader compilation or a suspended window.
+	# Resume heartbeats immediately and give one probe a normal response window.
+	# An unanswered probe cannot repeatedly renew that window on slow frames.
+	if connected and _last_poll >= 0 and now-_last_poll > TIMEOUT and not _resume_probe:
+		_resume_probe = true
+		_last_packet = now
+		_next_hello = 0.0
+	if now >= _next_hello:
 		send({"cmd": "hello"})
-		_hello_timer = HELLO_INTERVAL
+		_next_hello = now+HELLO_INTERVAL
 
 	var states: Array[PackedFloat32Array] = []
 	while udp.get_available_packet_count() > 0:
@@ -103,6 +112,8 @@ func _process(delta: float) -> void:
 	# processing time must not consume the next poll's disconnect window.
 	if received:
 		_last_packet = _now()
+		_resume_probe = false
+	_last_poll = _now()
 	var now_connected := _now() - _last_packet < TIMEOUT
 	if now_connected != connected:
 		connected = now_connected

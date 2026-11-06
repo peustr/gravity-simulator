@@ -7,12 +7,16 @@ const Hud = preload("res://scripts/hud.gd")
 const Benchmark = preload("res://scripts/benchmark.gd")
 const MotionTests = preload("res://tests/motion.gd")
 const ConnectionTests = preload("res://tests/connection.gd")
+const CameraTests = preload("res://tests/camera.gd")
 
 func _initialize() -> void:
 	if not await ConnectionTests.check(self):
 		quit(1)
 		return
 	if not MotionTests.run():
+		quit(1)
+		return
+	if not await CameraTests.check(self):
 		quit(1)
 		return
 	var timing := Benchmark.distribution([1.0, 2.0, 3.0, 100.0])

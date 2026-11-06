@@ -104,6 +104,8 @@ func _run() -> void:
 						break
 			if selected == survivor:
 				main.hud.impact_panel.inspect.pressed.emit()
+				if not await _until(func(): return main.server_speed <= .005):
+					problems.append("inspect_speed_failed")
 			else:
 				main._select(selected)
 				main._start_follow(selected)
@@ -112,6 +114,8 @@ func _run() -> void:
 			main.hud.pause_btn.pressed.emit()
 			main._speed_step(1)
 			await create_timer(1).timeout
+			if not main.views.has(main.follow_id) or not main.rig.camera.is_position_in_frustum(main.views[main.follow_id].position):
+				problems.append("follow_target_not_visible")
 			main._speed_step(-1)
 			main.net.send({"cmd":"pause","value":true})
 			if not await _until(func(): return main.paused): problems.append("pause_failed")

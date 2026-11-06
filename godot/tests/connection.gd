@@ -28,12 +28,22 @@ static func check(tree: SceneTree) -> bool:
 	var received: bool = client.connected
 	client._process(0)
 	var still_connected: bool = client.connected
+	while sender.get_available_packet_count() > 0:
+		sender.get_packet()
+	client.clock += 5.0  # The UI did not poll while a shader/window stalled.
+	client._process(.01)
+	var resumed: bool = client.connected
+	deadline = Time.get_ticks_msec()+1000
+	while sender.get_available_packet_count() == 0 and Time.get_ticks_msec()<deadline:
+		await tree.process_frame
+	var heartbeat: bool = sender.get_available_packet_count() > 0 and JSON.parse_string(sender.get_packet().get_string_from_utf8()).get("cmd") == "hello"
+	# A second stall must not renew an unanswered probe indefinitely.
 	client.clock += TIMEOUT+.1
-	client._process(0)
+	client._process(.01)
 	var timed_out: bool = not client.connected
 	client.udp.close()
 	sender.close()
 	client.free()
-	if not received or not still_connected or not timed_out:
+	if not received or not still_connected or not resumed or not heartbeat or not timed_out:
 		push_error("Slow packet handling caused a false timeout or hid a real disconnect")
-	return received and still_connected and timed_out
+	return received and still_connected and resumed and heartbeat and timed_out
