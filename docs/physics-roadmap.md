@@ -239,7 +239,7 @@ model. Declare material parameters, small-deformation limits and a published
 rotating-impact law/domain before implementation; unsupported states remain
 explicit. General deformable bodies and gas/stellar tides are outside this scope.
 
-- [ ] **Physical spin and orientation.** Extend the existing angular-momentum
+- [x] **Physical spin and orientation.** Extend the existing angular-momentum
   inventories with authoritative orientation and consistent moments of inertia.
   Solar System textures/axes and Planet smash remnants follow simulation time;
   inspector period/axis values, protocol migration and save/restart agree with

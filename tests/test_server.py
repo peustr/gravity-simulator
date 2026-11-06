@@ -125,6 +125,7 @@ def test_run_sends_state_and_exits_when_idle(server):
         server.run()
         assert json.loads(client.recv(4096))['type'] == 'info'
         assert struct.unpack('<11f', client.recv(65535))[0] == 3
+        assert np.frombuffer(client.recv(65535),dtype='<f4')[0] == S.ROTATION_KIND
         assert json.loads(client.recv(4096))['text'] == 'queued'
         assert server.sock.fileno() == -1
 

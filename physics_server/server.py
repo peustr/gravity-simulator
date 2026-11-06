@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import select
 import socket
@@ -44,6 +45,9 @@ from commands import validate
 PROTOCOL_VERSION = 2
 STATE_KIND = 3
 PREDICTION_KIND = 4
+ROTATION_KIND = 5
+ROTATION_HEADER_FLOATS = 5
+ROTATION_BODY_FLOATS = 10
 DEFAULT_PORT = 47810
 TICK_HZ = 60
 PHYSICS_BUDGET = 0.011       # seconds of physics per tick (keeps the server responsive)
@@ -101,6 +105,26 @@ def pack_state(world: W.World) -> bytes:
                      shell.radius_m/units.LENGTH_M,.5,(world.sim.t*units.TIME_S-shell.formed_at_s)/units.TIME_S)
     ev = np.array(events, dtype="<f4").reshape(len(events), EVENT_FLOATS)
     return header.tobytes() + bodies.tobytes() + ev.tobytes()
+
+
+def pack_rotation(world: W.World) -> bytes:
+    """Additive protocol-2 solid poses; separate packet preserves body capacity."""
+    rows = []
+    now = world.sim.t*units.TIME_S
+    for p in world.sim.particles:
+        if world.meta[p.name]['type'] not in (W.ROCKY,W.ASTEROID):
+            continue
+        state,known = world.rotation(p)
+        omega = tuple(x*units.TIME_S for x in state.omega_rad_s)
+        speed = math.hypot(*state.omega_rad_s)
+        period = math.tau/speed if speed >= math.tau/1e30 else 0.
+        flag = int(known)
+        if max(map(abs,omega)) > 1e15 or 0 < speed < math.tau/1e30:
+            flag,omega,period = 2,(0.,0.,0.),0.  # Explicitly outside float32 presentation range.
+        pose = state.orientation if flag == 2 else state.at(now)
+        rows.append((int(p.name),flag,*pose,*omega,period))
+    hi = float(int(world.sim.t//1000)*1000)
+    return np.asarray([ROTATION_KIND,world.version%16_000_000,hi,world.sim.t-hi,len(rows)],dtype='<f4').tobytes()+np.asarray(rows,dtype='<f4').tobytes()
 
 
 def pack_prediction(req_id: int, result: dict) -> bytes:
@@ -309,6 +333,7 @@ class Server:
                 self.world.advance(real_dt, now + PHYSICS_BUDGET)
                 if self.client is not None:
                     self.send(pack_state(self.world))
+                    self.send(pack_rotation(self.world))
                     while self.world.notices:
                         self.send_json(self.world.notices.pop(0))
                 else:

@@ -118,6 +118,7 @@ func _ready() -> void:
 
 	net.state_received.connect(_on_state)
 	net.prediction_received.connect(_on_prediction)
+	net.rotation_received.connect(_on_rotation)
 	net.message_received.connect(_on_message)
 	net.connection_changed.connect(_on_connection)
 	scene_files = SceneFiles.new()
@@ -271,6 +272,19 @@ func apply_physics_info(info: Dictionary) -> void:
 		return
 	gas_capture_scale = float(info.get("gas_capture_radius_rs", 0.0))
 	hud.set_physics(info)
+
+
+func _on_rotation(f: PackedFloat32Array) -> void:
+	if not NetClient.valid_packet(f) or f[0] != NetClient.ROTATION_KIND or int(f[1]) != sim_version or int(f[1]) < _state_floor:
+		return
+	var time := float(f[2])+float(f[3])
+	if time > packet_time+0.000001:
+		return
+	for i in range(int(f[4])):
+		var o := 5+10*i
+		var id := int(f[o])
+		if views.has(id):
+			views[id].set_rotation_state(time,Quaternion(f[o+2],f[o+3],f[o+4],f[o+5]),Vector3(f[o+6],f[o+7],f[o+8]),f[o+9],int(f[o+1]))
 
 
 func _on_state(f: PackedFloat32Array) -> void:
@@ -514,6 +528,7 @@ func _update_motion(delta: float) -> void:
 	for id in views:
 		var v = views[id]
 		v.position = motion.position_for(id, v.base_pos)
+		v.present_rotation(display_time)
 		v.set_display_size(display_scale, _world_per_px(v.position), 0.0 if legacy_units else gas_capture_scale)
 
 
@@ -995,6 +1010,10 @@ func _update_inspector() -> void:
 	if v.heat > 0.05:
 		info["Appearance"] = "Molten (%d%%)" % int(v.heat * 100)
 	info["Age"] = _physical_value(v.age, "time_s", "days", 1.0 / 86400.0)
+	if v.body_type in [Palette.ROCKY,Palette.ASTEROID]:
+		info["Spin"] = "Unknown" if v.spin_status == 0 else "Outside display range" if v.spin_status == 2 else "Not rotating" if v.spin_period_s == 0 else Palette._sig(v.spin_period_s/3600.0)+" hours"
+		if v.spin_status == 1 and v.spin_period_s > 0:
+			info["Spin axis"] = "(%.3f, %.3f, %.3f)" % [v.spin_axis.x,v.spin_axis.y,v.spin_axis.z]
 	info["can_nova"] = v.body_type == Palette.STAR
 	info["following"] = follow_id == selected_id
 	hud.show_inspector(info)

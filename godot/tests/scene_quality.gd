@@ -173,11 +173,13 @@ func _run() -> void:
 	if controls: controls = await _check_formation()
 	if controls:
 		controls = accretion_snapshot != null and accretion_snapshot.save_png(output.path_join("formation-accretion.png")) == OK
+	if controls:
+		controls = spin_snapshot != null and spin_snapshot.save_png(output.path_join("solar-spin.png")) == OK
 	var version_info := Engine.get_version_info()
 	var report := {"format": "scene-render-quality", "version": 2, "scenes": records,
 		"seed": seed_value,
 		"controls_passed": controls, "godot": Engine.get_version_info().string,
-		"control_evidence": {"formation_accretion": "formation-accretion.png", "manual_body_addition": true},
+		"control_evidence": {"formation_accretion": "formation-accretion.png", "solar_spin":"solar-spin.png", "manual_body_addition": true},
 		"engine_version": {"major": version_info.major, "minor": version_info.minor, "patch": version_info.patch},
 		"renderer": RenderingServer.get_current_rendering_method(),
 		"resolution": [capture_resolution.x,capture_resolution.y],

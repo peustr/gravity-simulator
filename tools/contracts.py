@@ -8,7 +8,8 @@ import world
 def check(data):
     assert data['keys'] == list(world.TYPE_KEYS)
     assert data['protocol'] == server.PROTOCOL_VERSION
-    assert data['kinds'] == [server.STATE_KIND, server.PREDICTION_KIND]
+    assert data['kinds'] == [server.STATE_KIND, server.PREDICTION_KIND, server.ROTATION_KIND]
+    assert data['rotation_layout'] == [server.ROTATION_HEADER_FLOATS,server.ROTATION_BODY_FLOATS]
     assert data['port'] == server.DEFAULT_PORT
     assert data['layout'] == [server.HEADER_FLOATS, server.BODY_FLOATS, server.EVENT_FLOATS]
     assert data['presets'] == list(world.SCENARIOS)

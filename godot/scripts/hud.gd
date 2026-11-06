@@ -616,7 +616,7 @@ func _build_inspector() -> void:
 	insp_grid.add_theme_constant_override("h_separation", 14)
 	insp_grid.add_theme_constant_override("v_separation", 4)
 	v.add_child(insp_grid)
-	for key in ["Mass", "Physical radius", "Speed", "Orbiting", "Distance", "Surface", "Age", "Display"]:
+	for key in ["Mass", "Physical radius", "Parcel volume radius", "Speed", "Orbiting", "Distance", "Spin", "Spin axis", "Appearance", "Age", "Display"]:
 		insp_grid.add_child(_label(key, 13, C_DIM))
 		var val := _label("", 13, C_TEXT)
 		insp_grid.add_child(val)

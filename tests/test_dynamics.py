@@ -107,7 +107,7 @@ def test_old_saves_get_explicit_previous_approximation_settings(version):
     del data['physics'], data['removed']
     restored, _ = E.restore(data)
     assert restored.settings == C.LEGACY_DEFAULTS
-    assert E.capture(restored, E.DEFAULT_CAMERA)['version'] == 7
+    assert E.capture(restored, E.DEFAULT_CAMERA)['version'] == 8
 
 
 @pytest.mark.parametrize('change', [

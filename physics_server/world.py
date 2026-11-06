@@ -45,6 +45,7 @@ from debris_shell import MAX_SHELLS, ShellIntegrator, approaching_contacts, form
 from dataclasses import replace
 from encounters import DEMO_CASES, demo_initial_conditions
 from tidal_debris import source_samples
+from rotation import Rotation, angular_velocity
 
 # REBOUND rebuilds its name lookup table on its own; the warning is just noise.
 warnings.filterwarnings("ignore", message=".*hash table.*")
@@ -299,6 +300,41 @@ class World:
         """Physical sphere radius or a node's equivalent-volume radius."""
         return particle.r if particle.r > 0 else self.meta.get(particle.name,{}).get('volume_radius',0.)
 
+    def rotation(self, particle):
+        """Synchronise an instantaneous inventory/radius edit at current time."""
+        md = self.meta.get(particle.name)
+        if md is None:
+            return None,False
+        if md['type'] not in (ROCKY,ASTEROID):
+            md.pop('rotation',None)
+            return None,False
+        known = self.units == units.SYSTEM and md['inventory'] is not None and particle.m > 0 and particle.r > 0
+        omega = angular_velocity(md['inventory'].spin_kg_m2_s,particle.m*units.MASS_KG,
+                                 particle.r*units.LENGTH_M) if known else (0.,0.,0.)
+        now = self.sim.t*units.TIME_S
+        old = md.get('rotation')
+        if old is None or old.omega_rad_s != omega:
+            old = Rotation(old.at(now) if old else (0.,0.,0.,1.),now,omega)
+            md['rotation'] = old
+        return old,known
+
+    def seed_rotation(self, bid, period_s, tilt=0.):
+        """An initial solid-body spin; tilt is relative to the +Y orbital pole."""
+        if bid is None:
+            return
+        p = self.particle(str(bid))
+        if (p is None or self.units != units.SYSTEM or self.meta[p.name]['type'] not in (ROCKY,ASTEROID)
+                or self.meta[p.name]['inventory'] is None or not math.isfinite(period_s) or period_s <= 0
+                or not math.isfinite(tilt)):
+            raise ValueError('Spin initial conditions require a known solid sphere and finite positive period')
+        axis = (math.sin(tilt),math.cos(tilt),0.)
+        inertia = .4*(p.m*units.MASS_KG)*(p.r*units.LENGTH_M)**2
+        self.meta[p.name]['inventory'] = BodyInventory(tuple(inertia*2*math.pi*x/period_s for x in axis),
+                                                     self.meta[p.name]['inventory'].internal_energy_j)
+        q = (0.,0.,-math.sin(tilt/2),math.cos(tilt/2))
+        self.meta[p.name]['rotation'] = Rotation(q,self.sim.t*units.TIME_S,
+                                               tuple(2*math.pi*x/period_s for x in axis))
+
     def is_ballistic(self, name):
         md = self.meta.get(name,{})
         return self.units == units.SYSTEM and md.get('type') == PLASMA and md.get('tidal_sample',False)
@@ -356,6 +392,8 @@ class World:
         self.sim.particles[self.sim.N - 1].name = name
         self.meta[name] = {"type": btype, "born": self.sim.t, "heat": float(heat),
                            "inventory": inventory}
+        if btype in (ROCKY,ASTEROID):
+            self.rotation(self.sim.particles[self.sim.N-1])
         self._names_dirty = True
         self._partition_dirty = True
         self.version += 1
@@ -470,6 +508,8 @@ class World:
     def advance(self, real_dt: float, deadline: float):
         """Advance simulation time by speed * real_dt, within a wall-clock budget."""
         sim = self.sim
+        for p in sim.particles:
+            self.rotation(p)
         requested = 0.0 if self.paused else self.speed * real_dt
         t_start = sim.t
         if self.paused:
@@ -621,6 +661,9 @@ class World:
 
     # ------------------------------------------------------------ collisions
     def _collision_record(self, pi, pj):
+        for p in (pi,pj):
+            if self.meta.get(p.name,{}).get('type') in (ROCKY,ASTEROID):
+                self.rotation(p)
         ni, nj = pi.name, pj.name
         ti = self.meta.get(ni, {}).get("type", ASTEROID)
         tj = self.meta.get(nj, {}).get("type", ASTEROID)
@@ -843,6 +886,7 @@ class World:
             particle.xyz, particle.vxyz = position, velocity
             self.meta[name]['inventory'], self.meta[name]['heat'] = inventory, heat
             self.meta[name]['type'] = output_type
+            self.rotation(particle)
         self._partition_dirty = True
         # Keep the constructed volume/density and spin; heuristic promotion would
         # overwrite the radius and invalidate the conserved inventory.
@@ -1543,12 +1587,17 @@ class World:
         if name == "solar":
             sun = 1000.0
             self.add_body(STAR, sun, origin, origin)
-            for r_orb, m, ph in ((23.226, 0.000166, 0.3), (43.398, 0.002448, 2.0), (91.422, 0.000323, 4.1)):
+            for r_orb, m, ph, days, tilt in ((23.226, .000166, .3, 58.6462, .034),
+                                            (43.398, .002448, 2., 243.025, 177.36),
+                                            (91.422, .000323, 4.1, 1.025956, 25.19)):
                 p, v = self.orbit(origin, origin, sun + m, r_orb, ph)
-                self.add_body(ROCKY, m, p, v)
+                bid = self.add_body(ROCKY, m, p, v)
+                self.seed_rotation(bid,days*86400,math.radians(tilt))
             ep, ev = self.orbit(origin, origin, sun + 0.003, 60, 5.2)
             earth = self.add_body(ROCKY, 0.003, ep, ev)
-            self.add_satellite(earth, ROCKY, 3.7e-5, 384_400_000 / units.LENGTH_M, 1.0)
+            self.seed_rotation(earth,86164.0905,math.radians(23.44))
+            moon = self.add_satellite(earth, ROCKY, 3.7e-5, 384_400_000 / units.LENGTH_M, 1.0)
+            self.seed_rotation(moon,27.321661*86400,math.radians(6.68))
             for _ in range(60):
                 p, v = self.orbit(origin, origin, sun, rng.uniform(132, 192), rng.uniform(0, 6.283), rng.gauss(0, 0.02))
                 self.add_body(ASTEROID, 4.7e-7 * rng.uniform(0.01, 1), p, v)
@@ -1557,12 +1606,16 @@ class World:
             for distance_m, m, ph in ((421_700_000, 4.49e-5, 0.0),
                                       (671_100_000, 2.41e-5, 2.1),
                                       (1_070_400_000, 7.45e-5, 4.2)):
-                self.add_satellite(jupiter, ROCKY, m, distance_m / units.LENGTH_M, ph)
+                bid = self.add_satellite(jupiter, ROCKY, m, distance_m / units.LENGTH_M, ph)
+                period = 2*math.pi*math.sqrt((distance_m/units.LENGTH_M)**3/(G*(units.JUPITER_MASS+m)))*units.TIME_S
+                self.seed_rotation(bid,period)
             sp, sv = self.orbit(origin, origin, sun + 0.2857, 574.92, 3.3)
             saturn = self.add_body(GAS_GIANT, 0.2857, sp, sv)
             # Resolve Titan; metre-sized ring material needs a statistical model,
             # not a few massive super-particles forcing every body's timestep.
-            self.add_satellite(saturn, ROCKY, 6.77e-5, 1_221_870_000 / units.LENGTH_M, 0.4)
+            titan = self.add_satellite(saturn, ROCKY, 6.77e-5, 1_221_870_000 / units.LENGTH_M, 0.4)
+            period = 2*math.pi*math.sqrt((1_221_870_000/units.LENGTH_M)**3/(G*(.2857+6.77e-5)))*units.TIME_S
+            self.seed_rotation(titan,period)
             up, uv = self.orbit(origin, origin, sun + 0.04365, 1151.4, 4.4)
             self.add_body(GAS_GIANT, 0.04365, up, uv)
             np_, nv = self.orbit(origin, origin, sun + 0.0515, 1804.2, 5.5)

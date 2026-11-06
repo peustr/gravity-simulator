@@ -6,6 +6,7 @@ var main
 var result := {}
 var path: String
 var accretion_snapshot: Image
+var spin_snapshot: Image
 
 
 func _initialize() -> void:
@@ -81,6 +82,8 @@ func _check_presets() -> bool:
 		if forecasts[0][1] != 1000 or not main.NetClient.valid_packet(forecasts[0]):
 			push_error("Preset forecast failed: " + preset)
 			return false
+		if preset == "solar" and not await _check_solar_spin():
+			return false
 		main.net.send({"cmd": "pause", "value": false})
 		if not await _until(func(): return main.packet_time > 0 and not main.paused):
 			return false
@@ -89,6 +92,49 @@ func _check_presets() -> bool:
 			return false
 		print("Live preset controls PASSED: ", preset)
 	main.net.prediction_received.disconnect(receive)
+	return true
+
+
+func _check_solar_spin() -> bool:
+	var earth := -1
+	for id in main.views:
+		if main.views[id].body_type == main.Palette.ROCKY and absf(main.views[id].mass-.003) < .000001:
+			earth = id
+	if earth < 0 or not await _until(func(): return main.views[earth].spin_status == 1):
+		return false
+	var view = main.views[earth]
+	if absf(view.spin_period_s-86164.0905) > .05:
+		push_error("Earth did not expose its physical sidereal rotation period")
+		return false
+	main.display_scale = 0
+	main._select(earth)
+	main._start_follow(earth)
+	if not main.hud.insp_values["Spin"].text.ends_with(" hours") or main.hud.insp_values["Spin axis"].text.is_empty():
+		return false
+	main.net.send({"cmd":"speed","value":.05})
+	if not await _until(func(): return absf(main.server_speed-.05) < .000001):
+		return false
+	await process_frame
+	var before: Quaternion = view._surface.quaternion
+	main.net.send({"cmd":"pause","value":false})
+	if not await _until(func(): return main.packet_time >= .05 and not main.paused):
+		return false
+	main.net.send({"cmd":"pause","value":true})
+	if not await _until(func(): return main.paused):
+		return false
+	await create_timer(.2).timeout
+	var stopped: Quaternion = view._surface.quaternion
+	if (stopped*Vector3.RIGHT-before*Vector3.RIGHT).length() < .1:
+		push_error("Solar System material did not rotate with simulation time")
+		return false
+	await create_timer(.2).timeout
+	if (view._surface.quaternion*Vector3.RIGHT-stopped*Vector3.RIGHT).length() > .00001:
+		push_error("Physical rotation continued while paused")
+		return false
+	if DisplayServer.get_name() != "headless":
+		await RenderingServer.frame_post_draw
+		spin_snapshot = root.get_texture().get_image()
+	print("Live Solar System physical spin and pause PASSED")
 	return true
 
 
@@ -126,6 +172,11 @@ func _check_collision_demos() -> bool:
 			push_error("Collision report omitted remnant masses: " + cases[i])
 			return false
 		var survivor: int = main.hud.impact_panel.report.get("survivor_id", -1)
+		if not await _until(func(): return main.views.has(survivor) and main.views[survivor].spin_status == 1):
+			return false
+		if cases[i] == "merging" and main.hud.impact_panel.report.angle_deg > .001 and main.views[survivor].spin_period_s == 0:
+			push_error("Oblique merger lost its physical remnant rotation")
+			return false
 		main.hud.impact_panel.inspect.pressed.emit()
 		if not await _until(func(): return main.follow_id == survivor and main.selected_id == survivor and main.server_speed <= .005):
 			return false
@@ -418,7 +469,7 @@ func _run() -> void:
 		_fail("Physical inspector fields did not reach the HUD")
 		return
 	# Preserve integer tokens; Godot parses JSON numbers as floats.
-	var legacy := FileAccess.get_file_as_string(path).replace('"version":7', '"version":1')
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":8', '"version":1')
 	var migration_file := FileAccess.open(path, FileAccess.WRITE)
 	migration_file.store_string(legacy)
 	migration_file.close()

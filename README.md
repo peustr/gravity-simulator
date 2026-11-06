@@ -259,7 +259,7 @@ Files preserve body IDs, types, masses, radii, positions, velocities, heat and a
 
 The **Experiment** menu also controls full gravity for debris, inclusion of all bodies in forecasts, and distant-body removal. It shows the collective tracer mass fraction. These choices and cumulative removal losses are stored in version-3 and newer saves and restart points; older saves retain their previous approximation defaults. See [orbital dynamics and accuracy controls](docs/orbital-dynamics.md).
 
-New saves use version-7 JSON with unit/radius models, physics settings, body spin/internal-energy inventories, compact ejecta, solver selection, numerical/model/loss histories, tidal volume-sample identities and unresolved accretion inventories. Unknown body inventories are null; versions 1–6 remain readable without inventing missing energy or spin. See [physical inventories and migration](docs/collision-budgets.md#persistent-body-inventories).
+New saves use version-8 JSON with physical inventories, solid-body orientation, compact ejecta, solver settings, numerical/model/loss histories, tidal sample identities and unresolved accretion inventories. Unknown inventories remain null; versions 1–7 remain readable without inventing missing energy or spin. See [physical inventories](docs/collision-budgets.md#persistent-body-inventories) and [rotation](docs/rotation.md).
 
 New scenes and all presets use **automatic collision models** and **full gravity**. Rocky–rocky impacts use calibrated, conserved outcomes; other body pairs retain their documented heuristic models. Tides, supernovae and distant-body removal remain available. Unsupported rocky impacts pause intact with an explanation, including strong external fields, simultaneous contacts, unknown incoming inventories/spin, insufficient fragment slots or explicitly selected tracer gravity. **Experiment → Automatic collision models** can be unchecked for heuristic-only comparisons. Fragment positions and energy splits remain prescribed approximations. Older saves retain their recorded model; see [configuration and limits](docs/collision-budgets.md#automatic-model-selection).
 
@@ -489,6 +489,16 @@ compact views. Event batches shrink as needed to fit the UDP payload; remaining
 events are deferred. See the generated [runtime reference](docs/runtime-reference.md).
 
 **Forecast replies** start with `4`: `[4, req, n_points, hit, attractor_id, vx, vy, vz, physical_radius]`, followed by the points.
+
+**Solid orientation packets** extend protocol 2 with kind `5`. The header is
+`[5, version, t_hi, t_lo, N]`, followed by ten floats per solid:
+`[id, status, qx, qy, qz, qw, omega_x, omega_y, omega_z, period_s]`.
+The quaternion maps body coordinates to world coordinates; angular velocity is
+in radians per simulation time unit, and period is in SI seconds. Status is 0
+for unknown spin, 1 for known spin (zero period means not rotating), or 2 outside
+the presentation range. Unsupported rates are not clamped into an apparent
+physical rotation. Separate pose packets preserve the 1,321-body capacity.
+Older clients ignore the additive kind; update Godot to see physical rotation.
 
 The server also sends occasional JSON messages: `info` (including authoritative SI conversion factors in `physical_units` and its process `pid` for local benchmark ownership checks), `preset` (camera hints) and `notice` (text).
 

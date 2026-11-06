@@ -7,6 +7,7 @@ from dataclasses import asdict, fields
 
 from commands import integer, number, vector
 from body_state import BodyInventory
+from rotation import Rotation
 import world as W
 import units
 from configuration import MIN_SPEED, MIN_CAMERA_DISTANCE
@@ -67,13 +68,15 @@ def capture(world, camera):
     bodies = []
     for p in world.sim.particles:
         md = world.meta[p.name]
+        state = world.rotation(p)[0]
+        rotation = asdict(state) if state is not None else None
         inventory = md['inventory']
         bodies.append(dict(id=int(p.name), type=md['type'], mass=p.m, radius=world.body_radius(p),
                            pos=[p.x, p.y, p.z], vel=[p.vx, p.vy, p.vz],
                            heat=md['heat'], born=md['born'], inventory=None if inventory is None else
                            dict(spin_kg_m2_s=list(inventory.spin_kg_m2_s), internal_energy_j=inventory.internal_energy_j),
-                           **({'tidal_sample': True} if md.get('tidal_sample', False) else {})))
-    return dict(format='gravity-simulator', version=7, units=world.units, bodies=bodies,
+                           rotation=rotation, **({'tidal_sample': True} if md.get('tidal_sample', False) else {})))
+    return dict(format='gravity-simulator', version=8, units=world.units, bodies=bodies,
                 physics=world.settings.copy(), removed=json.loads(json.dumps(world.removed)),
                 time=world.sim.t, speed=world.speed, paused=world.paused,
                 max_bodies=world.max_bodies, next_id=world._next_id,
@@ -93,7 +96,7 @@ def capture(world, camera):
 
 def restore(data):
     """Build a separate world; callers swap it in only after all validation succeeds."""
-    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2, 3, 4, 5, 6, 7):
+    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2, 3, 4, 5, 6, 7, 8):
         raise ValueError('Unsupported scene format or version')
     camera = camera_state(data.get('camera'))
     world = W.World(max_bodies=data['max_bodies'])
@@ -216,6 +219,22 @@ def restore(data):
             if body['type'] == W.PLASMA and world.units == units.SYSTEM:
                 world.meta[str(bid)]['volume_radius'] = radius
                 world.particle(str(bid)).r = 0
+        if data['version'] >= 8:
+            raw_rotation = body['rotation']
+            if body['type'] in (W.ROCKY,W.ASTEROID):
+                if not isinstance(raw_rotation,dict) or raw_rotation.keys() != {'orientation','epoch_s','omega_rad_s'}:
+                    raise ValueError('Invalid rotation state')
+                q,omega = raw_rotation['orientation'],raw_rotation['omega_rad_s']
+                if not isinstance(q,(list,tuple)) or len(q) != 4 or not isinstance(omega,(list,tuple)) or len(omega) != 3:
+                    raise ValueError('Invalid rotation vectors')
+                state = Rotation(tuple(number(x,-1,1) for x in q),
+                                 number(raw_rotation['epoch_s'],0,1e100),
+                                 tuple(number(x,-1e300,1e300) for x in omega))
+                if state.epoch_s > world.sim.t*units.TIME_S or state.omega_rad_s != world.rotation(world.particle(str(bid)))[0].omega_rad_s:
+                    raise ValueError('Rotation rate or epoch disagrees with the physical inventory')
+                world.meta[str(bid)]['rotation'] = state
+            elif raw_rotation is not None:
+                raise ValueError('Only resolved solid spheres support orientation')
     integer(data['next_id'], max(ids, default=0) + 1)
     world._next_id = data['next_id']
     if data['version'] >= 7:
