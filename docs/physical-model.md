@@ -46,9 +46,28 @@ has no well-defined material surface: its radius is an explicit effective parcel
 model, with no pressure or hydrodynamics. These choices are approximations,
 not precision mass–radius predictions.
 
-Disruption uses the fluid Roche estimate `2.44 R_victim (M_primary/m_victim)^(1/3)`.
-Strength, spin and orbit-dependent disruption physics remain outside this model.
-The existing impact, promotion and explosion prescriptions remain approximate.
+Stellar disruption uses `R_victim (M_primary/m_victim)^(1/3)`; other fluids use
+the circular Roche coefficient 2.44. Nonrotating gas breakup uses up to 56
+antipodal, equal-mass quadrature nodes inside the source. Their volume weights
+sum to its volume; these radii are not solid surfaces. Native contact radii are
+zero, while snapshots, rendering and saves retain equivalent-volume radii.
+No extended stream or random impulse is inserted. Rotating sources are refused.
+
+Gas nodes use a ballistic, frozen-in approximation: no pressure or mutual sample
+self-gravity. Full body gravity retains their backreaction on resolved bodies;
+tracer mode additionally omits that reaction. Forecasts use the same model.
+A constant energy-reference offset records replacement of a smooth source by
+the discrete Hamiltonian; it is not deposited heat. Quadrature and capture
+geometry have independent uniform-sphere and Kepler references. Captured mass
+fractions have finite-node granularity of at least `1/N`.
+
+Gas crossing 10,000 reference Schwarzschild radii enters unresolved inner flow.
+The Newtonian resolved region has `Rs/r <= 1e-4`; this boundary is not an event
+horizon. The compact gravitating mass includes the flow, whose energy and angular
+momentum are stored separately from hole spin and heat. The displayed disk marks
+this region but remains artistic. Viscous accretion, radiation, relativistic
+capture, stellar structure and pressure-driven stream evolution are not modelled.
+Impact, promotion and explosion prescriptions retain their documented limits.
 
 ## Scenarios and time resolution
 

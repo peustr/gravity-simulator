@@ -155,6 +155,34 @@ def merge_spheres(a: SphereState, b: SphereState) -> SphereState:
     return replace(remnant, internal_energy_j=internal)
 
 
+def absorb_point_sample(a, b, radius, external=(), *, ballistic_sources=()):
+    """Newtonian sink bookkeeping, not a black-hole spin or radiation model.
+
+    Return the compact body and unresolved flow's transferred angular momentum
+    and energy. Flow energy is not a black-hole temperature or spin energy.
+    Point samples may have overlapping effective volume radii.
+    """
+    total = a.mass_kg + b.mass_kg
+    fraction = b.mass_kg / total
+    dx, dv = np.subtract(b.position_m, a.position_m), np.subtract(b.velocity_m_s, a.velocity_m_s)
+    angular = a.mass_kg * fraction * np.cross(dx, dv)
+    remnant = SphereState(total, radius, np.add(a.position_m, fraction * dx),
+                         np.add(a.velocity_m_s, fraction * dv),
+                         a.spin_kg_m2_s, a.internal_energy_j)
+    potential_change = math.fsum(-G_SI * source.mass_kg * (
+        a.mass_kg / math.dist(a.position_m, source.position_m)
+        + b.mass_kg / math.dist(b.position_m, source.position_m)
+        - total / math.dist(remnant.position_m, source.position_m)) for source in external)
+    potential_change += math.fsum(G_SI * source.mass_kg * (
+        total / math.dist(remnant.position_m, source.position_m)
+        - a.mass_kg / math.dist(a.position_m, source.position_m)) for source in ballistic_sources)
+    energy = math.fsum((b.internal_energy_j,
+                     .5 * a.mass_kg * fraction * float(dv @ dv),
+                     a.rotational_energy_j, b.rotational_energy_j, -remnant.rotational_energy_j,
+                     -G_SI * a.mass_kg * b.mass_kg / math.hypot(*dx), potential_change))
+    return remnant, np.add(b.spin_kg_m2_s, angular), energy
+
+
 @dataclass(frozen=True)
 class RemnantSpec:
     """Requested mass/radius and a relative layout offset, all in SI units."""

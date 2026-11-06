@@ -43,8 +43,11 @@ Solver selection is displayed and saved.
 
 The **Physics** section of the **Experiment** menu provides these options:
 
-- **Full gravity, including debris:** every particle exerts gravity. With this
-  unchecked, asteroids and plasma below 0.5 mass units are passive tracers.
+- **Full body gravity and gas backreaction:** resolved bodies exert mutual
+  gravity, including resolved debris. Ballistic volume samples react on these
+  bodies but omit sample–sample self-gravity and pressure; see the
+  [gas model](physical-model.md). With this unchecked, asteroids and plasma below
+  0.5 mass units, and all ballistic gas nodes, are passive tracers.
   Tracers feel active bodies' gravity but exert none, including on each other.
   Their nonzero masses still participate in contacts and inventories. The menu
   reports their collective mass fraction; a small fraction alone does not bound

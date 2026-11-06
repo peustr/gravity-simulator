@@ -16,6 +16,7 @@ Development supports Windows and Linux. The physics venv is `physics_server/.ven
 - Keep simulation claims honest: REBOUND supplies gravity; stellar evolution, collisions and visuals include approximations documented in README.
 - Physics changes need an observable acceptance case in an existing demo, alongside numerical references. Demo variants change initial conditions and use the shared engine; keep every preset in regression checks.
 - Report what changed, what was tested, and any remaining limitation. A headless run does not validate rendered appearance.
+- Scene acceptance follows `docs/scene-quality.md`. Run the all-preset quality gate for engine or presentation changes; review continuous event sequences, not only final screenshots. Keep failed or blocked scenes open regardless of unit-test coverage.
 
 ## Documentation
 
@@ -101,6 +102,7 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 - Never add particles inside the collision callback. In heuristic mode `_resolve_collision` merges and records, then `_handle_collision` may shatter after the native step. In automatic and isolated modes the callback only records. Automatic mode calibrates rocky pairs and uses heuristic models for other pairs after the step; unsupported rocky encounters pause intact.
 - Collision callback return: 1 removes p1, 2 removes p2. REBOUND reports only *approaching* overlaps, so fragments may start overlapping the remnant.
 - In explicit tracer mode, light debris (asteroids, small gas clouds) are **test particles**: massive bodies must come first in the particle array, and `sim.N_active` = their count. Anything that adds or promotes a body sets `_partition_dirty`; `_repartition()` swaps particle structs with `ctypes.memmove`. Preserve this invariant.
+- Ballistic volume samples also follow active bodies in the array. Full body gravity uses `testparticle_type=1` to retain their backreaction while omitting sample–sample forces. Their native collision radius is zero; `World.body_radius()` and snapshots retain equivalent-volume radii for presentation, inventories and saves.
 - Changes to masses, physical radii, types or particle order must set `_partition_dirty`; `_repartition()` also invalidates the contact and tidal caches.
 - IAS15 has one global timestep, so a single close encounter slows everything. `min_dt` is zero for physical scenes and 1e-4 only for legacy saves. Keep debris counts in check (`SHATTER_MIN_MASS`, fragment caps).
 - Prefer Python 3.13 on Windows (3.12 for cloud development). Check wheel availability before moving to a newer Python; do not silently introduce a compiler requirement.

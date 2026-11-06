@@ -5,6 +5,7 @@ const Main = preload("res://scripts/main.gd")
 var main
 var result := {}
 var path: String
+var accretion_snapshot: Image
 
 
 func _initialize() -> void:
@@ -23,11 +24,13 @@ func _finish(code: int) -> void:
 	quit(code)
 
 
-func _until(predicate: Callable) -> bool:
-	for i in range(150):
+func _until(predicate: Callable, timeout_s := 7.5, context := "interaction") -> bool:
+	var deadline := Time.get_ticks_usec() + int(timeout_s*1000000)
+	while Time.get_ticks_usec() < deadline:
 		if predicate.call():
 			return true
 		await create_timer(0.05).timeout
+	push_error("Live check timed out (%s): bodies=%d, t=%s, paused=%s, follow=%d, online=%s, distance=%s, impact=%s" % [context,main.views.size(),str(main.packet_time),str(main.paused),main.follow_id,str(main.net.connected),str(main.rig.distance),str(main.hud.impact_panel.report.get("regime","none"))])
 	return false
 
 
@@ -46,7 +49,8 @@ func _check_presets() -> bool:
 	main.net.send({"cmd": "pause", "value": true})
 	if not await _until(func(): return main.paused):
 		return false
-	for preset in ["solar", "binary", "black_hole", "smash", "formation", "galaxies", "empty"]:
+	for entry in main.hud.PRESETS:
+		var preset: String = entry[0]
 		var previous_version: int = main.sim_version
 		main.hud.preset_chosen.emit(preset)
 		main.scene_files.confirm.get_ok_button().pressed.emit()
@@ -109,6 +113,7 @@ func _check_collision_demos() -> bool:
 		if not await _until(func(): return main.paused and main.views.size() == 2 and main.hud.impact_panel.demo.get("case") == cases[i]):
 			return false
 		if main.display_scale != 0 or main.rig.target_distance >= 1.5:
+			push_error("Collision camera did not use physical close view: " + cases[i])
 			return false
 		main.net.send({"cmd": "pause", "value": false})
 		if not await _until(func(): return main.hud.impact_panel.report.get("regime") == regimes[i]):
@@ -118,6 +123,14 @@ func _check_collision_demos() -> bool:
 		if not await _until(func(): return main.paused):
 			return false
 		if not main.hud.impact_panel.details.text.contains("kg"):
+			push_error("Collision report omitted remnant masses: " + cases[i])
+			return false
+		var survivor: int = main.hud.impact_panel.report.get("survivor_id", -1)
+		main.hud.impact_panel.inspect.pressed.emit()
+		if not await _until(func(): return main.follow_id == survivor and main.selected_id == survivor and main.server_speed <= .005):
+			return false
+		if main.display_scale != 0 or main.rig.target_distance > 14.01*main.views[survivor].physical_radius:
+			push_error("Inspect did not frame the physical remnant: " + cases[i])
 			return false
 		main.hud.conservation_report = {}
 		main.hud.impact_panel.budgets_requested.emit()
@@ -135,26 +148,100 @@ func _check_collision_demos() -> bool:
 	return await _until(func(): return main.paused)
 
 
+func _largest_rocky() -> int:
+	var best := -1
+	for id in main.views:
+		if main.views[id].body_type == main.Palette.ROCKY and (best < 0 or main.views[id].mass > main.views[best].mass):
+			best = id
+	return best
+
+
+func _track_mergers(packet: PackedFloat32Array, owners: Dictionary) -> void:
+	if not main.NetClient.valid_packet(packet) or packet[0] != main.NetClient.STATE_KIND:
+		return
+	var start: int = main.HEADER+int(packet[4])*main.BODY
+	for index in range(int(packet[5])):
+		var offset: int = start+index*main.EVENT
+		if int(packet[offset]) != main.Palette.EV_MERGE:
+			continue
+		for source in owners:
+			if owners[source] == int(packet[offset+7]):
+				owners[source] = int(packet[offset+6])
+
+
 func _check_formation() -> bool:
 	main.hud.preset_chosen.emit("formation")
 	main.scene_files.confirm.get_ok_button().pressed.emit()
-	if not await _until(func(): return main.views.size() == 33 and main.paused and main.views.has(main.follow_id) and absf(log(main.rig.distance / .03)) < .01):
+	if not await _until(func(): return main.views.size() == 65 and main.paused and main.follow_id == -1 and absf(log(main.rig.distance / 150.0)) < .01, 7.5, "formation load/camera"):
 		return false
+	var embryo: int = main.views.keys()[1]
+	main._select(embryo)
+	main._start_follow(embryo)
 	var followed: int = main.follow_id
 	if main.selected_id != followed:
 		return false
 	if main.display_scale != 0 or not await _request({"cmd": "checkpoint"}):
 		return false
-	var mass: float = main.views[followed].mass
-	main._speed_step(1)
-	main._speed_step(1)
+	var initial_max := 0.0
+	for view in main.views.values():
+		if view.body_type == main.Palette.ROCKY: initial_max = maxf(initial_max,view.mass)
 	main.net.send({"cmd": "pause", "value": false})
-	if not await _until(func(): return main.views.size() == 29 and main.views[followed].mass > 1.75 * mass):
-		push_error("Planet formation did not grow embryos in the live application")
+	if not await _until(func(): return _largest_rocky() >= 0 and main.views[_largest_rocky()].mass > 2.0*initial_max, 45.0):
+		push_error("Planet formation did not demonstrate natural growth from at least three embryos")
 		return false
+	main.net.send({"cmd": "pause", "value": true})
+	if not await _until(func(): return main.paused, 7.5, "formation growth pause"):
+		return false
+	var grown := _largest_rocky()
+	main._select(grown)
+	main._start_follow(grown)
+	main.net.send({"cmd":"speed", "value":.005})
+	var remnant = main.views[grown]
+	var count: int = main.views.size()
+	var original_ids: Array = main.views.keys()
+	var added_mass: float = .5*remnant.mass
+	var added_radius: float = remnant.physical_radius * pow(added_mass/remnant.mass, 1.0/3.0)
+	var contact_radius: float = remnant.physical_radius + added_radius
+	var position: Vector3 = remnant.base_pos + Vector3(2.0*contact_radius, 0, 0)
+	var initial_mass: float = remnant.mass
+	main.net.send({"cmd":"add", "type":"rocky", "pos":[position.x,position.y,position.z],
+		"mode":"launch", "drag":[-.3*contact_radius,0,0], "mass_mult":added_mass/.003})
+	if not await _until(func(): return main.views.size() == count+1, 7.5, "formation placement"):
+		return false
+	var added := -1
+	for id in main.views:
+		if id not in original_ids: added = id
+	if added < 0:
+		return false
+	var owners := {"target":grown,"added":added}
+	var track := func(packet: PackedFloat32Array): _track_mergers(packet,owners)
+	main.net.state_received.connect(track)
+	main.net.send({"cmd":"pause","value":false})
+	var accreted: bool = await _until(func(): return owners.target == owners.added and main.views.has(owners.target) and main.views[owners.target].mass > initial_mass+.99*added_mass, 7.5, "formation source accretion")
+	main.net.state_received.disconnect(track)
+	if not accreted:
+		push_error("Added embryo did not accrete with the spinning remnant: " + str(owners))
+		return false
+	main.net.send({"cmd":"pause","value":true})
+	if not await _until(func(): return main.paused):
+		return false
+	main._select(owners.target)
+	main._start_follow(owners.target)
+	main.hud.conservation_report = {}
+	main.net.send({"cmd":"conservation"})
+	if not await _until(func(): return not main.hud.conservation_report.is_empty()):
+		return false
+	var residual = main.hud.conservation_report.get("relative_conservation_residual")
+	if residual == null or absf(float(residual)) > 1e-8:
+		push_error("Formation accretion did not close physical budgets")
+		return false
+	main.hud.conservation_dialog.hide()
+	if DisplayServer.get_name() != "headless":
+		await RenderingServer.frame_post_draw
+		accretion_snapshot = root.get_texture().get_image()
 	if not await _request({"cmd": "restart"}):
 		return false
-	if not await _until(func(): return main.views.size() == 33 and main.paused and main.follow_id == followed):
+	if not await _until(func(): return main.views.size() == 65 and main.paused and main.follow_id == followed, 7.5, "formation restart/follow"):
 		return false
 	print("Live formation growth/follow/restart PASSED")
 	return true
@@ -331,7 +418,7 @@ func _run() -> void:
 		_fail("Physical inspector fields did not reach the HUD")
 		return
 	# Preserve integer tokens; Godot parses JSON numbers as floats.
-	var legacy := FileAccess.get_file_as_string(path).replace('"version":5', '"version":1')
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":7', '"version":1')
 	var migration_file := FileAccess.open(path, FileAccess.WRITE)
 	migration_file.store_string(legacy)
 	migration_file.close()
@@ -340,6 +427,9 @@ func _run() -> void:
 		return
 	if not main._physical_value(1.0, "length_m", "km").ends_with("legacy units"):
 		_fail("Legacy values were silently labelled as physical measurements")
+		return
+	if main.gas_capture_scale != 0:
+		_fail("Legacy restore retained the physical inner-flow scale")
 		return
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_string("{broken")
@@ -390,5 +480,53 @@ func _run() -> void:
 	if main.cloud_count != 0 or not main.views.is_empty():
 		_fail("Restoring a scene retained the previous compact-cloud count")
 		return
+	if not _check_scene_replacement():
+		_fail("Scene replacement retained old camera, bodies or events")
+		return
 	print("Godot experiment save/load/restart check PASSED")
 	_finish(0)
+
+
+func _check_scene_replacement() -> bool:
+	var version: int = main.sim_version + 10
+	var cam := {"focus": [60, 0, 0], "distance": 0.03, "pitch": 0.6}
+	main._on_event(main.Palette.EV_TIDAL, Vector3.ZERO, 1, 1, -1, -1)
+	main.hud.push_event("Previous scene event")
+	main.hud.toast("Previous scene operation")
+	main.hud.conservation_report = {"old": true}
+	var previous_effects = main.effects
+	main._on_message({"type": "preset", "name": "formation", "camera": cam, "version": version})
+	if previous_effects.is_inside_tree() or main.effects.get_child_count() != 0:
+		return false
+	if main.hud.feed.get_child_count() != 0 or not main.hud.conservation_report.is_empty() or main.hud.toast_label.modulate.a != 0:
+		return false
+	if main.rig.focus != Vector3(60, 0, 0) or not is_equal_approx(main.rig.distance, .03):
+		return false
+	if not main.rig.camera.position.is_equal_approx(main.rig.focus + Vector3(cos(.6) * sin(main.rig.yaw), sin(.6), cos(.6) * cos(main.rig.yaw)) * .03):
+		return false
+	# An old queued state carries both a reused ID and a one-off effect. Neither
+	# may enter the replacement scene, even before its first state has arrived.
+	var stale := PackedFloat32Array([3, version - 1, 0, 1, 1, 1, 1, 1, 1, 600, 1,
+		1, 2, 0, 0, 0, 0, 0, 0, 1000, 1, 0, 0,
+		main.Palette.EV_TIDAL, 0, 0, 0, 1, 1, -1, -1])
+	main._on_state(stale)
+	if not main.views.is_empty() or main.effects.get_child_count() != 0:
+		return false
+	var current := stale.duplicate()
+	current[1] = version
+	current[3] = 0
+	current[5] = 0
+	current.resize(23)
+	main._on_state(current)
+	if main.views.size() != 1 or main.sim_version != version:
+		return false
+	var view = main.views[1]
+	main._on_message({"type": "preset", "camera": cam, "version": version - 1})
+	main._on_message({"type": "preset", "camera": cam, "version": version})
+	if main.views.get(1) != view:
+		return false
+	main._server_pid = 1
+	main._on_message({"type": "info", "pid": 2})
+	current[1] = 0
+	main._on_state(current)
+	return main.sim_version == 0 and main.views.size() == 1

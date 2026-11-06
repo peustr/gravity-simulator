@@ -3,17 +3,19 @@
 shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, fog_disabled, shadows_disabled;
 
+#include "res://shaders/noise.gdshaderinc"
+
 uniform vec3 color : source_color = vec3(1.0, 0.7, 0.4);
 uniform float intensity = 2.0;
 uniform float progress = 0.5;
 uniform float thickness = 0.06;
 uniform float pulse = 0.0;
 uniform bool billboard = true;
+uniform float max_screen_radius = 0.0;
 
 void vertex() {
 	if (billboard) {
-		float s = length(MODEL_MATRIX[0].xyz);
-		MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0] * s, INV_VIEW_MATRIX[1] * s, INV_VIEW_MATRIX[2] * s, MODEL_MATRIX[3]);
+		MODELVIEW_MATRIX = limited_billboard_modelview(VIEW_MATRIX, INV_VIEW_MATRIX, MODEL_MATRIX, PROJECTION_MATRIX[1][1], max_screen_radius);
 	}
 }
 

@@ -8,6 +8,7 @@ import numpy as np
 # Maximum near-contact travel scale as a fraction of the summed physical radii.
 # This controls contact localisation, not the IAS15 gravitational error tolerance.
 CONTACT_FRACTION = 1e-4
+GAS_SINK_RADII = 10000.0  # Unresolved inner flow; resolved gas has Rs/r <= 1e-4.
 
 
 @lru_cache(maxsize=4)
@@ -15,14 +16,26 @@ def _pairs(count):
     return np.triu_indices(count, 1)
 
 
-def _contact_geometry(sim):
+def _contact_geometry(sim, collisionless=(), sinks=()):
     m, r = np.empty(sim.N), np.empty(sim.N)
     sim.serialize_particle_data(m=m, r=r)
-    if sim.N_active < sim.N:
-        m[sim.N_active:] = 0
+    active = sim.N if sim.N_active < 0 else sim.N_active
+    if active < sim.N and sim.testparticle_type == 0:
+        m[active:] = 0
     i, j = _pairs(sim.N)
+    if collisionless:
+        r[list(collisionless)] = 0  # Volume weights have point-centre contact geometry.
+    radius = r[i] + r[j]
+    if collisionless:
+        gas = np.zeros(sim.N, dtype=bool)
+        gas[list(collisionless)] = True
+        for index, surface in sinks:
+            radius[((i == index) & gas[j]) | ((j == index) & gas[i])] = surface
     vectors = [np.empty((len(i), 3)) for _ in range(3)]
-    return i, j, r[i] + r[j], sim.G * m[i], sim.G * m[j], np.empty(3 * sim.N), np.empty(3 * sim.N), *vectors
+    gmi, gmj = sim.G*m[i], sim.G*m[j]
+    inactive = (i >= active) & (j >= active)
+    gmi[inactive],gmj[inactive] = 0,0
+    return i, j, radius, gmi, gmj, np.empty(3 * sim.N), np.empty(3 * sim.N), *vectors
 
 
 def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION, *, _geometry=None, extra_acceleration=None):
@@ -63,6 +76,7 @@ def contact_step_limit(sim, maximum, fraction=CONTACT_FRACTION, *, _geometry=Non
         denominator = np.sqrt(speed2) + np.sqrt(speed2 + pair_acceleration * distance)
         horizon = np.full(len(i), math.inf)
         np.divide(distance, denominator, out=horizon, where=denominator > 0)
+        horizon[(gmi+gmj == 0) & (radius == 0)] = math.inf
         # Projection along the initial separation gives
         # d(t) >= d + radial*t - A*t**2/2. Allow half the gap (or contact scale).
         denominator = np.abs(radial) + np.sqrt(radial**2 + pair_acceleration * scale)
@@ -103,7 +117,9 @@ class ContactGuard:
     The interval is capped by the earliest pair approach scale, and no step
     crosses its end. Recompute after edits, collisions or fragment generation.
     """
-    def __init__(self):
+    def __init__(self, *, collisionless=(), sinks=()):
+        self.collisionless = frozenset(collisionless)
+        self.sinks = tuple(sinks)
         self.reset()
 
     def reset(self):
@@ -112,12 +128,12 @@ class ContactGuard:
         self.geometry_key = None
 
     def limit(self, sim, maximum, *, extra_acceleration=None):
-        key = (sim.N, sim.N_active, sim.G)
+        key = (sim.N, sim.N_active, sim.testparticle_type, sim.G, self.collisionless, self.sinks)
         if key != self.geometry_key:
             self.reset()
             self.geometry_key = key
         if self.geometry is None:
-            self.geometry = _contact_geometry(sim)
+            self.geometry = _contact_geometry(sim, self.collisionless, self.sinks)
         # Refresh before a proposed step crosses the cached interval. Splitting
         # at its old end can leave a tiny remainder that repeatedly shrinks
         # IAS15's next proposed step, even when every surface is still distant.

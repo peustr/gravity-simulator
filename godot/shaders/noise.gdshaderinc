@@ -55,3 +55,17 @@ mat4 billboard_modelview(mat4 view, mat4 inv_view, mat4 model) {
 	float s = length(model[0].xyz);
 	return view * mat4(inv_view[0] * s, inv_view[1] * s, inv_view[2] * s, model[3]);
 }
+
+// Optional NDC-radius cap for cosmetic effects, including during camera motion.
+// A zero limit preserves the physical/display size of normal body graphics.
+mat4 limited_billboard_modelview(mat4 view, mat4 inv_view, mat4 model, float projection_y, float limit) {
+	mat4 mv = billboard_modelview(view, inv_view, model);
+	if (limit > 0.0) {
+		float bound = max(0.0, -mv[3].z) * limit / max(projection_y, 0.000001);
+		float factor = min(1.0, bound / max(length(model[0].xyz), 0.000000000001));
+		mv[0] *= factor;
+		mv[1] *= factor;
+		mv[2] *= factor;
+	}
+	return mv;
+}

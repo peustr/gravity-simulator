@@ -6,9 +6,31 @@ const Main = preload("res://scripts/main.gd")
 const Hud = preload("res://scripts/hud.gd")
 const Benchmark = preload("res://scripts/benchmark.gd")
 const MotionTests = preload("res://tests/motion.gd")
+const ConnectionTests = preload("res://tests/connection.gd")
+const CameraTests = preload("res://tests/camera.gd")
+const Quality = preload("res://tests/scene_quality.gd")
 
 func _initialize() -> void:
+	if not await ConnectionTests.check(self):
+		quit(1)
+		return
 	if not MotionTests.run():
+		quit(1)
+		return
+	if not await CameraTests.check(self):
+		quit(1)
+		return
+	var sample := Image.create_empty(160,90,false,Image.FORMAT_RGB8)
+	for test in [[Color.BLACK,0.0],[Color.RED,0.0],[Color.WHITE,1.0]]:
+		sample.fill(test[0])
+		if Quality.white_fraction(sample) != test[1]:
+			push_error("Whiteout detection misclassified a reference image")
+			quit(1)
+			return
+	sample.fill(Color.BLACK)
+	sample.fill_rect(Rect2i(0,0,80,90),Color.WHITE)
+	if Quality.white_fraction(sample) != .5:
+		push_error("Whiteout detection did not measure the bright area")
 		quit(1)
 		return
 	var timing := Benchmark.distribution([1.0, 2.0, 3.0, 100.0])

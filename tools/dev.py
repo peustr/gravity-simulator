@@ -106,6 +106,9 @@ def visual_benchmark(argv) -> None:
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == 'scene-check':
+        run([str(PYTHON), str(ROOT / 'tools/scene_quality.py'), *sys.argv[2:]], timeout=900)
+        return
     if len(sys.argv) > 1 and sys.argv[1] == 'benchmark-visual':
         visual_benchmark(sys.argv[2:])
         return
@@ -121,7 +124,7 @@ def main() -> None:
         run([str(PYTHON), str(ROOT / 'tools/benchmark.py'), *flags, *sys.argv[2:]], timeout=1800)
         return
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("setup", "setup-dev", "selftest", "test", "lint", "docs", "docs-check", "check", "godot-test", "godot-check", "visual-check", "benchmark", "accuracy", "benchmark-visual", "impact-references"))
+    parser.add_argument("command", choices=("setup", "setup-dev", "selftest", "test", "lint", "docs", "docs-check", "check", "godot-test", "godot-check", "visual-check", "benchmark", "accuracy", "benchmark-visual", "impact-references", "scene-check"))
     parser.add_argument("scenario", nargs="?", choices=SCENARIOS, default="solar")
     args, extra = parser.parse_known_args()
     if extra and args.command != "visual-check":
@@ -148,8 +151,8 @@ def main() -> None:
         run(checks[args.command], timeout=300)
         return
     if args.command == "check":
-        for name in ("lint", "test", "docs-check", "godot-check"):
-            run([sys.executable, str(Path(__file__).resolve()), name], timeout=300)
+        for name in ("lint", "test", "docs-check", "godot-check", "scene-check"):
+            run([sys.executable, str(Path(__file__).resolve()), name], timeout=900 if name == 'scene-check' else 300)
         return
 
     godot = os.environ.get("GODOT") or shutil.which("godot") or shutil.which("godot4")

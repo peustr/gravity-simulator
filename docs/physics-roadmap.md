@@ -39,6 +39,10 @@ numerical reference and an application check of that result. Demo variants may
 change initial conditions; all use the shared engine. Every preset remains part
 of regression testing, including those unaffected by the new physics.
 
+Release acceptance follows [the scene quality standard](scene-quality.md).
+Failed or blocked scene gates keep the current work open regardless of unit-test
+coverage. Review complete event sequences on the target rendering path.
+
 Use physical time controls, measurements and comparisons to expose slow effects;
 label assumptions and artistic display choices. Freeze the model references,
 numerical tolerances and demo acceptance cases before coding each milestone.
@@ -50,7 +54,7 @@ Additional features require a scope decision rather than extending its checklist
 - [x] ~~2. Physical units and independent display sizes~~
 - [x] ~~3. Trustworthy orbital dynamics~~
 - [x] ~~4. Credible impact outcomes~~
-- [x] ~~Collision demonstration follow-up~~
+- [x] ~~Scene quality and collision demonstration~~
 - [ ] **5. Rotation and tidal evolution**
 - [ ] **6. Composition and thermal history**
 - [ ] **7. Stellar evolution and compact objects**
@@ -141,8 +145,8 @@ cover the delivery requirements below.
 
 | Component | Available behavior | Remaining limitation |
 |---|---|---|
-| Contact state and saves | Immutable impact state; version-5 spin/internal energy, compact ejecta, solver and error/loss histories | Older or heuristically transformed bodies can have unknown inventories |
-| Classification and construction | Planet and small-body controls; live regimes, prescribed conserved layouts and loadable examples | Published domains, incoming spin, strong fields and simultaneous contacts restrict applicability |
+| Contact state and saves | Immutable impact state; spin/internal energy, compact ejecta, solver/error/loss histories and tidal-sample identities | Older or heuristically transformed bodies can have unknown inventories |
+| Classification and construction | Planet and small-body controls; live regimes, prescribed conserved layouts and loadable examples | Published domains, general rotating laws, strong fields and simultaneous contacts restrict applicability |
 | Unresolved material | Live symmetric ejecta coupled to resolved bodies, disjoint/nested clouds, bounded storage and transactional refusal | Head-on expanding shells only; no surface crossing, recollapse or automatic reconstruction |
 | Diagnostics | SI inventories across bodies/clouds, explicit-loss residuals, model offsets, force-defect and numerical diagnostics | Unknown intrinsic inventories or incomplete loss history leave affected values unavailable |
 

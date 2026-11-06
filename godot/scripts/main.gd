@@ -43,7 +43,10 @@ var selection_ring: MeshInstance3D
 
 # Timing
 var sim_version := -1
+var _state_floor := -1
+var _server_pid := -1
 var display_scale := 1.0
+var gas_capture_scale := 0.0
 var legacy_units := false
 
 var packet_time := 0.0
@@ -133,6 +136,7 @@ func _ready() -> void:
 	hud.clear_requested.connect(func():
 		scene_files.replace_scene({"cmd": "clear"}))
 	hud.follow_requested.connect(_toggle_follow)
+	hud.impact_panel.inspect_requested.connect(_inspect_remnant)
 	hud.delete_requested.connect(_delete_selected)
 	hud.supernova_requested.connect(_supernova_selected)
 	hud.relaunch_requested.connect(func():
@@ -235,27 +239,38 @@ func _on_connection(is_connected: bool) -> void:
 func _on_message(msg: Dictionary) -> void:
 	match msg.get("type", ""):
 		"info":
-			hud.set_physics(msg.get("physics", {}))
+			var pid := int(msg.get("pid", -1))
+			if _server_pid >= 0 and pid != _server_pid:
+				# A replacement backend starts a new version/ID namespace.
+				_state_floor = -1
+				sim_version = -1
+				restore_scene_view({}, 0)
+			_server_pid = pid
+			apply_physics_info(msg.get("physics", {}))
 			if net.connected:
 				_on_connection(true)
 		"physics":
-			hud.set_physics(msg)
+			apply_physics_info(msg)
 			hud.toast("Physics settings updated. Save or set a restart point to keep them.")
 		"conservation":
 			hud.show_conservation(msg)
 		"preset":
+			var version := int(msg.get("version", sim_version + 1))
+			if version <= _state_floor:
+				return
+			restore_scene_view(msg.get("camera", {}), version)
+			apply_physics_info(msg.get("physics", {}))
 			hud.show_scenario(str(msg.get("name", "")))
-			var cam: Dictionary = msg.get("camera", {})
-			display_scale = float(cam.get("display_scale", 1.0))
 			hud.impact_panel.set_state(msg.get("collision_demo"), null)
-			var f: Array = cam.get("focus", [0, 0, 0])
-			rig.frame(Vector3(f[0], f[1], f[2]), float(cam.get("distance", 400.0)), float(cam.get("pitch", 0.6)))
-			trails.clear_all()
-			_select(-1)
-			follow_id = int(cam.get("follow", -1))
-			rig.following = follow_id >= 0
 		"notice":
 			hud.push_event(str(msg.get("text", "")), Color(1.0, 0.85, 0.5))
+
+
+func apply_physics_info(info: Dictionary) -> void:
+	if info.is_empty():
+		return
+	gas_capture_scale = float(info.get("gas_capture_radius_rs", 0.0))
+	hud.set_physics(info)
 
 
 func _on_state(f: PackedFloat32Array) -> void:
@@ -266,6 +281,8 @@ func _on_state(f: PackedFloat32Array) -> void:
 	if f.size() < HEADER + n * BODY + ne * EVENT:
 		return
 	var version := int(f[1])
+	if version < _state_floor:
+		return
 	var t := float(f[2]) + float(f[3])
 	if not _first_state and (version < sim_version or (version == sim_version and t < packet_time)):
 		return
@@ -475,6 +492,7 @@ func _process(delta: float) -> void:
 		hud.set_stats(display_time, views.size()-cloud_count, max_bodies, server_speed / DEFAULT_SPEED, paused, perf, cloud_count, display_scale)
 		hud.time_label.text = "t = " + _physical_value(display_time, "time_s", "days", 1.0 / 86400.0)
 		_update_inspector()
+		hud.impact_panel.inspect.disabled = not views.has(int(hud.impact_panel.report.get("survivor_id", -1)))
 		if not net.connected and _alive > 1.6:
 			var why: String = net.launch_status
 			if why == "":
@@ -496,7 +514,7 @@ func _update_motion(delta: float) -> void:
 	for id in views:
 		var v = views[id]
 		v.position = motion.position_for(id, v.base_pos)
-		v.set_display_size(display_scale, _world_per_px(v.position))
+		v.set_display_size(display_scale, _world_per_px(v.position), 0.0 if legacy_units else gas_capture_scale)
 
 
 func _assign_lights() -> void:
@@ -784,7 +802,19 @@ func _start_follow(id: int) -> void:
 	follow_id = id
 	rig.following = true
 	var v = views[id]
-	rig.target_distance = clampf(v.pick_radius() * 14.0, CameraRig.MIN_DIST * 10.0, 4000.0)
+	var radius: float = v.physical_radius if display_scale == 0.0 else v.pick_radius()
+	if v.body_type == Palette.BLACK_HOLE:
+		radius = maxf(radius, v.physical_radius*gas_capture_scale)
+	rig.target_distance = clampf(radius * 14.0, CameraRig.MIN_DIST * 10.0, 4000.0)
+
+
+func _inspect_remnant(id: int) -> void:
+	if not views.has(id):
+		return
+	display_scale = 0.0
+	_select(id)
+	_start_follow(id)
+	net.send({"cmd":"speed", "value":minf(server_speed,.005)})
 
 
 func _toggle_follow() -> void:
@@ -843,8 +873,9 @@ func apply_scene_change(command: Dictionary) -> void:
 	hud.select_tool(-1)
 
 
-func restore_scene_view(cam: Dictionary) -> void:
+func restore_scene_view(cam: Dictionary, version := -1) -> void:
 	_welcome_shown = true
+	hud.clear_scene_history()
 	hud.show_scenario("")
 	hud.impact_panel.set_state(null, null)
 	display_scale = float(cam.get("display_scale", 1.0))
@@ -868,15 +899,15 @@ func restore_scene_view(cam: Dictionary) -> void:
 	pred_radius = 0.0
 	pred_rel.clear()
 	placement.hide_all()
-	sim_version = -1
+	_state_floor = maxi(_state_floor, version if version >= 0 else sim_version + 1)
 	_first_state = true
 	motion.clear()
-	var f: Array = cam.focus
-	rig.frame(Vector3(f[0], f[1], f[2]), cam.distance, cam.pitch)
+	var f: Array = cam.get("focus", [0, 0, 0])
+	rig.frame(Vector3(f[0], f[1], f[2]), float(cam.get("distance", 400.0)), float(cam.get("pitch", 0.6)))
 	rig.focus = rig.target_focus
 	rig.distance = rig.target_distance
 	rig.pitch = rig.target_pitch
-	rig.yaw = float(cam.yaw)
+	rig.yaw = float(cam.get("yaw", rig.target_yaw))
 	rig.target_yaw = rig.yaw
 	rig._shake = 0.0
 	rig._apply()
@@ -943,7 +974,7 @@ func _update_inspector() -> void:
 	info["type"] = tlabel
 	info["color"] = Palette.TYPE_COLORS[v.body_type]
 	info["Mass"] = _physical_value(v.mass, "mass_kg", "kg")
-	info["Physical radius"] = _physical_value(v.physical_radius, "length_m", "km", 0.001)
+	info["Parcel volume radius" if v.body_type == Palette.PLASMA else "Physical radius"] = _physical_value(v.physical_radius, "length_m", "km", 0.001)
 	info["Speed"] = _physical_value(v.vel.length(), "velocity_m_s", "km/s", 0.001)
 	info["Display"] = "Physical sizes" if display_scale == 0.0 else "Enlarged x%.0f" % display_scale
 	# What is it orbiting? (the strongest pull, m / d^2)
@@ -962,7 +993,7 @@ func _update_inspector() -> void:
 		info["Orbiting"] = best.display_name
 		info["Distance"] = _physical_value(best.position.distance_to(v.position), "length_m", "km", 0.001)
 	if v.heat > 0.05:
-		info["Surface"] = "Molten (%d%%)" % int(v.heat * 100)
+		info["Appearance"] = "Molten (%d%%)" % int(v.heat * 100)
 	info["Age"] = _physical_value(v.age, "time_s", "days", 1.0 / 86400.0)
 	info["can_nova"] = v.body_type == Palette.STAR
 	info["following"] = follow_id == selected_id

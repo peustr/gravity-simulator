@@ -253,13 +253,13 @@ Use the **Experiment** menu in the top bar:
 - **Set restart point** remembers the current scene and camera for this session without writing a file. Set it after building an experiment, before letting it evolve.
 - **Restart experiment...** returns to that point after confirmation. Choosing a built-in scenario also sets a restart point at its initial conditions; Clear sets an empty restart point.
 
-**Clear** asks for confirmation. Choosing a scenario asks before replacing a nonempty scene; Cancel preserves both the scene and its restart point. Each scenario sets its own starting speed: Solar system uses x0.1 so its short moon orbits remain readable; Binary stars and Empty space use x1; Black hole feast uses x0.005, Planet formation x0.0005, and Tidal encounter x0.8. Planet smash encounter choices start paused at x0.0005; press Play to watch contact. Other scenario switches preserve pause/resume state.
+**Clear** asks for confirmation. Choosing a scenario asks before replacing a nonempty scene; Cancel preserves both the scene and its restart point. Each scenario sets its own starting speed: Solar system uses x0.1 so its short moon orbits remain readable; Binary stars and Empty space use x1; Black hole feast uses x0.0005, Planet formation x0.1, and Tidal encounter x0.8. Planet smash encounter choices start paused at x0.0005; press Play to watch contact. Other scenario switches preserve pause/resume state.
 
-Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation and visual enlargement. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. The followed body is preserved when saved and opens in the inspector on restore; trails and transient effects are cleared.
+Files preserve body IDs, types, masses, radii, positions, velocities, heat and age, plus simulation time, speed, pause state, body limit, random-generator state, pending supernovae and camera position/orientation and visual enlargement. Loading and restarting restore the saved pause state; pause before saving if you want to inspect the restored scene before it moves. The followed body is preserved when saved and opens in the inspector on restore. Scene replacement applies its camera immediately, clears trails and transient effects, and rejects queued states from the previous scene.
 
 The **Experiment** menu also controls full gravity for debris, inclusion of all bodies in forecasts, and distant-body removal. It shows the collective tracer mass fraction. These choices and cumulative removal losses are stored in version-3 and newer saves and restart points; older saves retain their previous approximation defaults. See [orbital dynamics and accuracy controls](docs/orbital-dynamics.md).
 
-New saves use version-5 JSON with unit/radius models, physics settings, body spin/internal-energy inventories, compact ejecta, solver selection and numerical/model/loss histories. Unknown body inventories are null; versions 1–4 remain readable without inventing missing energy or spin. See [physical inventories and migration](docs/collision-budgets.md#persistent-body-inventories).
+New saves use version-7 JSON with unit/radius models, physics settings, body spin/internal-energy inventories, compact ejecta, solver selection, numerical/model/loss histories, tidal volume-sample identities and unresolved accretion inventories. Unknown body inventories are null; versions 1–6 remain readable without inventing missing energy or spin. See [physical inventories and migration](docs/collision-budgets.md#persistent-body-inventories).
 
 New scenes and all presets use **automatic collision models** and **full gravity**. Rocky–rocky impacts use calibrated, conserved outcomes; other body pairs retain their documented heuristic models. Tides, supernovae and distant-body removal remain available. Unsupported rocky impacts pause intact with an explanation, including strong external fields, simultaneous contacts, unknown incoming inventories/spin, insufficient fragment slots or explicitly selected tracer gravity. **Experiment → Automatic collision models** can be unchecked for heuristic-only comparisons. Fragment positions and energy splits remain prescribed approximations. Older saves retain their recorded model; see [configuration and limits](docs/collision-budgets.md#automatic-model-selection).
 
@@ -310,7 +310,7 @@ Restores rebuild REBOUND from the saved physical conditions. They do not preserv
 | **Binary stars** | Two suns in orbit, a planet around one of them on the edge of stability, and circumbinary planets. |
 | **Black hole feast** (`black_hole`) | A plunging star crosses the approximate Roche limit. Some debris is captured; other material follows ballistic orbits or escapes. The two outer stars start bound. Disk/jet flares are artistic; no viscous accretion is modelled. |
 | **Planet smash** | Choose gentle merging, hit-and-run or disruption from the Scenarios submenu. Encounters start paused in physical-size view. Play, inspect the outcome card and use Replay or Conservation report. |
-| **Planet formation** (`formation`) | Late-stage accretion of 32 Mars-sized rocky embryos around a young Sun. Four approaching pairs grow through shared physical collision laws, with contacts roughly 3–9 seconds into default playback. The camera follows the first pair at physical size; press R for the whole disk. Initial encounters are curated, not a forecast from a primordial disk; gas drag and dust growth are not modelled. |
+| **Planet formation** (`formation`) | A reproducible, thin disk of 64 rocky embryos near 1 AU includes a cold concentration of eight embryos. Full gravity and shared contact laws drive collapse and successive accretion. Playback advances about four physical days per second; double-click an embryo to follow, or use the impact card to inspect a survivor in slow motion. This demonstrates late-stage embryo growth, without primordial dust/gas growth. |
 | **Tidal encounter** | Two disks around stellar-mass black holes make a parabolic encounter. This illustrates tidal tails; it is not a galaxy-scale mass model. The preset key remains `galaxies`. |
 | **Empty space** | Your canvas. |
 
@@ -330,7 +330,7 @@ See [physical units and models](docs/physical-model.md) for constants, radius ap
 
 Resolved bodies normally use REBOUND **IAS15** (Rein & Spiegel 2015). Symmetric post-impact ejecta and nonadvancing IAS15 steps use **Bulirsch–Stoer (BS)**; compact ejecta and resolved bodies advance together in one coupled BS system. It is adaptive: it takes tiny steps during close encounters and big ones in quiet periods, and the controlled reference problems check its accuracy. Physical scenes allow adaptive steps below the old sandbox minimum; difficult encounters reduce achieved simulation speed. The server targets 60 updates a second and limits each advance to the requested simulation time. Godot buffers about 50 ms of authoritative positions, then interpolates between them. Playback follows achieved simulation speed and stops at the last received state if updates stall; the renderer does not calculate gravitational forces. Very fast moon orbits still require slower playback when zoomed in to resolve them at your display's frame rate.
 
-Full gravity is enabled by default, including mutual forces from debris. For cheaper comparison runs, uncheck **Experiment → Full gravity, including debris**: asteroids and small gas clouds below 0.5 mass units become test particles, feeling active bodies without exerting gravitational pull. Large collective tracer mass can make this approximation inaccurate; calibrated rocky impacts require full gravity. Planets, stars, neutron stars and black holes always exert gravity.
+Full body gravity is enabled by default, including resolved debris and backreaction from ballistic gas samples. Gas nodes omit their mutual self-gravity. For cheaper comparison runs, uncheck **Experiment → Full body gravity and gas backreaction**: asteroids and small gas clouds below 0.5 mass units become test particles, feeling active bodies without exerting gravitational pull. Large collective tracer mass can make this approximation inaccurate; calibrated rocky impacts require full gravity. Planets, stars, neutron stars and black holes always exert gravity.
 
 A shared contact step guard limits approach to physical surfaces before collision detection. Long-duration orbit, grazing-contact, capture and forecast checks have documented [accuracy targets and limitations](docs/orbital-dynamics.md). Bodies beyond 15,000 length units (250 AU) are removed by default regardless of binding energy; removal can be disabled and its inventory losses are recorded.
 
@@ -357,6 +357,16 @@ when resolved fragments exceed capacity. The conservation report includes both
 representations, explicit source/sink budgets and separate model diagnostics.
 Unsupported encounters pause intact with an explanation.
 
+Automatic mode offers labelled **conditional sticking** and **elastic rebound**
+for gentle rocky contacts, including spinning inputs below 1.08 times mutual
+escape. Sticking requires feasible energy/spin and surface-retention budgets;
+rebound retains both bodies when a single sphere cannot be constructed. A
+nonrotating classified merger can also use prescribed spherical sticking in
+surrounding gravity, with exact external-work accounting. These are contact
+prescriptions, not rotating-impact calibrations. Faster rotating impacts remain
+unsupported. **Inspect · slow motion** follows the reported remnant at physical
+size and slows playback for close inspection.
+
 Generate sixteen paused experiments covering the live regimes, resolved/compact
 comparisons and an unsupported-spin case:
 
@@ -377,7 +387,9 @@ The table below describes heuristic models used for other pairs and in explicit 
 
 ### Tides
 
-A fluid Roche estimate uses the victim’s physical radius R and mass m: `r ≈ 2.44 R (M / m)^(1/3)`, if that limit lies outside both bodies. This is a dimensional disruption heuristic, not a material-strength or tidal-evolution model; legacy saves retain their original rule. Its fragments are laid out along the line to the heavy body (spaghettification) and then shear into a stream.
+Stellar encounters use `r ≈ R (M/m)^(1/3)`; other fluids use the circular Roche estimate `2.44 R (M/m)^(1/3)`. Local, balanced breakup preserves source mass, centroid and bulk momentum. Ballistic gas volume nodes keep gravitational backreaction but omit mutual self-gravity and pressure. Gas enters explicitly unresolved inner flow; it does not ignite by mass alone. Solid fragments retain their identity through coalescence. Ordinary clouds retain a separate heuristic.
+
+These are coarse Newtonian models without hydrodynamics, viscous accretion or relativistic capture. See the [physical model](docs/physical-model.md) for sampling, capture geometry, inventories and resolution limits.
 
 ### Growing and dying
 
@@ -395,7 +407,7 @@ The size-mode label distinguishes physical from illustrative sizes. Ambient fill
 
 None of these affect the physics:
 - Lensing, accretion disks, jets, pulsar beams.
-- Flashes, shock waves and debris sparks.
+- Localized flashes and shock-wave rings. Their screen extent is bounded during zoom; material debris is drawn only from the physics state.
 - The gravity grid, which shows the Newtonian potential and is a teaching picture rather than literal spacetime.
 
 ### What is *not* simulated
@@ -540,6 +552,14 @@ Two caveats:
 - Shipping REBOUND means following its licence; see [section 11](#11-credits-and-licences).
 
 ## 9. Developing with Codex
+
+Scene acceptance is defined in [the scene quality standard](docs/scene-quality.md).
+Run `python3 tools/dev.py scene-check` for an all-preset physical audit, continuous
+rendered recordings, peak-event frames and sandbox-control checks. It needs a
+display and the documented Godot engine/renderer. Reports and a timed recording
+viewer are written to a fresh ignored `benchmarks/scene-quality-*` directory.
+`--backend-only` runs a diagnostic subset and cannot approve appearance. Failed
+or blocked gates prevent release regardless of the unit-test count.
 
 Development commands support Windows and Linux. [Codex](https://developers.openai.com/codex/) can use the repository guidance and validation skills below.
 

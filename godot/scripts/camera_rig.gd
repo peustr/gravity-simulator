@@ -130,8 +130,9 @@ func _process(delta: float) -> void:
 	yaw = lerpf(yaw, target_yaw, k)
 	pitch = lerpf(pitch, target_pitch, k)
 	distance = exp(lerpf(log(distance), log(target_distance), k))
-	var kf := 1.0 - exp(-delta * (30.0 if following else 8.0))
-	focus = focus.lerp(target_focus, kf)
+	# Body positions already use snapshot interpolation. A second motion filter
+	# leaves a velocity-dependent offset that can exceed a physical-size view.
+	focus = target_focus if following else focus.lerp(target_focus, 1.0-exp(-delta*8.0))
 	_shake = maxf(0.0, _shake - delta * 1.5)
 	_apply()
 

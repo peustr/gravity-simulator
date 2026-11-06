@@ -25,12 +25,15 @@ def _impact_metadata(value, outcome=False):
         return None
     fields = {'regime','speed_m_s','angle_deg','remnant_masses_kg','unresolved_fragments'} if outcome else {
         'case','speed_m_s','angle_deg'}
-    if not isinstance(value,dict) or set(value) != fields:
+    actual = set(value)-({'survivor_id'} if outcome else set()) if isinstance(value,dict) else set()
+    if not isinstance(value,dict) or actual != fields:
         raise ValueError('Invalid encounter metadata')
     number(value['speed_m_s'],0,1e8)
     number(value['angle_deg'],0,90)
     if outcome:
-        if value['regime'] not in ('merging','graze_and_merge','hit_and_run','partial_accretion','erosion',
+        if 'survivor_id' in value:
+            integer(value['survivor_id'], 1, 16_000_000)
+        if value['regime'] not in ('merging','graze_and_merge','bound_sticking','gentle_sticking','gentle_rebound','contact_rebound','hit_and_run','partial_accretion','erosion',
                                    'disruption','supercatastrophic_disruption'):
             raise ValueError('Unknown impact regime')
         masses = value['remnant_masses_kg']
@@ -65,11 +68,12 @@ def capture(world, camera):
     for p in world.sim.particles:
         md = world.meta[p.name]
         inventory = md['inventory']
-        bodies.append(dict(id=int(p.name), type=md['type'], mass=p.m, radius=p.r,
+        bodies.append(dict(id=int(p.name), type=md['type'], mass=p.m, radius=world.body_radius(p),
                            pos=[p.x, p.y, p.z], vel=[p.vx, p.vy, p.vz],
                            heat=md['heat'], born=md['born'], inventory=None if inventory is None else
-                           dict(spin_kg_m2_s=list(inventory.spin_kg_m2_s), internal_energy_j=inventory.internal_energy_j)))
-    return dict(format='gravity-simulator', version=5, units=world.units, bodies=bodies,
+                           dict(spin_kg_m2_s=list(inventory.spin_kg_m2_s), internal_energy_j=inventory.internal_energy_j),
+                           **({'tidal_sample': True} if md.get('tidal_sample', False) else {})))
+    return dict(format='gravity-simulator', version=7, units=world.units, bodies=bodies,
                 physics=world.settings.copy(), removed=json.loads(json.dumps(world.removed)),
                 time=world.sim.t, speed=world.speed, paused=world.paused,
                 max_bodies=world.max_bodies, next_id=world._next_id,
@@ -82,12 +86,14 @@ def capture(world, camera):
                 next_shell_id=world._next_shell_id,
                 shell_error_history=world.shell_error_history.copy(),
                 physical_loss_ledger=world.physical_loss_ledger.state(),
-                shell_numerical_energy_error_j=world.shell_numerical_energy_error_j)
+                shell_numerical_energy_error_j=world.shell_numerical_energy_error_j,
+                tidal_potential_offset_j=world.tidal_potential_offset_j,
+                accretion_flows=deepcopy(world.accretion_flows))
 
 
 def restore(data):
     """Build a separate world; callers swap it in only after all validation succeeds."""
-    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2, 3, 4, 5):
+    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2, 3, 4, 5, 6, 7):
         raise ValueError('Unsupported scene format or version')
     camera = camera_state(data.get('camera'))
     world = W.World(max_bodies=data['max_bodies'])
@@ -114,7 +120,9 @@ def restore(data):
                 number(value, -1e100, 1e100)
         world.removed = json.loads(json.dumps(removed))
     world.sim.t = number(data['time'], 0, 1e20)
-    if data['version'] == 5:
+    if data['version'] >= 7:
+        world.tidal_potential_offset_j = number(data['tidal_potential_offset_j'], -1e100, 1e100)
+    if data['version'] >= 5:
         if data.get('solver') not in ('ias15','bs') or data.get('shell_model') != 'homologous_polyhedra_v1':
             raise ValueError('Unsupported solver or unresolved-shell model')
         records = data.get('ejecta_shells')
@@ -201,8 +209,31 @@ def restore(data):
         world.add_body(body['type'], mass, body['pos'], body['vel'], heat, inventory=inventory)
         world.particle(str(bid)).r = radius
         world.meta[str(bid)]['born'] = born
+        if 'tidal_sample' in body:
+            if data['version'] < 6 or body['type'] not in (W.PLASMA, W.ASTEROID) or body['tidal_sample'] is not True:
+                raise ValueError('Invalid tidal volume sample')
+            world.meta[str(bid)]['tidal_sample'] = True
+            if body['type'] == W.PLASMA and world.units == units.SYSTEM:
+                world.meta[str(bid)]['volume_radius'] = radius
+                world.particle(str(bid)).r = 0
     integer(data['next_id'], max(ids, default=0) + 1)
     world._next_id = data['next_id']
+    if data['version'] >= 7:
+        flows = data.get('accretion_flows')
+        if not isinstance(flows, dict) or len(flows) > world.sim.N:
+            raise ValueError('Invalid accretion flow storage')
+        for name, flow in flows.items():
+            if name not in world.meta or world.meta[name]['type'] != W.BLACK_HOLE or not isinstance(flow, dict) or set(flow) != {
+                    'mass_kg', 'energy_j', 'angular_momentum_kg_m2_s'}:
+                raise ValueError('Invalid accretion flow owner or fields')
+            number(flow['mass_kg'], 0, world.particle(name).m * units.MASS_KG)
+            number(flow['energy_j'], -1e100, 1e100)
+            angular = flow['angular_momentum_kg_m2_s']
+            if not isinstance(angular, list) or len(angular) != 3:
+                raise ValueError('Invalid accretion angular momentum')
+            for component in angular:
+                number(component, -1e100, 1e100)
+        world.accretion_flows = deepcopy(flows)
     rng = data['rng']
     if not isinstance(rng, (list, tuple)) or len(rng) != 3:
         raise ValueError('Invalid random state')
@@ -223,6 +254,11 @@ def restore(data):
             raise ValueError('Unknown pending body')
     world._supernova_queue = list(queue)
     world._target_t = world.sim.t
+    if data['version'] < 7 and any(md['type'] == W.BLACK_HOLE or md.get('tidal_sample',False) for md in world.meta.values()):
+        # Old optional comparisons used spherical binding for compact sinks and
+        # mutual forces between gas nodes. Keep the physical state, reset the
+        # incompatible energy comparison reference.
+        world.conservation_baseline = None
     world._repartition()
     if world.shells:
         masses = [p.m*units.MASS_KG for p in world.sim.particles]

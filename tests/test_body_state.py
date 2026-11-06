@@ -111,4 +111,4 @@ def test_supernova_and_tides_do_not_invent_ejecta_inventories():
     w._disrupt('2', '1')
     assert w.sim.N > 2 and w.particle('2') is None
     assert w.meta['1']['inventory'] == BodyInventory()
-    assert all(md['inventory'] is None for name, md in w.meta.items() if name != '1')
+    assert all(md['inventory'] == BodyInventory() for name, md in w.meta.items() if name != '1')

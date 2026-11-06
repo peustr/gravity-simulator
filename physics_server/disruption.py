@@ -75,10 +75,10 @@ class ContactOutcome:
     regime: str
     largest_remnant_mass_kg: float
     remaining_mass_kg: float
-    disruption_energy_j_kg: float
+    disruption_energy_j_kg: float | None
     specific_energy_j_kg: float
-    interacting_fraction: float
-    merging_speed_m_s: float
+    interacting_fraction: float | None
+    merging_speed_m_s: float | None
     runner_mass_kg: float = 0.0
 
 

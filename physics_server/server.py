@@ -244,15 +244,17 @@ class Server:
         elif cmd == "clear":
             w.clear()
             self.checkpoint = experiments.capture(w, experiments.DEFAULT_CAMERA)
+            self.send_json(dict(type="preset", name="empty", camera=experiments.DEFAULT_CAMERA,
+                                speed=w.speed, version=w.version % 16_000_000, physics=w.gravity_summary()), addr)
         elif cmd == 'collision_demo':
             hint = w.load_collision_demo(msg['case'])
             self.checkpoint = experiments.capture(w,hint['camera'])
             w.paused = not msg.get('play',False)
-            self.send_json(hint,addr)
+            self.send_json(dict(hint, version=w.version % 16_000_000, physics=w.gravity_summary()), addr)
         else:  # validate() guarantees the remaining command is preset.
             hint = w.load_preset(str(msg.get("name", "empty")))
             self.checkpoint = experiments.capture(w, hint["camera"])
-            self.send_json(hint, addr)
+            self.send_json(dict(hint, version=w.version % 16_000_000, physics=w.gravity_summary()), addr)
         if edited:
             w.physical_loss_ledger.record('user_'+cmd,before_edit,w.physical_loss_ledger.capture(w))
 
@@ -280,6 +282,8 @@ class Server:
                 self.world = candidate
                 self.checkpoint = data
                 reply["camera"] = camera
+                reply["version"] = candidate.version % 16_000_000
+                reply['physics'] = candidate.gravity_summary()
             reply["ok"] = True
         except (OSError, ValueError, TypeError, KeyError, OverflowError, RecursionError) as exc:
             reply["error"] = f"Could not {cmd.replace('_', ' ')}: {str(exc)[:200]}"
