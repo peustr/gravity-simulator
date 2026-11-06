@@ -155,6 +155,19 @@ func _largest_rocky() -> int:
 	return best
 
 
+func _track_mergers(packet: PackedFloat32Array, owners: Dictionary) -> void:
+	if not main.NetClient.valid_packet(packet) or packet[0] != main.NetClient.STATE_KIND:
+		return
+	var start: int = main.HEADER+int(packet[4])*main.BODY
+	for index in range(int(packet[5])):
+		var offset: int = start+index*main.EVENT
+		if int(packet[offset]) != main.Palette.EV_MERGE:
+			continue
+		for source in owners:
+			if owners[source] == int(packet[offset+7]):
+				owners[source] = int(packet[offset+6])
+
+
 func _check_formation() -> bool:
 	main.hud.preset_chosen.emit("formation")
 	main.scene_files.confirm.get_ok_button().pressed.emit()
@@ -184,6 +197,7 @@ func _check_formation() -> bool:
 	main.net.send({"cmd":"speed", "value":.005})
 	var remnant = main.views[grown]
 	var count: int = main.views.size()
+	var original_ids: Array = main.views.keys()
 	var added_mass: float = .5*remnant.mass
 	var added_radius: float = remnant.physical_radius * pow(added_mass/remnant.mass, 1.0/3.0)
 	var contact_radius: float = remnant.physical_radius + added_radius
@@ -193,15 +207,25 @@ func _check_formation() -> bool:
 		"mode":"launch", "drag":[-.3*contact_radius,0,0], "mass_mult":added_mass/.003})
 	if not await _until(func(): return main.views.size() == count+1, 7.5, "formation placement"):
 		return false
-	main.net.send({"cmd":"pause","value":false})
-	if not await _until(func(): return main.views.size() == count and main.views.has(grown) and main.views[grown].mass > initial_mass+.99*added_mass):
-		push_error("Spinning formation remnant did not accept a subsequent bound accretion")
+	var added := -1
+	for id in main.views:
+		if id not in original_ids: added = id
+	if added < 0:
 		return false
-	if not await _until(func(): return main.hud.impact_panel.report.get("regime") in ["bound_sticking","gentle_sticking"], 7.5, "formation impact report"):
+	var owners := {"target":grown,"added":added}
+	var track := func(packet: PackedFloat32Array): _track_mergers(packet,owners)
+	main.net.state_received.connect(track)
+	main.net.send({"cmd":"pause","value":false})
+	var accreted: bool = await _until(func(): return owners.target == owners.added and main.views.has(owners.target) and main.views[owners.target].mass > initial_mass+.99*added_mass, 7.5, "formation source accretion")
+	main.net.state_received.disconnect(track)
+	if not accreted:
+		push_error("Added embryo did not accrete with the spinning remnant: " + str(owners))
 		return false
 	main.net.send({"cmd":"pause","value":true})
 	if not await _until(func(): return main.paused):
 		return false
+	main._select(owners.target)
+	main._start_follow(owners.target)
 	main.hud.conservation_report = {}
 	main.net.send({"cmd":"conservation"})
 	if not await _until(func(): return not main.hud.conservation_report.is_empty()):

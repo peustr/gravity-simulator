@@ -54,7 +54,7 @@ Additional features require a scope decision rather than extending its checklist
 - [x] ~~2. Physical units and independent display sizes~~
 - [x] ~~3. Trustworthy orbital dynamics~~
 - [x] ~~4. Credible impact outcomes~~
-- [ ] **Scene quality and collision demonstration — active, before Milestone 5**
+- [x] ~~Scene quality and collision demonstration~~
 - [ ] **5. Rotation and tidal evolution**
 - [ ] **6. Composition and thermal history**
 - [ ] **7. Stellar evolution and compact objects**
@@ -212,10 +212,10 @@ and thermal/material response are delivered in Milestones 5 and 6 respectively.
 - [x] **Selectable encounters.** Planet smash offers gentle merging, intact
   hit-and-run and disruptive encounters directly in the application, with replay.
   No generated files or manual placement are required to observe these cases.
-- [ ] **Inspectable contact.** Close camera and slow playback make physical
+- [x] **Inspectable contact.** Close camera and slow playback make physical
   surfaces and contact timing observable. Indicate visual enlargement; ensure
   the transient flash leaves the persistent remnants/debris easy to inspect.
-- [ ] **Results and regression.** Show encounter speed/angle, regime and remnant
+- [x] **Results and regression.** Show encounter speed/angle, regime and remnant
   masses, with access to the conservation report. Identify calibrated mass laws
   and prescribed scattering/ejecta choices. Verify all three live encounters,
   resolved/compact budget agreement and continued operation of all seven presets.
