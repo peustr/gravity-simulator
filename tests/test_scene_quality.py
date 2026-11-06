@@ -250,6 +250,9 @@ def test_missing_empty_or_external_png_evidence_is_blocked(tmp_path):
             file.write_bytes(png)
     (tmp_path / "formation-accretion.png").write_bytes(png)
     assert assess_rendered(data, evidence_root=tmp_path)["status"] == "PASS"
+    data["resolution"] = [1024, 576]  # Logical viewport size can differ from the framebuffer.
+    assert assess_rendered(data, evidence_root=tmp_path)["status"] == "BLOCKED"
+    data["resolution"] = [1280, 720]
     target = tmp_path / data["scenes"][0]["frames"][0]["path"]
     target.write_bytes(b"")
     assert assess_rendered(data, evidence_root=tmp_path)["status"] == "BLOCKED"

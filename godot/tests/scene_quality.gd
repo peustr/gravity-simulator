@@ -17,6 +17,7 @@ var visible_initial := -1.0
 var capture_errors := 0
 var seed_value := 42
 var contract_path := ""
+var capture_resolution := Vector2i.ZERO
 
 
 func _run() -> void:
@@ -179,7 +180,7 @@ func _run() -> void:
 		"control_evidence": {"formation_accretion": "formation-accretion.png", "manual_body_addition": true},
 		"engine_version": {"major": version_info.major, "minor": version_info.minor, "patch": version_info.patch},
 		"renderer": RenderingServer.get_current_rendering_method(),
-		"resolution": [root.get_texture().get_width(),root.get_texture().get_height()],
+		"resolution": [capture_resolution.x,capture_resolution.y],
 		"gpu": RenderingServer.get_video_adapter_name(), "display": DisplayServer.get_name(),
 		"capture_note": "Every displayed frame analysed; timed PNG sequence sampled at up to 10 Hz. Recording adds overhead."}
 	var file := FileAccess.open(output.path_join("render.json"), FileAccess.WRITE)
@@ -204,6 +205,10 @@ func _capture() -> void:
 	if active.is_empty(): return
 	var now := Time.get_ticks_usec()
 	var picture := root.get_texture().get_image()
+	if capture_resolution == Vector2i.ZERO:
+		capture_resolution = picture.get_size()
+	if picture.get_size() != capture_resolution:
+		capture_errors += 1
 	var fraction := white_fraction(picture)
 	max_white = maxf(max_white, fraction)
 	var new_peak := fraction > peak
