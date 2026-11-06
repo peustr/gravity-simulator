@@ -6,8 +6,12 @@ const Main = preload("res://scripts/main.gd")
 const Hud = preload("res://scripts/hud.gd")
 const Benchmark = preload("res://scripts/benchmark.gd")
 const MotionTests = preload("res://tests/motion.gd")
+const ConnectionTests = preload("res://tests/connection.gd")
 
 func _initialize() -> void:
+	if not await ConnectionTests.check(self):
+		quit(1)
+		return
 	if not MotionTests.run():
 		quit(1)
 		return

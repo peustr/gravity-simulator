@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import rebound
 
-from collision_models import construct_collision, couple_external_gravity, remnant_escape_check, surface_contact
+from collision_models import construct_collision, couple_collision, couple_external_gravity, remnant_escape_check, surface_contact
 from collision_outcomes import RemnantSpec, SphereState, collision_budget, merge_spheres
 from disruption import classify_contact, estimate_head_on_disruption
 from impacts import Impact
@@ -95,6 +95,73 @@ def test_external_field_limits_reject_nearby_sources_and_unfunded_energy_changes
     displaced = replace(merged,position_m=(1e8,0,0))
     with pytest.raises(ValueError,match='potential correction'):
         couple_external_gravity(pair,(displaced,),(distant,))
+
+
+def test_prescribed_sphere_closes_analytic_work_without_relaxing_isolated_limits():
+    mass, radius, source_mass, distance = 1e22, 1e6, 1e23, 2e7
+    pair = tuple(SphereState(mass,radius,(sign*radius,0,0),(-sign*100,0,0)) for sign in (-1,1))
+    merged = merge_spheres(*pair)
+    source = SphereState(source_mass,1e6,(distance,0,0),(0,0,0))
+    with pytest.raises(ValueError,match='isolated-impact limit'):
+        couple_external_gravity(pair,(merged,),(source,))
+    result, = couple_external_gravity(pair,(merged,),(source,),spherical_sticking=True)
+    expected = -2*G_SI*mass*source_mass*radius**2 / (distance*(distance**2-radius**2))
+    assert result.internal_energy_j-merged.internal_energy_j == pytest.approx(expected,rel=1e-10)
+    assert replace(result,internal_energy_j=merged.internal_energy_j) == merged
+    assert collision_budget((result,source)).energy_j == pytest.approx(collision_budget((*pair,source)).energy_j,rel=1e-14)
+    with pytest.raises(ValueError,match='nonnegative'):
+        couple_external_gravity(pair,(replace(merged,internal_energy_j=0),),(source,),spherical_sticking=True)
+    with pytest.raises(ValueError,match='mass-conserving'):
+        couple_external_gravity(pair,pair,(),spherical_sticking=True)
+    with pytest.raises(ValueError,match='mass-conserving'):
+        couple_external_gravity(pair,(replace(merged,mass_kg=mass),),(),spherical_sticking=True)
+    with pytest.raises(ValueError,match='sampled positions'):
+        couple_external_gravity(pair,pair,(),spherical_sticking=True,contact_impulse=True)
+
+
+def test_combined_spin_and_tides_reject_a_sphere_even_when_each_alone_is_subcritical():
+    pair = rocky_pair(0,.5)
+    merged = merge_spheres(*pair)
+    restoring = G_SI*merged.mass_kg/merged.radius_m**3
+    spin = (0,0,merged.inertia_kg_m2*math.sqrt(.6*restoring))
+    spinning = replace(merged,spin_kg_m2_s=spin)
+    distance = 20*merged.radius_m
+    source = SphereState(.6*restoring*(distance-merged.radius_m)**3/(2*G_SI),1,(distance,0,0),(0,0,0))
+    # Separate bounds pass; their sum exceeds the available surface gravity.
+    couple_external_gravity(pair,(spinning,),(),spherical_sticking=True)
+    with pytest.raises(ValueError,match='surface retention'):
+        couple_external_gravity(pair,(spinning,),(source,),spherical_sticking=True)
+    with pytest.raises(ValueError,match='intersects'):
+        couple_external_gravity(pair,(merged,),(replace(source,position_m=merged.position_m),),spherical_sticking=True)
+
+
+def test_field_aware_adapter_never_replaces_calibrated_mass_loss():
+    pair = rocky_pair(0,3)
+    outcome = construct_collision(*pair,material='fluid_planets',body_types=(0,0),resolved_policy=True)
+    assert outcome.classification.remaining_mass_kg > 0
+    source = SphereState(1e30,1e8,(1e9,0,0),(0,0,0))
+    for gentle in (False,True):
+        with pytest.raises(ValueError,match='isolated-impact limit'):
+            couple_collision(pair,outcome,(source,),material='fluid_planets',body_types=(0,0),allow_gentle_contacts=gentle)
+    assert_closed(pair,outcome.remnants)
+
+
+@pytest.mark.parametrize('speed,can_rebound',[(.5,True),(1.2,False)])
+def test_tides_prevent_sticking_and_only_gentle_contacts_can_rebound(speed,can_rebound):
+    pair = rocky_pair(0,speed)
+    outcome = construct_collision(*pair,material='fluid_planets',body_types=(0,0),resolved_policy=True)
+    assert len(outcome.remnants) == 1
+    source = SphereState(1e35,1e6,(1e9,0,0),(0,0,0))
+    if not can_rebound:
+        with pytest.raises(ValueError,match='surface retention'):
+            couple_collision(pair,outcome,(source,),material='fluid_planets',body_types=(0,0),allow_gentle_contacts=True)
+        return
+    result = couple_collision(pair,outcome,iter((source,)),material='fluid_planets',body_types=(0,0),allow_gentle_contacts=True)
+    assert result.classification.regime == 'gentle_rebound'
+    assert result.escape_certificate is None
+    assert_closed(pair,result.remnants)
+    assert [s.position_m for s in pair] == [s.position_m for s in result.remnants]
+    assert [s.mass_kg for s in pair] == [s.mass_kg for s in result.remnants]
 
 
 @pytest.mark.parametrize('material,target', [('planetesimals', 4.2e15), ('fluid_planets', 5.9722e24)])

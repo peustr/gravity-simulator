@@ -128,7 +128,7 @@ class WorldTests(unittest.TestCase):
                 for i, name in enumerate(w.snapshot()['names']):
                     p = w.particle(name)
                     self.assertEqual(i < w.sim.N_active,
-                                     w.settings['gravity'] == 'full' or not w.is_light(w.meta[name]['type'], p.m))
+                                     not (w.meta[name]['type'] == W.PLASMA and w.meta[name].get('tidal_sample', False)) and not w.is_light(w.meta[name]['type'], p.m))
 
     def test_body_limit_validation(self):
         for value in (0, -1, W.MAX_BODIES + 1, True, 2.5):

@@ -24,8 +24,9 @@ func _finish(code: int) -> void:
 	quit(code)
 
 
-func _until(predicate: Callable) -> bool:
-	for i in range(150):
+func _until(predicate: Callable, timeout_s := 7.5) -> bool:
+	var deadline := Time.get_ticks_usec() + int(timeout_s*1000000)
+	while Time.get_ticks_usec() < deadline:
 		if predicate.call():
 			return true
 		await create_timer(0.05).timeout
@@ -120,6 +121,12 @@ func _check_collision_demos() -> bool:
 			return false
 		if not main.hud.impact_panel.details.text.contains("kg"):
 			return false
+		var survivor: int = main.hud.impact_panel.report.get("survivor_id", -1)
+		main.hud.impact_panel.inspect.pressed.emit()
+		if not await _until(func(): return main.follow_id == survivor and main.selected_id == survivor and main.server_speed <= .005):
+			return false
+		if main.display_scale != 0 or main.rig.target_distance > 14.01*main.views[survivor].physical_radius:
+			return false
 		main.hud.conservation_report = {}
 		main.hud.impact_panel.budgets_requested.emit()
 		if not await _until(func(): return not main.hud.conservation_report.is_empty()):
@@ -136,10 +143,18 @@ func _check_collision_demos() -> bool:
 	return await _until(func(): return main.paused)
 
 
+func _largest_rocky() -> int:
+	var best := -1
+	for id in main.views:
+		if main.views[id].body_type == main.Palette.ROCKY and (best < 0 or main.views[id].mass > main.views[best].mass):
+			best = id
+	return best
+
+
 func _check_formation() -> bool:
 	main.hud.preset_chosen.emit("formation")
 	main.scene_files.confirm.get_ok_button().pressed.emit()
-	if not await _until(func(): return main.views.size() == 33 and main.paused and main.follow_id == -1 and absf(log(main.rig.distance / 350.0)) < .01):
+	if not await _until(func(): return main.views.size() == 65 and main.paused and main.follow_id == -1 and absf(log(main.rig.distance / 150.0)) < .01):
 		return false
 	var embryo: int = main.views.keys()[1]
 	main._select(embryo)
@@ -149,28 +164,33 @@ func _check_formation() -> bool:
 		return false
 	if main.display_scale != 0 or not await _request({"cmd": "checkpoint"}):
 		return false
-	var mass: float = main.views[followed].mass
-	main._speed_step(1)
-	main._speed_step(1)
+	var initial_max := 0.0
+	for view in main.views.values():
+		if view.body_type == main.Palette.ROCKY: initial_max = maxf(initial_max,view.mass)
 	main.net.send({"cmd": "pause", "value": false})
-	if not await _until(func(): return main.views.size() == 29 and main.views[followed].mass > 1.75 * mass):
-		push_error("Planet formation did not grow embryos in the live application")
+	if not await _until(func(): return _largest_rocky() >= 0 and main.views[_largest_rocky()].mass > 2.0*initial_max, 45.0):
+		push_error("Planet formation did not demonstrate natural growth from at least three embryos")
 		return false
 	main.net.send({"cmd": "pause", "value": true})
 	if not await _until(func(): return main.paused):
 		return false
-	var remnant = main.views[followed]
-	var added_mass := .00035
+	var grown := _largest_rocky()
+	main._select(grown)
+	main._start_follow(grown)
+	main.net.send({"cmd":"speed", "value":.005})
+	var remnant = main.views[grown]
+	var count: int = main.views.size()
+	var added_mass: float = .5*remnant.mass
 	var added_radius: float = remnant.physical_radius * pow(added_mass/remnant.mass, 1.0/3.0)
 	var contact_radius: float = remnant.physical_radius + added_radius
 	var position: Vector3 = remnant.base_pos + Vector3(2.0*contact_radius, 0, 0)
 	var initial_mass: float = remnant.mass
 	main.net.send({"cmd":"add", "type":"rocky", "pos":[position.x,position.y,position.z],
 		"mode":"launch", "drag":[-.3*contact_radius,0,0], "mass_mult":added_mass/.003})
-	if not await _until(func(): return main.views.size() == 30):
+	if not await _until(func(): return main.views.size() == count+1):
 		return false
 	main.net.send({"cmd":"pause","value":false})
-	if not await _until(func(): return main.views.size() == 29 and main.views.has(followed) and main.views[followed].mass > initial_mass*1.4):
+	if not await _until(func(): return main.views.size() == count and main.views.has(grown) and main.views[grown].mass > initial_mass+.99*added_mass):
 		push_error("Spinning formation remnant did not accept a subsequent bound accretion")
 		return false
 	if not await _until(func(): return main.hud.impact_panel.report.get("regime") == "bound_sticking"):
@@ -180,7 +200,7 @@ func _check_formation() -> bool:
 		accretion_snapshot = root.get_texture().get_image()
 	if not await _request({"cmd": "restart"}):
 		return false
-	if not await _until(func(): return main.views.size() == 33 and main.paused and main.follow_id == followed):
+	if not await _until(func(): return main.views.size() == 65 and main.paused and main.follow_id == followed):
 		return false
 	print("Live formation growth/follow/restart PASSED")
 	return true
@@ -357,7 +377,7 @@ func _run() -> void:
 		_fail("Physical inspector fields did not reach the HUD")
 		return
 	# Preserve integer tokens; Godot parses JSON numbers as floats.
-	var legacy := FileAccess.get_file_as_string(path).replace('"version":6', '"version":1')
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":7', '"version":1')
 	var migration_file := FileAccess.open(path, FileAccess.WRITE)
 	migration_file.store_string(legacy)
 	migration_file.close()
@@ -366,6 +386,9 @@ func _run() -> void:
 		return
 	if not main._physical_value(1.0, "length_m", "km").ends_with("legacy units"):
 		_fail("Legacy values were silently labelled as physical measurements")
+		return
+	if main.gas_capture_scale != 0:
+		_fail("Legacy restore retained the physical inner-flow scale")
 		return
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_string("{broken")

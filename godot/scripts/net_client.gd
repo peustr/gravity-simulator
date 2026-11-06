@@ -52,6 +52,7 @@ func send(cmd: Dictionary) -> void:
 
 
 func _process(delta: float) -> void:
+	var received := false
 	_hello_timer -= delta
 	if _hello_timer <= 0.0:
 		send({"cmd": "hello"})
@@ -74,6 +75,7 @@ func _process(delta: float) -> void:
 						continue
 					server_info = msg
 					_last_packet = _now()
+					received = true
 				elif msg.get("type", "") == "protocol_error":
 					launch_status = str(msg.get("text", "Physics protocol mismatch."))
 					_launch_tried = true
@@ -85,6 +87,7 @@ func _process(delta: float) -> void:
 		if not valid_packet(f):
 			continue
 		_last_packet = _now()
+		received = true
 		var kind := int(f[0])
 		if kind == STATE_KIND:
 			# Apply scene/camera acknowledgements before queued state packets.
@@ -96,7 +99,9 @@ func _process(delta: float) -> void:
 	for state in states:
 		state_received.emit(state)
 
-	var now_connected := _now() - _last_packet < TIMEOUT
+	# State callbacks may compile shaders or build hundreds of views. Their
+	# processing time must not turn packets received in this poll into a timeout.
+	var now_connected := received or _now() - _last_packet < TIMEOUT
 	if now_connected != connected:
 		connected = now_connected
 		connection_changed.emit(connected)

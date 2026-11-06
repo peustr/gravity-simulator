@@ -34,6 +34,9 @@ release criteria.
 | Empty space | The empty clock and pause state behave correctly. Placement, previews, follow, editing, save/restart and clear operate without inherited scene state. |
 
 The reference interval and performance budget are part of each scene's contract.
+The backend observes 12 seconds of preset playback, or 40 seconds for Formation's
+cold embryo concentration within a disk. It finishes the requested physical interval
+within a separate wall-time cutoff; achieved interactive rate is measured separately.
 Long physical timescales require suitable model/time controls and honest labels;
 visual flashes, hidden force changes and geometric enlargement cannot substitute
 for the promised process.

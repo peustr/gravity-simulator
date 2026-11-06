@@ -45,6 +45,7 @@ var _glow_mat: ShaderMaterial
 var _marker: MeshInstance3D
 var _marker_mat: ShaderMaterial
 var _disk: MeshInstance3D
+var flow_radius := 0.0
 var _disk_mat: ShaderMaterial
 var _lens: MeshInstance3D
 var _lens_mat: ShaderMaterial
@@ -316,9 +317,11 @@ func set_physical(m: float, r: float, h: float, a: float) -> void:
 		_apply_radius()
 
 
-func set_display_size(enlargement: float, world_per_px: float) -> void:
+func set_display_size(enlargement: float, world_per_px: float, capture_scale := 0.0) -> void:
 	var r := Palette.rendered_radius(body_type, mass, physical_radius, enlargement, world_per_px)
-	if absf(r - rendered_radius) > 1e-4 * maxf(r, 1e-12):
+	var flow := physical_radius*capture_scale if body_type == Palette.BLACK_HOLE else 0.0
+	if flow != flow_radius or absf(r - rendered_radius) > 1e-4 * maxf(r, 1e-12):
+		flow_radius = flow
 		rendered_radius = r
 		_apply_radius()
 
@@ -369,7 +372,7 @@ func _apply_radius() -> void:
 				mi.position = Vector3(0, d * length * 0.5, 0)
 				mi.rotation = Vector3(0.0 if d > 0 else PI, 0, 0)
 		Palette.BLACK_HOLE:
-			_disk.scale = Vector3.ONE * r * 8.0
+			_disk.scale = Vector3.ONE * (flow_radius if flow_radius > 0 else r*8.0)
 			_lens.scale = Vector3.ONE * r * 10.0
 			for j in _jets.get_children():
 				var mi := j as MeshInstance3D

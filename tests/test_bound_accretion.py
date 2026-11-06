@@ -23,7 +23,7 @@ def spinning_pair(speed=.5, b=0):
 
 def test_bound_rotating_sticking_is_a_distinct_conserving_prescription():
     incoming = spinning_pair()
-    result = construct_collision(*incoming, material='fluid_planets', body_types=(0, 0), allow_bound_sticking=True)
+    result = construct_collision(*incoming, material='fluid_planets', body_types=(0, 0), allow_gentle_contacts=True)
     assert result.classification.regime == 'bound_sticking'
     assert result.classification.disruption_energy_j_kg is None
     assert result.classification.merging_speed_m_s is None
@@ -33,31 +33,34 @@ def test_bound_rotating_sticking_is_a_distinct_conserving_prescription():
 
 @pytest.mark.parametrize('changes', [dict(), dict(material='planetesimals'), dict(layout=[]), dict(expansion_fraction=.5)])
 def test_sticking_requires_explicit_policy_material_and_no_allocation(changes):
-    args = dict(material='fluid_planets', body_types=(0, 0), allow_bound_sticking=True)
+    args = dict(material='fluid_planets', body_types=(0, 0), allow_gentle_contacts=True)
     args.update(changes)
     if not changes:
-        args['allow_bound_sticking'] = False
+        args['allow_gentle_contacts'] = False
     with pytest.raises(ValueError):
         construct_collision(*spinning_pair(), **args)
 
 
-def test_unbound_rotating_contact_remains_unsupported():
-    with pytest.raises(ValueError, match='bound-sticking'):
-        construct_collision(*spinning_pair(1.05), material='fluid_planets', body_types=(0, 0), allow_bound_sticking=True)
+def test_gentle_unbound_merger_is_a_separate_sticking_prescription():
+    incoming = spinning_pair(1.05)
+    result = construct_collision(*incoming, material='fluid_planets', body_types=(0, 0), allow_gentle_contacts=True)
+    assert result.classification.regime == 'gentle_sticking'
+    assert result.classification.disruption_energy_j_kg is None
+    assert_closed(incoming, result.remnants)
 
 
 def test_rotating_fragmentation_is_not_relabelled_as_sticking():
-    with pytest.raises(ValueError, match='bound-sticking'):
-        construct_collision(*spinning_pair(3), material='fluid_planets', body_types=(0, 0), allow_bound_sticking=True)
+    with pytest.raises(ValueError, match='gentle-contact'):
+        construct_collision(*spinning_pair(3), material='fluid_planets', body_types=(0, 0), allow_gentle_contacts=True)
 
 
 def test_small_body_calibration_and_asteroid_types_do_not_enable_rotating_sticking():
     a,b = encounter(target=4e18, gamma=.5, density=3000, b=0, speed=1)
     a = replace(a, spin_kg_m2_s=(0, 0, 1))
-    with pytest.raises(ValueError, match='bound-sticking'):
-        construct_collision(a,b, material='planetesimals', body_types=(5,5), allow_bound_sticking=True)
-    with pytest.raises(ValueError, match='bound-sticking'):
-        construct_collision(*spinning_pair(), material='fluid_planets', body_types=(5,5), allow_bound_sticking=True)
+    with pytest.raises(ValueError, match='gentle-contact'):
+        construct_collision(a,b, material='planetesimals', body_types=(5,5), allow_gentle_contacts=True)
+    with pytest.raises(ValueError, match='gentle-contact'):
+        construct_collision(*spinning_pair(), material='fluid_planets', body_types=(5,5), allow_gentle_contacts=True)
 
 
 def test_bound_pair_cannot_exceed_the_spherical_remnant_spin_limit():
@@ -66,8 +69,12 @@ def test_bound_pair_cannot_exceed_the_spherical_remnant_spin_limit():
     inertia = .4 * (a.mass_kg+b.mass_kg) * radius**2
     limit = inertia*math.sqrt(U.G_SI*(a.mass_kg+b.mass_kg)/radius**3)
     a = replace(a, spin_kg_m2_s=(0, 0, .15*limit))
+    from collision_outcomes import merge_spheres
     with pytest.raises(ValueError, match='spin limit'):
-        construct_collision(a, b, material='fluid_planets', body_types=(0, 0), allow_bound_sticking=True)
+        merge_spheres(a, b)
+    result = construct_collision(a, b, material='fluid_planets', body_types=(0, 0), allow_gentle_contacts=True)
+    assert result.classification.regime == 'gentle_rebound' and len(result.remnants) == 2
+    assert_closed((a,b), result.remnants)
 
 
 def test_automatic_second_accretion_retains_spin_heat_and_restart_metadata():
@@ -92,3 +99,38 @@ def test_automatic_second_accretion_retains_spin_heat_and_restart_metadata():
                                collision_budget(incoming).angular_momentum_kg_m2_s, rtol=1e-12)
     restored, _ = E.restore(E.capture(w,E.DEFAULT_CAMERA))
     assert restored.last_impact == w.last_impact and restored.meta == w.meta
+
+
+def test_stable_counterspin_grazing_contact_can_stick_without_a_rotating_mass_fit():
+    a,b = rocky_pair(.8,1.02)
+    limit = a.inertia_kg_m2*math.sqrt(U.G_SI*a.mass_kg/a.radius_m)/a.radius_m
+    a = replace(a,spin_kg_m2_s=(0,0,-.8*limit))
+    result = construct_collision(a,b,material='fluid_planets',body_types=(0,0),allow_gentle_contacts=True)
+    assert len(result.remnants)==1 and result.classification.regime=='gentle_sticking'
+    assert result.classification.disruption_energy_j_kg is None
+    assert_closed((a,b),result.remnants)
+
+
+def test_gentle_fallback_cannot_replace_calibrated_mass_losses():
+    a,b = encounter(target=5.9722e24,gamma=1/9,density=5514,b=.96,speed=1)
+    escape = math.sqrt(2*U.G_SI*(a.mass_kg+b.mass_kg)/(a.radius_m+b.radius_m))
+    incoming = (a,replace(b,velocity_m_s=np.multiply(b.velocity_m_s,1.06*escape)))
+    with pytest.raises(ValueError,match='Multiple remnants'):
+        construct_collision(*incoming,material='fluid_planets',body_types=(0,0),allow_gentle_contacts=True)
+
+
+def test_supercritical_input_spin_is_refused_intact():
+    a,b = rocky_pair(0,.5)
+    limit = a.inertia_kg_m2*math.sqrt(U.G_SI*a.mass_kg/a.radius_m)/a.radius_m
+    a = replace(a,spin_kg_m2_s=(0,0,2*limit))
+    with pytest.raises(ValueError,match='input-spin'):
+        construct_collision(a,b,material='fluid_planets',body_types=(0,0),allow_gentle_contacts=True)
+
+
+def test_uncalibrated_grazing_mass_ratio_uses_only_the_explicit_gentle_policy():
+    incoming = encounter(target=5.9722e24,gamma=.105,density=5514,b=.7,speed=.9)
+    with pytest.raises(ValueError,match='Grazing mass ratio'):
+        construct_collision(*incoming,material='fluid_planets',body_types=(0,0))
+    result = construct_collision(*incoming,material='fluid_planets',body_types=(0,0),allow_gentle_contacts=True)
+    assert result.classification.regime=='bound_sticking' and len(result.remnants)==1
+    assert_closed(incoming,result.remnants)

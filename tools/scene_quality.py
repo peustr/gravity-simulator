@@ -41,7 +41,8 @@ def status(issues):
 def snapshot(world):
     return {
         p.name: dict(
-            mass=p.m, radius=p.r, position=tuple(p.xyz), velocity=tuple(p.vxyz), type=world.meta[p.name]["type"]
+            mass=p.m, radius=world.body_radius(p), position=tuple(p.xyz), velocity=tuple(p.vxyz), type=world.meta[p.name]["type"],
+            point_sample=world.meta[p.name]['type'] == 6 and world.meta[p.name].get('tidal_sample',False)
         )
         for p in world.sim.particles
     }
@@ -86,7 +87,7 @@ def birth_geometry(parent, children):
                 limit=1.05,
             )
         )
-    if max(d + r for d, r in zip(offsets, radii, strict=True)) > 1.05:
+    if max(d + (0 if c.get('point_sample',False) else r) for d, r, c in zip(offsets, radii, children, strict=True)) > 1.05:
         issues.append(issue("source_volume_escape", "New parcel support extends beyond its source volume"))
     masses = [c["mass"] for c in children]
     centre = np.average([c["position"] for c in children], axis=0, weights=masses)
@@ -130,11 +131,14 @@ def assembly_check(lineages):
     )
 
 
-def audit_scene(name, *, seed=42, seconds=12, wall_limit=30):
+def audit_scene(name, *, seed=42, seconds=None, wall_limit=120):
     import world as W
+    import units
     from diagnostics import conservation_report
 
     world = W.World(seed=seed)
+    if seconds is None:
+        seconds = 40 if name == 'formation' else 12
     if name == "smash":
         world.load_collision_demo("disruption")  # The application's default menu path.
     else:
@@ -146,6 +150,8 @@ def audit_scene(name, *, seed=42, seconds=12, wall_limit=30):
         return np.sum([np.array(b["velocity"]) * b["mass"] for b in states.values()], axis=0) if states else np.zeros(3)
 
     momentum_scale = math.fsum(b["mass"] * math.hypot(*b["velocity"]) for b in initial.values())
+    angular_scale = math.fsum(b['mass']*math.hypot(*b['position'])*math.hypot(*b['velocity']) for b in initial.values())
+    angular_scale *= units.MASS_KG*units.LENGTH_M*units.VELOCITY_M_S
     initial_momentum = momentum(initial)
     issues, transitions = [], []
     lineages = {n: {n} for n, b in initial.items() if b["type"] == W.ROCKY}
@@ -172,8 +178,11 @@ def audit_scene(name, *, seed=42, seconds=12, wall_limit=30):
     target = seconds * world.speed
     steps = 0
     events = Counter()
-    for _ in range(round(seconds * 60)):
-        world.advance(1 / 60, min(deadline, time.perf_counter() + 0.05))
+    while world.sim.t < target:
+        # The physical reference interval is independent of the runner's speed.
+        # Finish outstanding work without requesting ever more simulation time.
+        request = min(1 / 60, max(0., (target - world._target_t) / world.speed))
+        world.advance(request, min(deadline, time.perf_counter() + 0.05))
         steps += 1
         if not valid_sample(world.snapshot()):
             issues.append(issue("invalid_sample", "Nonfinite or nonpositive state during the scene", tick=steps))
@@ -215,7 +224,7 @@ def audit_scene(name, *, seed=42, seconds=12, wall_limit=30):
             issue("momentum_change", "Default interval has unexplained momentum change", relative_error=momentum_error)
         )
     budget = conservation_report(world)
-    if budget["current"]["energy_j"] is None:
+    if budget["current"]["energy_j"] is None or budget['relative_conservation_residual'] is None:
         issues.append(issue("unknown_energy_budget", "Physical energy accounting became unavailable", status="BLOCKED"))
     elif budget["relative_conservation_residual"] is not None and abs(budget["relative_conservation_residual"]) > 1e-8:
         issues.append(
@@ -225,6 +234,12 @@ def audit_scene(name, *, seed=42, seconds=12, wall_limit=30):
                 relative_error=budget["relative_conservation_residual"],
             )
         )
+    angular_residual = budget['conservation_residual']['angular_momentum_kg_m2_s']
+    angular_error = None if angular_residual is None else float(np.linalg.norm(angular_residual))/max(angular_scale,1e-300)
+    if angular_error is None:
+        issues.append(issue('unknown_angular_budget','Total angular momentum accounting is unavailable',status='BLOCKED'))
+    elif angular_error > 1e-9:
+        issues.append(issue('angular_momentum_change','Unexplained total angular momentum change',relative_error=angular_error))
     if events[W.EV_IGNITION] or sum(b["type"] == W.STAR for b in final.values()) > len(stars):
         issues.append(issue("unexplained_stellar_birth", "New stars appeared during the default interval"))
     if name in ("solar", "binary"):
@@ -285,6 +300,10 @@ def audit_scene(name, *, seed=42, seconds=12, wall_limit=30):
         seed=seed,
         mass_error=mass_error,
         momentum_error=momentum_error,
+        angular_momentum_error=angular_error,
+        ballistic_samples=budget['current']['ballistic_samples'],
+        ballistic_mass_kg=budget['current']['ballistic_mass_kg'],
+        gas_capture_radius_rs=W.GAS_SINK_RADII,
         final_types=dict(Counter(b["type"] for b in final.values())),
     )
 
@@ -348,7 +367,7 @@ def capture_rendered(project, folder, godot, renderer, seed=42):
                     return dict(status="BLOCKED", reason="Could not verify ownership of the seeded physics server")
             try:
                 completed = subprocess.run(
-                    command, cwd=project, env=env, capture_output=True, text=True, errors="replace", timeout=360
+                    command, cwd=project, env=env, capture_output=True, text=True, errors="replace", timeout=480
                 )
             except subprocess.TimeoutExpired as exc:
                 (folder / "engine.log").write_text(str(exc))

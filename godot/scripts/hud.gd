@@ -22,9 +22,9 @@ const ImpactPanel = preload("res://scripts/impact_panel.gd")
 const PRESETS := [
 	["solar", "Solar system", "A Sun, rocky planets, gas giants and moons at physical orbital distances."],
 	["binary", "Binary stars", "Two suns locked in orbit, with planets on the edge of chaos."],
-	["black_hole", "Black hole feast", "Plunging star: tidal breakup and capture. R: whole system. No viscous accretion model."],
+	["black_hole", "Black hole feast", "Tidal breakup and capture into unresolved inner flow. R: whole system. No viscous disk model."],
 	["smash", "Planet smash", "Two Earths on a collision course."],
-	["formation", "Planet formation", "Late-stage rocky accretion: four approaching embryo pairs in a disk. Double-click an embryo to follow."],
+	["formation", "Planet formation", "A cold concentration in a rocky embryo disk collapses and grows by accretion. Double-click an embryo to follow; inspect the impact card in slow motion."],
 	["galaxies", "Tidal encounter", "Two gravitating particle disks around black holes form tidal tails."],
 	["empty", "Empty space", "Nothing but you and the void."],
 ]
@@ -324,7 +324,7 @@ func _build_top_bar() -> void:
 	for label in ["Save scene...", "Load scene...", "Set restart point", "Restart experiment..."]:
 		file_menu.add_item(label)
 	file_menu.add_separator("Physics")
-	file_menu.add_check_item("Full gravity, including debris", 10)
+	file_menu.add_check_item("Full body gravity and gas backreaction", 10)
 	file_menu.add_check_item("Include all bodies in forecasts", 11)
 	file_menu.add_check_item("Remove bodies beyond the boundary", 12)
 	file_menu.add_check_item("Automatic collision models", 14)
@@ -406,15 +406,18 @@ func show_conservation(report: Dictionary) -> void:
 		var text := "Snapshot: %.3f days · Baseline: %.3f days\n" % [float(current.time_s) / 86400.0, float(report.baseline.time_s) / 86400.0]
 		text += "%d bodies + %d unresolved fragments in %d reservoirs\n" % [current.bodies, current.get("unresolved_fragments",0), current.get("reservoirs",0)]
 		text += "%d unknown inventories · %d tracers · %d removed since baseline\n\n" % [current.unknown_inventories, current.tracers, report.removed_since_baseline]
+		if current.get("ballistic_samples", 0) > 0:
+			text += "%d ballistic gas samples · no mutual self-gravity or pressure\n" % current.ballistic_samples
 		for row in [["Mass", "mass_kg", "kg"], ["Momentum", "momentum_kg_m_s", "kg m/s"], ["Total angular momentum", "angular_momentum_kg_m2_s", "kg m²/s"], ["Total energy", "energy_j", "J"]]:
 			text += "%s: %s\n  Change: %s\n" % [row[0], _budget_value(current[row[1]], row[2]), _budget_value(change[row[1]], row[2])]
 			if current.get("loss_event_count",0) > 0:
 				text += "  After recorded changes: %s\n" % _budget_value(report.conservation_residual[row[1]],row[2])
 		text += "\nOrbital angular momentum: %s\nSpin angular momentum: %s\n" % [_budget_value(current.orbital_angular_momentum_kg_m2_s, "kg m²/s"), _budget_value(current.spin_angular_momentum_kg_m2_s, "kg m²/s")]
-		for row in [["Translational kinetic", "translational_energy_j"], ["Rotational kinetic", "rotational_energy_j"], ["Self-binding", "self_binding_j"], ["Mutual potential", "mutual_potential_j"], ["Internal", "internal_energy_j"], ["Model potential offset", "model_potential_offset_j"]]:
-			text += "%s energy: %s\n" % [row[0], _budget_value(current[row[1]], "J")]
+		for row in [["Translational kinetic", "translational_energy_j"], ["Rotational kinetic", "rotational_energy_j"], ["Self-binding", "self_binding_j"], ["Mutual potential", "mutual_potential_j"], ["Internal", "internal_energy_j"], ["Unresolved accretion", "unresolved_accretion_energy_j"], ["Model potential offset", "model_potential_offset_j"]]:
+			text += "%s energy: %s\n" % [row[0], _budget_value(current.get(row[1]), "J")]
 		text += "Energy change / component scale: %s\n\n" % _budget_value(report.relative_energy_change)
 		text += "Residual after recorded changes / scale: %s\n" % _budget_value(report.relative_conservation_residual)
+		text += "Unresolved accretion angular momentum: %s\n" % _budget_value(current.get("accretion_angular_momentum_kg_m2_s", [0,0,0]), "kg m²/s")
 		if current.get("reservoirs",0) > 0:
 			text += "Shell numerical energy change: %s\nMaximum accumulated model impulse: %s\n" % [_budget_value(current.shell_numerical_energy_error_j,"J"), _budget_value(current.model_omitted_impulse_m_s,"m/s")]
 		text += "Raw changes include edits and removals; adjusted residuals account for recorded changes.\nModel approximation bounds are separate from numerical conservation residuals.\nHomogeneous-sphere binding; excludes radiation and rest-mass energy.\nUnknown inventories, overlapping surfaces or incomplete loss history make affected values unavailable."
@@ -439,9 +442,9 @@ func set_physics(info: Dictionary) -> void:
 	physics_menu.set_item_text(physics_menu.get_item_index(14), "Isolated calibrated experiment" if isolated else "Automatic collision models")
 	physics_menu.set_item_disabled(physics_menu.get_item_index(10), isolated)
 	physics_menu.set_item_disabled(physics_menu.get_item_index(12), isolated)
-	physics_menu.set_item_tooltip(physics_menu.get_item_index(14), "Default: calibrated rocky–rocky impacts; heuristic models for other pairs. Tides and supernovae remain available. Unsupported rocky impacts pause intact, including when tracer gravity is selected. Uncheck for heuristic-only comparisons. Older isolated experiments retain their restrictions until switched off.")
+	physics_menu.set_item_tooltip(physics_menu.get_item_index(14), "Calibrated nonrotating rocky impacts and labelled gentle-contact assumptions; Newtonian gas capture and heuristic models for other pairs. Unsupported encounters pause intact. Uncheck for heuristic-only comparisons.")
 	physics_menu.set_item_text(physics_menu.get_item_index(13), "Tracers: %d · %.6f%% of total mass" % [int(info.get("tracers", 0)), 100.0 * float(info.get("tracer_mass_fraction", 0.0))])
-	physics_menu.set_item_tooltip(physics_menu.get_item_index(10), "Full gravity includes all mutual forces and costs more for large debris clouds. Tracers feel gravity but exert none; their collective mass can matter.")
+	physics_menu.set_item_tooltip(physics_menu.get_item_index(10), "Full mutual gravity for resolved bodies. Ballistic gas samples exert gravity back on them, with no mutual sample self-gravity or pressure. Tracer mode also omits gravitational backreaction.")
 	physics_menu.set_item_tooltip(physics_menu.get_item_index(11), "All-body forecasts use the scene's gravity model. The time budget can shorten the path. Limited forecasts omit weaker perturbers and have no general error bound.")
 	var removed: Dictionary = info.get("removed", {})
 	physics_menu.set_item_tooltip(physics_menu.get_item_index(12), "Removal uses distance from the fixed scene origin, regardless of binding energy. Boundary: %s simulation units; removed bodies: %d. Re-enabling uses 15000 units (250 AU in physical scenes)." % [str(physics_settings.escape_distance), int(removed.get("bodies", 0))])

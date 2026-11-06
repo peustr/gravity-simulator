@@ -69,7 +69,8 @@ func _run() -> void:
 		stage = "watch"
 		var initial_time: float = main.packet_time
 		main.hud.pause_btn.pressed.emit()
-		var end := Time.get_ticks_usec() + 12000000
+		var watch_seconds := 40 if preset == "formation" else 12
+		var end := Time.get_ticks_usec() + watch_seconds*1000000
 		while Time.get_ticks_usec() < end:
 			await process_frame
 		stage = "aftermath"

@@ -20,8 +20,9 @@ a predicted temperature. New physical bodies explicitly start with zero spin and
 zero energy above that reference. Gravity and visual cooling leave these fields
 unchanged.
 
-`inventory=None` means unknown. Heuristic collisions, tides and stellar
-transformations invalidate affected inventories. Missing values are never
+`inventory=None` means unknown. Unaccounted heuristic collisions and stellar
+transformations invalidate affected inventories. Nonrotating tidal sampling
+retains known intrinsic inventories. Missing values are never
 reconstructed from visual heat. Collision records copy incoming states before
 native mutation; unknown inventories or legacy units cannot supply calibrated
 inputs.
@@ -29,7 +30,11 @@ inputs.
 Versions 1–3 load with unknown intrinsic inventories. Version 4 adds per-body
 spin/internal energy; version 5 also saves compact ejecta, ownership IDs, solver,
 error history, explicit-loss ledger and comparison baseline. Version 6 preserves
-tidal volume-sample identities and inherited radii across restart. Legacy-unit bodies
+tidal volume-sample identities and inherited radii across restart. Version 7 adds
+the tidal discretisation energy reference and unresolved accretion inventories.
+Its Newtonian energy convention excludes black-hole and ballistic-node self-binding.
+Older comparisons involving these objects reset; missing intrinsic data remain unknown.
+Legacy-unit bodies
 retain null inventories. Restoration validates a separate world before replacing
 the live one. See [compact ejecta](unresolved-debris.md) and
 [orbital restart semantics](orbital-dynamics.md).
@@ -78,14 +83,21 @@ certificate. It requires known, nonrotating inputs in the published domain.
 then updates bodies and invalidates contact, forecast and partition caches.
 Unsupported inputs pause with an explanation and leave incoming bodies intact.
 A constructed remnant can carry spin. Automatic mode additionally admits
-**bound sticking** for known, rotating rocky inputs in the fluid-planet size,
-density and contact envelope. The zero-spin reference must be a merger; relative
-orbital kinetic plus incoming rotational energy must remain below mutual binding.
+**conditional sticking** for known rocky inputs where a calibrated construction
+is unavailable, including incoming spin. This uses the fluid-planet size/density
+envelope, speed below 1.08 times mutual escape, and initially subcritical spins.
+The bound subset is labelled `bound_sticking`; other accepted contacts are
+`gentle_sticking`. No calibrated rotating thresholds are reported. Calibrated
+mass-loss regimes cannot be replaced by a sticking fallback.
 `merge_spheres` then enforces energy availability and the spherical spin limit.
 This is a perfectly sticking prescription, not a rotating-impact calibration or
-a proof of fluid-shape stability. The UI identifies it separately. Faster
-rotating, grazing outcomes outside this branch and excessive angular momentum
-remain unsupported. Explicit isolated modes retain the nonrotating calibration.
+a proof of fluid-shape stability. A gentle contact that cannot form a feasible
+sphere can retain both bodies through an elastic central impulse. This
+`gentle_rebound` prescription requires speed below 1.08 times mutual escape,
+retains masses/radii/spins, and makes no escape or calibrated mass-law claim.
+Its unchanged positions/masses leave external potential unchanged, so the
+isolated mass-redistribution bound is unnecessary. Faster rotating outcomes remain
+unsupported. Explicit isolated modes retain the nonrotating calibration.
 
 ### Contact reconstruction
 
@@ -129,6 +141,18 @@ that region. With `H = Σ 2Gmₖ/(Dₖ−R)³`, require `2RH/(GM/r_c²) ≤ 1e-4
 The exact incoming-minus-outgoing external potential is credited/debited to
 internal energy by mass. Its magnitude must be at most `1e-4` of the larger of
 relative kinetic energy and `Gm₁m₂/r_c`; all internal energies remain nonnegative.
+
+Automatic mode also admits explicitly prescribed local contacts. A single
+mass-conserving spherical aggregate can close the exact external potential work
+without the isolated-layout bound, provided its internal energy stays
+nonnegative and `(L/I)² + H < GM/R³`. Here H bounds the external acceleration
+gradient across the entire remnant. This is a necessary surface-retention
+condition, not a fluid equilibrium calculation; the result is labelled
+`gentle_sticking` or `bound_sticking`, without calibrated rotating mass claims.
+An intact hit-and-run can instead apply its normal impulse at the native sampled
+positions: unchanged masses/positions leave external potential unchanged. This
+is labelled `contact_rebound`, without an isolated escape certificate. Calibrated
+mass-loss outcomes still require the isolated-layout bounds above.
 
 These are instantaneous approximation limits, not long-term trajectory or
 empirical remnant-mass error bounds. Subsequent gravity can deflect or recapture

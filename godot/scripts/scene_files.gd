@@ -126,6 +126,7 @@ func _on_message(message: Dictionary) -> void:
 		return
 	if action in ["load_scene", "restart"]:
 		main.restore_scene_view(message.camera, int(message.version))
+		main.apply_physics_info(message.get("physics", {}))
 	var labels := {"save_scene": "Scene saved. Restart point updated.",
 		"load_scene": "Scene loaded. Restart point updated.",
 		"checkpoint": "Restart point set for this session.", "restart": "Experiment restarted."}

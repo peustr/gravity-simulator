@@ -23,6 +23,9 @@ def physical_totals(world):
     if not all(np.isfinite(a).all() for a in (m, r, x, v)) or np.any(m <= 0) or np.any(r <= 0):
         raise ValueError('Conservation report requires finite state and positive masses/radii')
     inventories = [world.meta[name]['inventory'] for name in snap['names']]
+    samples = np.array([world.meta[name]['type'] == 6 and world.meta[name].get('tidal_sample', False)
+                        for name in snap['names']], dtype=bool)
+    compact = np.array([world.meta[name]['type'] == 4 for name in snap['names']], dtype=bool)
     unknown = sum(s is None for s in inventories)
     spin, rotational, internal = None, None, None
     if not unknown:
@@ -33,17 +36,21 @@ def physical_totals(world):
     mutual = 0.0
     for i in range(len(m) - 1):
         distance = np.linalg.norm(x[i + 1:] - x[i], axis=1)
-        if np.any(distance < (r[i] + r[i + 1:]) * (1 - 1e-12)):
+        included = ~(samples[i] & samples[i+1:])
+        if np.any(((distance == 0) & included) | ((distance < (r[i] + r[i + 1:]) * (1 - 1e-12))
+                                   & ~samples[i] & ~samples[i + 1:])):
             mutual = None
             break
-        mutual -= float(units.G_SI * np.sum(m[i] * m[i + 1:] / distance))
+        mutual -= float(units.G_SI * np.sum(m[i] * m[i + 1:][included] / distance[included]))
     orbital = (m[:, None] * np.cross(x, v)).sum(axis=0)
     components = dict(translational_energy_j=float(.5 * np.sum(m[:, None] * v * v)),
-                      rotational_energy_j=rotational, self_binding_j=float(-.6 * units.G_SI * np.sum(m * m / r)),
+                      rotational_energy_j=rotational, self_binding_j=float(-.6 * units.G_SI * np.sum((m * m / r)[~samples & ~compact])),
                       mutual_potential_j=mutual, internal_energy_j=internal)
     momentum = (m[:, None] * v).sum(axis=0)
     mass = float(m.sum())
-    components['model_potential_offset_j'] = 0.0
+    components['model_potential_offset_j'] = world.tidal_potential_offset_j
+    components['unresolved_accretion_energy_j'] = math.fsum(s['energy_j'] for s in world.accretion_flows.values())
+    accretion_angular = np.sum([s['angular_momentum_kg_m2_s'] for s in world.accretion_flows.values()], axis=0) if world.accretion_flows else np.zeros(3)
     for shell in world.shells:
         mass += shell.mass_kg
         p = shell.mass_kg*np.array(shell.velocity_m_s)
@@ -59,7 +66,9 @@ def physical_totals(world):
         components['mutual_potential_j'] += shell_potential_energy(world.shells,m,x)
     complete = all(value is not None for value in components.values())
     return dict(time_s=float(world.sim.t * units.TIME_S), bodies=len(m), unknown_inventories=unknown,
-                tracers=sum(world.is_light(world.meta[n]['type'], mass) for n, mass in
+                ballistic_samples=int(samples.sum()), ballistic_mass_kg=float(m[samples].sum()),
+                ballistic_backreaction=world.settings['gravity']=='full',
+                tracers=sum(not world.exerts_gravity(n, mass) for n, mass in
                             zip(snap['names'], snap['m'], strict=True)),
                 removed_bodies=world.removed['bodies'], mass_kg=mass,
                 unresolved_fragments=sum(s.fragment_count for s in world.shells),reservoirs=len(world.shells),
@@ -72,7 +81,8 @@ def physical_totals(world):
                 momentum_kg_m_s=momentum.tolist(),
                 orbital_angular_momentum_kg_m2_s=orbital.tolist(),
                 spin_angular_momentum_kg_m2_s=None if spin is None else spin.tolist(),
-                angular_momentum_kg_m2_s=None if spin is None else (orbital + spin).tolist(),
+                accretion_angular_momentum_kg_m2_s=accretion_angular.tolist(),
+                angular_momentum_kg_m2_s=None if spin is None else (orbital + spin + accretion_angular).tolist(),
                 **components, energy_j=math.fsum(components.values()) if complete else None,
                 energy_scale_j=math.fsum(abs(v) for v in components.values()) if complete else None)
 
@@ -236,7 +246,7 @@ def totals(world):
         if np.any(distance == 0):
             raise ValueError('Coincident centres have undefined potential energy')
         potential -= float(world.sim.G * np.sum(m[i] * m[i + 1:] / distance))
-    tracers = sum(world.is_light(world.meta[n]['type'], mass)
+    tracers = sum(not world.exerts_gravity(n, mass)
                   for n, mass in zip(snap['names'], m, strict=True))
     mass = float(m.sum())
     energy_unit = units.MASS_KG*units.VELOCITY_M_S**2

@@ -39,7 +39,7 @@ def test_tidal_birth_is_local_and_does_not_inject_bulk_motion(kind, mass, capaci
     assert math.fsum(p['mass'] for p in children) == pytest.approx(mass, rel=1e-15)
     assert math.fsum(p['radius']**3 for p in children) == pytest.approx(parent['radius']**3, rel=1e-14)
     assert all(p['velocity'] == parent['velocity'] for p in children)
-    assert all(m['inventory'] is None for n, m in w.meta.items() if n != '1')
+    assert all(m['inventory'] is not None for n, m in w.meta.items() if n != '1')
     data = E.capture(w, E.DEFAULT_CAMERA)
     restored, _ = E.restore(data)
     assert restored.meta == w.meta
@@ -70,10 +70,13 @@ def test_parcel_accretion_preserves_density_instead_of_resetting_cloud_radius():
     gas, rock = w.particle('1'), w.particle('2')
     w.meta['1']['tidal_sample'] = True
     gas.r = .01
-    initial_density = gas.m / gas.r**3
+    w._repartition()
+    gas, rock = w.particle('1'), w.particle('2')
+    initial_density = gas.m / w.body_radius(gas)**3
     w._merge_heuristic(gas, rock)
     w._promote('1', gas)
-    assert gas.m / gas.r**3 == pytest.approx(initial_density, rel=1e-14)
+    assert gas.r == 0
+    assert gas.m / w.body_radius(gas)**3 == pytest.approx(initial_density, rel=1e-14)
     assert w.meta['1']['type'] == W.PLASMA and not w.events
 
 
@@ -112,11 +115,12 @@ def test_coalescing_solid_tidal_debris_does_not_restart_a_disruption_cycle():
 
 
 @pytest.mark.parametrize('capacity', [1, 2])
-def test_encounter_framing_survives_replacement_and_limited_capacity(capacity):
+@pytest.mark.parametrize('preset', ['black_hole','galaxies'])
+def test_encounter_framing_survives_replacement_and_limited_capacity(capacity,preset):
     w = W.World(max_bodies=capacity)
     w.add_body(W.ASTEROID, 1, (10, 0, 0), (0, 0, 0))
-    hint = w.load_preset('black_hole')
-    assert hint['speed'] == .005
+    hint = w.load_preset(preset)
+    assert hint['speed'] == W.PRESET_SPEEDS[preset]
     assert all(math.dist(p.xyz, hint['camera']['focus']) < hint['camera']['distance']*.5
                for p in w.sim.particles)
 

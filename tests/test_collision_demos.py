@@ -112,7 +112,7 @@ def test_bad_saved_encounter_history_is_rejected(fault):
 
 
 @pytest.mark.parametrize("seed", [1, 42, 2026])
-def test_formation_grows_embryos_in_orbit_and_survives_restart(seed):
+def test_formation_initial_conditions_and_follow_survive_restart(seed):
     w = W.World(seed=seed)
     w.load_preset("binary")  # Body IDs continue across scenario switches.
     hint = w.load_preset("formation")
@@ -123,26 +123,40 @@ def test_formation_grows_embryos_in_orbit_and_survives_restart(seed):
     followed = next(p.name for p in w.sim.particles if w.meta[p.name]['type'] == W.ROCKY)
     camera = dict(camera, follow=int(followed))  # Follow a selected embryo before saving.
     initial_mass = sum(p.m for p in w.sim.particles if w.meta[p.name]["type"] == W.ROCKY)
+    assert all(math.dist(a.xyz,b.xyz)>a.r+b.r for i,a in enumerate(w.sim.particles) for b in list(w.sim.particles)[i+1:])
     initial_count = w.sim.N
     radius = w.particle(followed).r
     conservation_report(w, reset=True)
     w, camera = E.restore(E.capture(w, camera))
     assert str(camera["follow"]) == followed
-    # Twelve seconds of default playback, without waiting on wall time.
-    w.speed = 1
-    for _ in range(600):
-        w.advance(0.0001, time.perf_counter() + 0.1)
-    assert not w.paused and not w.notices
-    assert w.sim.N == initial_count - 4
-    assert w.particle(followed).m == pytest.approx(0.00072, rel=1e-12)
-    assert w.particle(followed).r / radius == pytest.approx(1.8 ** (1 / 3), rel=1e-12)
-    assert sum(p.m for p in w.sim.particles if w.meta[p.name]["type"] == W.ROCKY) == pytest.approx(
-        initial_mass, rel=1e-14
-    )
-    assert abs(conservation_report(w)["relative_conservation_residual"]) < 1e-9
-    restored, _ = E.restore(E.capture(w, camera))
-    np.testing.assert_array_equal(restored.snapshot()["m"], w.snapshot()["m"])
-    assert restored.last_impact == w.last_impact
+    assert initial_count == 65 and not w.paused
+    assert w.particle(followed).r == radius
+    assert sum(p.m for p in w.sim.particles if w.meta[p.name]["type"] == W.ROCKY) == initial_mass
+
+
+def test_cold_disk_grows_across_generations_with_closed_budgets():
+    w = W.World(seed=42)
+    w.load_preset('formation')
+    lineages = {p.name: {p.name} for p in w.sim.particles if w.meta[p.name]['type'] == W.ROCKY}
+    initial_mass = sum(p.m for p in w.sim.particles)
+    conservation_report(w, reset=True)
+    deadline = time.perf_counter() + 90
+    while w.sim.t < 40 - 1e-9:
+        assert time.perf_counter() < deadline
+        w.advance(min(1/60, max(0., (40-w._target_t)/w.speed)), time.perf_counter()+.05)
+        for e in w.events:
+            if e[0] == W.EV_MERGE:
+                a,b = str(int(e[6])),str(int(e[7]))
+                if a in lineages and b in lineages:
+                    lineages[a] |= lineages.pop(b)
+        w.events.clear()
+        assert not w.paused and not w.notices
+    assert max(len(s) for n,s in lineages.items() if w.particle(n) is not None) >= 3
+    assert sum(p.m for p in w.sim.particles) == pytest.approx(initial_mass, rel=1e-14)
+    assert abs(conservation_report(w)["relative_conservation_residual"]) < 1e-8
+    restored, _ = E.restore(E.capture(w, E.DEFAULT_CAMERA))
+    assert restored.meta == w.meta and restored.last_impact == w.last_impact
+    np.testing.assert_array_equal(restored.snapshot()['m'],w.snapshot()['m'])
 
 
 @pytest.mark.parametrize("follow", [True, -2, 1.5])

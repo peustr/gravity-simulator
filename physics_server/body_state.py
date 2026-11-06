@@ -8,14 +8,14 @@ import units
 
 @dataclass(frozen=True)
 class GravitySource:
-    """External spherical gravity geometry; no claim about spin or heat."""
+    """External gravity geometry; zero radius denotes a point mass."""
     mass_kg: float
     radius_m: float
     position_m: tuple[float, float, float]
 
     def __post_init__(self):
-        if not all(math.isfinite(v) and v > 0 for v in (self.mass_kg, self.radius_m)):
-            raise ValueError('External gravity mass and radius must be finite and positive')
+        if not math.isfinite(self.mass_kg) or self.mass_kg <= 0 or not math.isfinite(self.radius_m) or self.radius_m < 0:
+            raise ValueError('External gravity mass must be positive and radius nonnegative')
         object.__setattr__(self, 'position_m', _vector(self.position_m))
 
 
@@ -38,13 +38,13 @@ class BodyInventory:
         object.__setattr__(self, 'internal_energy_j', energy)
 
 
-def capture_sphere(particle, inventory, unit_system):
+def capture_sphere(particle, inventory, unit_system, *, radius_m=None):
     """Copy a live particle; unknown inventories/legacy units have no SI state."""
     if unit_system != units.SYSTEM or inventory is None:
         return None
     try:
         return SphereState(
-            particle.m * units.MASS_KG, particle.r * units.LENGTH_M,
+            particle.m * units.MASS_KG, particle.r * units.LENGTH_M if radius_m is None else radius_m,
             tuple(x * units.LENGTH_M for x in particle.xyz),
             tuple(v * units.VELOCITY_M_S for v in particle.vxyz),
             inventory.spin_kg_m2_s, inventory.internal_energy_j)

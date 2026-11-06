@@ -9,7 +9,7 @@ import math
 import numpy as np
 
 from collision_outcomes import RemnantSpec, SphereState, _mutual_potential, allocate_remnants, merge_spheres
-from disruption import ContactOutcome, classify_contact
+from disruption import ContactOutcome, classify_contact, _supported_contact
 from impacts import Impact
 from units import G_SI
 from debris_shell import symmetric_directions, form_shell
@@ -141,7 +141,7 @@ def _resolved_layout(contact, classification):
     return tuple(layout)
 
 
-def _intact_hit_and_run(a, b):
+def intact_hit_and_run(a, b):
     """Local frictionless rebound; retain half the normal kinetic energy.
 
     Restitution and heat partition are prescriptions, not calibrated ejecta
@@ -160,40 +160,101 @@ def _intact_hit_and_run(a, b):
     return tuple(sorted(remnants, key=lambda s: s.mass_kg, reverse=True))
 
 
-def couple_external_gravity(incoming, remnants, external):
-    """Account for a locally isolated impact in a weak surrounding field.
+def couple_external_gravity(incoming, remnants, external, *, contact_impulse=False, spherical_sticking=False):
+    """Close external work for isolated layouts, local impulses or a sphere.
 
-    Bound the instantaneous differential acceleration over the whole construction
-    region, then debit/credit the exact external potential change to internal
-    energy. This does not certify long-term escape in the external field.
+    Isolated layouts retain the 1e-4 field bound. Prescribed spherical sticking
+    instead requires spin plus tidal surface retention. Neither certifies
+    long-term escape or fluid-shape stability. Impulses retain masses/positions.
     """
     external = tuple(external)
-    if not external:
+    if contact_impulse and (spherical_sticking or len(remnants) != 2 or any(
+            s.mass_kg != r.mass_kg or s.radius_m != r.radius_m
+            or tuple(s.position_m) != tuple(r.position_m)
+            for s, r in zip(incoming, remnants, strict=True))):
+        raise ValueError('Contact impulse must retain both bodies at their sampled positions')
+    if contact_impulse:
+        return remnants  # Identical masses/positions: external potential is identical.
+    if not external and not spherical_sticking:
         return remnants
     a, b = incoming
     total = a.mass_kg + b.mass_kg
-    centre = np.array(a.position_m) + b.mass_kg / total * np.subtract(b.position_m, a.position_m)
-    extent = max(math.dist(s.position_m, centre) + s.radius_m for s in (*incoming, *remnants))
-    gradient = 0.0
-    for source in external:
-        clearance = math.dist(source.position_m, centre) - extent
-        if clearance <= source.radius_m:
-            raise ValueError('External body intersects the impact construction region')
-        # The operator norm of the point-mass acceleration gradient is 2GM/r^3.
-        gradient += 2 * G_SI * source.mass_kg / clearance**3
     contact = a.radius_m + b.radius_m
-    ratio = 2 * extent * gradient / (G_SI * total / contact**2)
-    if not math.isfinite(ratio) or ratio > 1e-4:
-        raise ValueError('External tidal acceleration exceeds the isolated-impact limit (1e-4)')
+    if spherical_sticking:
+        if len(remnants) != 1 or not math.isclose(remnants[0].mass_kg,total,rel_tol=1e-12):
+            raise ValueError('Spherical sticking requires one mass-conserving remnant')
+        remnant = remnants[0]
+        gradient = 0.
+        for source in external:
+            clearance = math.dist(source.position_m,remnant.position_m)-remnant.radius_m
+            if clearance <= source.radius_m:
+                raise ValueError('External body intersects the spherical remnant')
+            gradient += 2*G_SI*source.mass_kg/clearance**3
+        centrifugal = (math.hypot(*remnant.spin_kg_m2_s)/remnant.inertia_kg_m2)**2
+        if centrifugal+gradient >= G_SI*remnant.mass_kg/remnant.radius_m**3:
+            raise ValueError('Spin plus external tides exceed spherical surface retention')
+    else:
+        centre = np.array(a.position_m) + b.mass_kg / total * np.subtract(b.position_m, a.position_m)
+        extent = max(math.dist(s.position_m, centre) + s.radius_m for s in (*incoming, *remnants))
+        gradient = 0.0
+        for source in external:
+            clearance = math.dist(source.position_m, centre) - extent
+            if clearance <= source.radius_m:
+                raise ValueError('External body intersects the impact construction region')
+            # The operator norm of the point-mass acceleration gradient is 2GM/r^3.
+            gradient += 2 * G_SI * source.mass_kg / clearance**3
+        ratio = 2 * extent * gradient / (G_SI * total / contact**2)
+        if not math.isfinite(ratio) or (ratio > 1e-4 and not contact_impulse):
+            raise ValueError('External tidal acceleration exceeds the isolated-impact limit (1e-4)')
     correction = math.fsum([_mutual_potential(s, source) for source in external for s in incoming] +
                            [-_mutual_potential(s, source) for source in external for s in remnants])
     relative_energy = .5 * a.mass_kg * (b.mass_kg / total) * math.dist(a.velocity_m_s, b.velocity_m_s)**2
     energy_scale = max(relative_energy, G_SI * a.mass_kg / contact * b.mass_kg)
-    if not math.isfinite(correction) or abs(correction) > 1e-4 * energy_scale:
+    if not math.isfinite(correction) or (abs(correction) > 1e-4 * energy_scale and not spherical_sticking):
         raise ValueError('External potential correction exceeds the isolated-impact limit (1e-4)')
     # A negative inventory is rejected by SphereState before any live mutation.
     return tuple(replace(s, internal_energy_j=s.internal_energy_j + correction * (s.mass_kg / total))
                  for s in remnants)
+
+
+def _gentle_impact(a, b, material, body_types):
+    impact = _impact(a,b)
+    _supported_contact(impact,material,body_types)
+    if (material != 'fluid_planets' or tuple(body_types) != (0,0)
+            or impact.speed >= 1.08*impact.escape_speed
+            or any(math.hypot(*s.spin_kg_m2_s) >= s.inertia_kg_m2*math.sqrt(G_SI*s.mass_kg/s.radius_m)/s.radius_m for s in (a,b))):
+        raise ValueError('Outside the gentle-contact speed, material or input-spin domain')
+    surface_contact(a,b)  # A valid earlier surface state must exist.
+    return impact
+
+
+def _gentle_merger(a,b,material,body_types):
+    impact = _gentle_impact(a,b,material,body_types)
+    contact = surface_contact(a,b)
+    impact = _impact(*contact)
+    remnant = merge_spheres(*contact)
+    bound = impact.kinetic_energy+sum(s.rotational_energy_j for s in contact) < G_SI*a.mass_kg*b.mass_kg/impact.separation
+    classification = ContactOutcome('bound_sticking' if bound else 'gentle_sticking', remnant.mass_kg,
+                                    0.,None,impact.specific_energy,None,None)
+    return ConstructedCollision(classification,contact,(remnant,),None)
+
+
+def gentle_rebound(a, b, *, material, body_types):
+    """Conditional smooth-sphere rebound for a gentle rocky contact.
+
+    Elastic normal restitution retains both masses/radii and incoming spins.
+    The central impulse conserves angular momentum and kinetic energy without
+    inventing an uncalibrated dissipation coefficient. This is a prescription, not a
+    rotating-impact calibration or an escape claim. Bound pairs remain live.
+    """
+    contact = (a, b)
+    impact = _gentle_impact(a, b, material, body_types)
+    impulse = -2 * impact.reduced_mass * impact.radial_speed * np.array(impact.normal)
+    remnants = tuple(replace(s, velocity_m_s=np.add(s.velocity_m_s, sign * impulse / s.mass_kg))
+                     for s, sign in zip(contact, (-1, 1), strict=True))
+    classification = ContactOutcome('gentle_rebound', max(a.mass_kg, b.mass_kg), 0., None,
+                                    impact.specific_energy, None, None, min(a.mass_kg, b.mass_kg))
+    return ConstructedCollision(classification, contact, remnants, None)
 
 
 @dataclass(frozen=True)
@@ -207,7 +268,7 @@ class ConstructedCollision:
 
 def construct_collision(a: SphereState, b: SphereState, *, material: str, body_types: tuple[int, int],
                         layout=None, expansion_fraction: float | None = None,
-                        resolved_policy: bool = False, allow_bound_sticking: bool = False) -> ConstructedCollision:
+                        resolved_policy: bool = False, allow_gentle_contacts: bool = False) -> ConstructedCollision:
     """Construct in the pair's rest frame to resolve contact at orbital distances."""
     fraction = b.mass_kg / (a.mass_kg + b.mass_kg)
     separation = np.subtract(b.position_m, a.position_m)
@@ -216,9 +277,28 @@ def construct_collision(a: SphereState, b: SphereState, *, material: str, body_t
     bulk = np.array(a.velocity_m_s) + fraction * relative
     local = tuple(replace(s, position_m=weight * separation, velocity_m_s=weight * relative)
                   for s, weight in ((a, -fraction), (b, 1 - fraction)))
-    result = _construct_collision(*local, material=material, body_types=body_types, layout=layout,
-                                  expansion_fraction=expansion_fraction, resolved_policy=resolved_policy,
-                                  allow_bound_sticking=allow_bound_sticking)
+    try:
+        result = _construct_collision(*local, material=material, body_types=body_types, layout=layout,
+                                      expansion_fraction=expansion_fraction, resolved_policy=resolved_policy)
+    except ValueError as original:
+        if not allow_gentle_contacts or layout is not None or expansion_fraction is not None:
+            raise
+        if not any(component for state in local for component in state.spin_kg_m2_s):
+            # A failed allocation must not overwrite calibrated mass losses.
+            try:
+                reference = classify_contact(_impact(*surface_contact(*local)), unit_system='si',
+                                             material=material, body_types=body_types)
+            except ValueError:
+                reference = None
+            if reference is not None and reference.regime not in ('merging','graze_and_merge'):
+                raise original from None
+        try:
+            result = _gentle_merger(*local,material,body_types)
+        except ValueError:
+            try:
+                return gentle_rebound(a,b,material=material,body_types=body_types)
+            except ValueError as unsupported:
+                raise ValueError(f'{original}; gentle-contact fallback: {unsupported}') from None
 
     def translated(states):
         return tuple(replace(s, position_m=np.add(s.position_m, centre),
@@ -229,12 +309,10 @@ def construct_collision(a: SphereState, b: SphereState, *, material: str, body_t
 
 def _construct_collision(a: SphereState, b: SphereState, *, material: str, body_types: tuple[int, int],
                          layout=None, expansion_fraction: float | None = None,
-                         resolved_policy: bool = False, allow_bound_sticking: bool = False) -> ConstructedCollision:
+                         resolved_policy: bool = False) -> ConstructedCollision:
     """Classify a contact and construct only a compatible, feasible outcome.
 
-    Calibrated inputs are nonrotating. An explicit bound-sticking policy admits
-    conditional rotating mergers, with no calibrated disruption threshold.
-    Merging needs no
+    Calibrated inputs are nonrotating. Merging needs no
     layout or energy fraction. Other regimes require both; layout order is
     largest remnant, runner (hit-and-run only), then debris. Fragment allocations
     retain mean density; intact runners retain their individual radii. Separated
@@ -243,35 +321,18 @@ def _construct_collision(a: SphereState, b: SphereState, *, material: str, body_
     """
     if resolved_policy and (layout is not None or expansion_fraction is not None):
         raise ValueError('Resolved policy cannot be combined with a prescribed allocation')
-    rotating = any(component != 0 for s in (a, b) for component in s.spin_kg_m2_s)
-    if rotating and not allow_bound_sticking:
+    if any(component for state in (a,b) for component in state.spin_kg_m2_s):
         raise ValueError('Calibrated construction requires nonrotating inputs')
-    contact = surface_contact(a, b)
-    classification = classify_contact(_impact(*contact), unit_system='si', material=material, body_types=body_types)
-    if rotating:
-        # A conditional sticking closure, not an extension of the nonrotating
-        # mass law. Require an already bound pair even after including spin.
-        impact = _impact(*contact)
-        relative_energy = .5 * impact.reduced_mass * impact.speed**2
-        binding = G_SI * a.mass_kg * b.mass_kg / impact.separation
-        if (material != 'fluid_planets' or tuple(body_types) != (0, 0)
-                or classification.regime not in ('merging', 'graze_and_merge')
-                or relative_energy + sum(s.rotational_energy_j for s in contact) >= binding):
-            raise ValueError('Rotating contact is outside the bound-sticking approximation; nonrotating calibration required')
-        if layout is not None or expansion_fraction is not None:
-            raise ValueError('Bound sticking does not accept a fragment allocation')
-        remnant = merge_spheres(*contact)
-        classification = replace(classification, regime='bound_sticking',
-                                 largest_remnant_mass_kg=remnant.mass_kg, remaining_mass_kg=0.,
-                                 runner_mass_kg=0., disruption_energy_j_kg=None, merging_speed_m_s=None)
-        return ConstructedCollision(classification, contact, (remnant,), None)
+    contact = surface_contact(a,b)
+    classification = classify_contact(_impact(*contact),unit_system='si',material=material,body_types=body_types)
     if classification.regime in ('merging', 'graze_and_merge'):
         if layout is not None or expansion_fraction is not None:
             raise ValueError('A classified merger does not accept a fragment layout or energy split')
-        return ConstructedCollision(classification, contact, (merge_spheres(*contact),), None)
+        remnant = merge_spheres(*contact)
+        return ConstructedCollision(classification, contact, (remnant,), None)
     if resolved_policy:
         if classification.regime == 'hit_and_run' and classification.remaining_mass_kg == 0:
-            remnants = _intact_hit_and_run(*contact)
+            remnants = intact_hit_and_run(*contact)
             return ConstructedCollision(classification, contact, remnants, remnant_escape_check(remnants))
         layout, expansion_fraction = _resolved_layout(contact, classification), .5
     if layout is None or expansion_fraction is None:
@@ -308,3 +369,40 @@ def _construct_collision(a: SphereState, b: SphereState, *, material: str, body_
     else:
         escape = remnant_escape_check(remnants)
     return ConstructedCollision(classification, contact, remnants, escape, central)
+
+
+def couple_collision(incoming, outcome, external, *, material, body_types, allow_gentle_contacts=False):
+    """Couple contact prescriptions; never overwrite calibrated mass losses."""
+    external = tuple(external)
+    active = allow_gentle_contacts and material == 'fluid_planets' and tuple(body_types) == (0,0)
+    regime = outcome.classification.regime
+
+    def prescribed(tag, states):
+        return replace(outcome, remnants=states, escape_certificate=None,
+                       classification=replace(outcome.classification, regime=tag,
+                                              disruption_energy_j_kg=None, merging_speed_m_s=None,
+                                              interacting_fraction=None))
+
+    if regime == 'gentle_rebound':
+        return replace(outcome,remnants=couple_external_gravity(incoming,outcome.remnants,external,contact_impulse=True))
+    if not (active and regime in ('bound_sticking','gentle_sticking')):
+        try:
+            return replace(outcome,remnants=couple_external_gravity(incoming,outcome.remnants,external))
+        except ValueError:
+            if not active:
+                raise
+            if regime == 'hit_and_run' and outcome.classification.remaining_mass_kg == 0:
+                states = intact_hit_and_run(*incoming)
+                states = couple_external_gravity(incoming,states,external,contact_impulse=True)
+                return prescribed('contact_rebound',states)
+            if len(outcome.remnants) != 1 or regime not in ('merging','graze_and_merge'):
+                raise
+    try:
+        states = couple_external_gravity(incoming,outcome.remnants,external,spherical_sticking=True)
+    except ValueError as unsupported:
+        try:
+            rebound = gentle_rebound(*incoming,material=material,body_types=body_types)
+        except ValueError:
+            raise unsupported from None
+        return replace(rebound,remnants=couple_external_gravity(incoming,rebound.remnants,external,contact_impulse=True))
+    return prescribed(regime if regime in ('bound_sticking','gentle_sticking') else 'gentle_sticking',states)

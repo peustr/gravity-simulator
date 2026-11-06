@@ -3,6 +3,7 @@ extends PanelContainer
 
 signal replay_requested(case: String)
 signal budgets_requested
+signal inspect_requested(id: int)
 
 var demo := {}
 var report := {}
@@ -10,6 +11,7 @@ var title: Label
 var details: Label
 var replay: Button
 var model: Label
+var inspect: Button
 
 
 func _ready() -> void:
@@ -39,6 +41,11 @@ func _ready() -> void:
 	budgets.focus_mode = Control.FOCUS_NONE
 	budgets.pressed.connect(func(): budgets_requested.emit())
 	buttons.add_child(budgets)
+	inspect = Button.new()
+	inspect.text = "Inspect · slow motion"
+	inspect.focus_mode = Control.FOCUS_NONE
+	inspect.pressed.connect(func(): inspect_requested.emit(int(report.get("survivor_id", -1))))
+	buttons.add_child(inspect)
 	hide()
 
 
@@ -48,8 +55,13 @@ func set_state(context, outcome) -> void:
 	visible = not demo.is_empty() or not report.is_empty()
 	if not visible:
 		return
-	model.text = "Bound sticking assumption · conserved spin/energy" if report.get("regime") == "bound_sticking" else "Calibrated masses · prescribed rebound/ejecta"
+	match report.get("regime"):
+		"bound_sticking", "gentle_sticking": model.text = "Sticking assumption · conserved spin/energy"
+		"contact_rebound": model.text = "Contact impulse · both bodies retained"
+		"gentle_rebound": model.text = "Elastic contact assumption · both bodies retained"
+		_: model.text = "Calibrated masses · prescribed rebound/ejecta"
 	replay.visible = not demo.is_empty()
+	inspect.visible = report.has("survivor_id")
 	title.text = "Planet smash · " + str(demo.case).capitalize().replace("_", " ") if not demo.is_empty() else "Last solid impact"
 	var source: Dictionary = report if not report.is_empty() else demo
 	details.text = "Contact: %.2f km/s · %.1f°\n" % [float(source.speed_m_s)/1000.0, float(source.angle_deg)]

@@ -49,6 +49,15 @@ def test_parcel_centres_alone_do_not_establish_local_birth():
     assert 'source_volume_escape' in {i['code'] for i in birth_geometry(parent, children)}
 
 
+def test_point_volume_weights_are_not_solid_extents_but_must_remain_local():
+    parent,children=local_breakup()
+    for child,x in zip(children,(-.8,.8),strict=True):
+        child.update(position=(x,0,0),point_sample=True)
+    assert not birth_geometry(parent,children)
+    children[0]['position']=(-2,0,0)
+    assert 'nonlocal_birth' in {i['code'] for i in birth_geometry(parent,children)}
+
+
 def test_independent_pair_collisions_do_not_count_as_multigeneration_formation():
     assert assembly_check({"a": {"a", "b"}, "c": {"c", "d"}})
     assert not assembly_check({"a": {"a", "b", "c"}})
