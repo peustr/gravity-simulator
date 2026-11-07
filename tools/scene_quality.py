@@ -620,9 +620,12 @@ def assess_rendered(data, *, engine_error=False, evidence_root=None):
             )
         found = problems[first_problem:]
         assessed.append(dict(scene, status=status(found), issues=[p["code"] for p in found]))
-    control = data.get("control_evidence", {}).get("formation_accretion")
-    if evidence_root is not None and not _png_exists(evidence_root, control, resolution):
-        problems.append(issue("missing_control_evidence", "Formation inspection image missing", status="BLOCKED"))
+    for key in ("formation_accretion", "solar_spin", "lunar_tides"):
+        control = data.get("control_evidence", {}).get(key)
+        if evidence_root is not None and not _png_exists(evidence_root, control, resolution):
+            problems.append(
+                issue("missing_control_evidence", "Required inspection image missing", status="BLOCKED", control=key)
+            )
     return dict(data, scenes=assessed, status=status(problems), issues=problems)
 
 

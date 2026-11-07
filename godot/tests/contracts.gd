@@ -9,6 +9,7 @@ const MotionTests = preload("res://tests/motion.gd")
 const ConnectionTests = preload("res://tests/connection.gd")
 const CameraTests = preload("res://tests/camera.gd")
 const Quality = preload("res://tests/scene_quality.gd")
+const RotationTests = preload("res://tests/rotation.gd")
 
 func _initialize() -> void:
 	if not await ConnectionTests.check(self):
@@ -18,6 +19,9 @@ func _initialize() -> void:
 		quit(1)
 		return
 	if not await CameraTests.check(self):
+		quit(1)
+		return
+	if not RotationTests.check(self):
 		quit(1)
 		return
 	var sample := Image.create_empty(160,90,false,Image.FORMAT_RGB8)
@@ -114,7 +118,8 @@ func _initialize() -> void:
 	print("CONTRACT_JSON:", JSON.stringify({"ids": ids, "keys": Palette.TYPE_KEYS,
 		"masses": Palette.DEFAULT_MASS, "samples": masses, "radii": radii,
 		"presets": presets, "port": Net.SERVER_PORT, "protocol": Net.PROTOCOL_VERSION,
-		"kinds": [Net.STATE_KIND, Net.PREDICTION_KIND],
+		"kinds": [Net.STATE_KIND, Net.PREDICTION_KIND, Net.ROTATION_KIND],
+		"rotation_layout": [5,10],
 		"layout": [Main.HEADER, Main.BODY, Main.EVENT]}))
 	quit()
 

@@ -12,7 +12,6 @@ uniform vec3 land_color : source_color = vec3(0.22, 0.42, 0.18);
 uniform vec3 high_color : source_color = vec3(0.62, 0.54, 0.38);
 uniform vec3 atmo_color : source_color = vec3(0.35, 0.6, 1.0);
 uniform float water_level = 0.5;
-uniform float spin = 0.15;
 
 varying vec3 obj_pos;
 
@@ -21,9 +20,7 @@ void vertex() {
 }
 
 void fragment() {
-	float ang = TIME * spin;
 	vec3 p = normalize(obj_pos);
-	p.xz = mat2(vec2(cos(ang), sin(ang)), vec2(-sin(ang), cos(ang))) * p.xz;
 	vec3 q = p * 2.3 + vec3(seed * 13.1, seed * 7.7, seed * 3.3);
 	float h = fbm5(q);
 	float lat = abs(p.y);
@@ -37,7 +34,7 @@ void fragment() {
 	col = mix(col, vec3(0.92, 0.95, 1.0), ice);
 
 	// Molten crust: darken and add glowing cracks.
-	float cracks = 1.0 - smoothstep(0.0, 0.08, abs(fbm3(q * 3.0 + vec3(TIME * 0.05)) - 0.5));
+	float cracks = 1.0 - smoothstep(0.0, 0.08, abs(fbm3(q * 3.0) - 0.5));
 	col = mix(col, col * 0.25, heat);
 
 	ALBEDO = col;

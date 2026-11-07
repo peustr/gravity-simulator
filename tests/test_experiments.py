@@ -9,6 +9,8 @@ import experiments as E
 import server as S
 import world as W
 from body_state import BodyInventory
+from rotation import Rotation
+from equilibrium_tides import Tide
 
 
 def scene():
@@ -40,7 +42,7 @@ def test_disk_round_trip_restores_physics_and_random_state(tmp_path):
     assert restored._next_id == original._next_id
     assert restored.rng.getstate() == original.rng.getstate()
     assert camera == data['camera']
-    assert saved['version'] == 7
+    assert saved['version'] == 9
     restored.paused = False
     restored.advance(.01, time.perf_counter() + 1)
     assert restored.sim.t > original.sim.t
@@ -48,7 +50,7 @@ def test_disk_round_trip_restores_physics_and_random_state(tmp_path):
 
 
 @pytest.mark.parametrize('change', [
-    lambda d: d.update(version=8),
+    lambda d: d.update(version=10),
     lambda d: d['bodies'][0].pop('inventory'),
     lambda d: d['bodies'][0].update(inventory=[]),
     lambda d: d['bodies'][0]['inventory'].update(extra=0),
@@ -136,7 +138,9 @@ def test_restart_and_retry_are_idempotent(tmp_path):
 
 def data_to_meta(data):
     return {str(b['id']): dict(type=b['type'], heat=b['heat'], born=b['born'],
-                             inventory=None if b['inventory'] is None else BodyInventory(**b['inventory']))
+                             inventory=None if b['inventory'] is None else BodyInventory(**b['inventory']),
+                             **({'tide':Tide(**b['tide'])} if b.get('tide') is not None else {}),
+                             **({'rotation':Rotation(**b['rotation'])} if b['rotation'] is not None else {}))
             for b in data['bodies']}
 
 
@@ -156,7 +160,7 @@ def test_old_saves_do_not_invent_spin_or_internal_energy(version):
     if version == 3:
         assert restored.settings == original.settings and restored.removed == original.removed
     saved = E.capture(restored, E.DEFAULT_CAMERA)
-    assert saved['version'] == 7
+    assert saved['version'] == 9
     assert all(body['inventory'] is None for body in saved['bodies'])
     again, _ = E.restore(saved)
     assert again.meta == restored.meta

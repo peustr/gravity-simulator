@@ -34,7 +34,7 @@ func replace_scene(command: Dictionary) -> void:
 	if not main.net.connected:
 		main.hud.toast("Connect to the physics server first.")
 		return
-	if command.cmd in ["preset", "collision_demo"] and main.views.is_empty():
+	if command.cmd in ["preset", "collision_demo", "tidal_demo"] and main.views.is_empty():
 		main.apply_scene_change(command)
 		return
 	_confirmed = command.duplicate(true)
@@ -51,7 +51,7 @@ func _accept_confirmation() -> void:
 	if not main.net.connected or not pending.is_empty():
 		main.hud.toast("Scene unchanged. Wait for the connection or current operation, then try again.")
 		return
-	if command.cmd in ["clear", "preset", "collision_demo"]:
+	if command.cmd in ["clear", "preset", "collision_demo", "tidal_demo"]:
 		main.apply_scene_change(command)
 	else:
 		request(command)

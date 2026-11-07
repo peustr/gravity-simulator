@@ -104,6 +104,12 @@ limits, full/tracer gravity, forecast scope and removal accounting.
 
 ## Presentation and compatibility
 
+Solid-body material orientation follows the server's physical spin and simulation
+clock, including pause and restart. Solar System supplies reference spin seeds;
+collision remnants use their conserved angular momentum. The [spherical rotation
+model](rotation.md) includes configured [equilibrium tidal torques and heating](equilibrium-tides.md).
+Nonspherical rotational gravity is not implemented.
+
 Godot linearly interpolates authoritative position snapshots with a small
 buffer (target 50 ms) and an achieved-speed estimate. Convex interpolation keeps
 relative positions within their sampled bounds even when updates are sparse.

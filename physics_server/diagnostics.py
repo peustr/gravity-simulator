@@ -6,6 +6,7 @@ from copy import deepcopy
 import numpy as np
 import units
 from debris_shell import shell_potential_energy
+from equilibrium_tides import potential as equilibrium_potential
 
 
 def physical_totals(world):
@@ -49,6 +50,8 @@ def physical_totals(world):
     momentum = (m[:, None] * v).sum(axis=0)
     mass = float(m.sum())
     components['model_potential_offset_j'] = world.tidal_potential_offset_j
+    components['equilibrium_tidal_potential_j'] = math.fsum(
+        equilibrium_potential(m,x,i,r[i],material) for i,material,_ in world.tidal_profiles())
     components['unresolved_accretion_energy_j'] = math.fsum(s['energy_j'] for s in world.accretion_flows.values())
     accretion_angular = np.sum([s['angular_momentum_kg_m2_s'] for s in world.accretion_flows.values()], axis=0) if world.accretion_flows else np.zeros(3)
     for shell in world.shells:

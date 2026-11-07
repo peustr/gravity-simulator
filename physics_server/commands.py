@@ -17,7 +17,9 @@ COMMANDS = {
     "clear": "no fields",
     "preset": "name",
     "collision_demo": "case (merging/hit_and_run/disruption), play (optional boolean)",
-    "physics": "settings (gravity, epsilon, forecast_limit, escape_distance, collisions, impact_material; partial updates allowed)",
+    "tidal_demo": "Solar System lunar tidal-evolution variant",
+    "tide": "id, k2 (0 disables), lag_s; resolved solid tidal properties",
+    "physics": "settings (gravity, epsilon, forecast_limit, escape_distance, collisions, impact_material, tidal_phase; partial updates allowed)",
     "conservation": "reset (optional boolean; replace the comparison baseline)",
     "save_scene": "path, camera, request",
     "load_scene": "path, request",
@@ -83,6 +85,10 @@ def validate(msg):
         from encounters import DEMO_CASES
         if msg.get('case') not in DEMO_CASES or type(msg.get('play',False)) is not bool:
             raise ValueError('Invalid collision demonstration')
+    elif cmd == 'tide':
+        integer(msg.get('id'),1)
+        number(msg.get('k2'),0,1.5)
+        number(msg.get('lag_s'),0,1e6)
     elif cmd == "physics":
         configuration.settings(msg.get('settings'), partial=True)
     elif cmd == "conservation" and type(msg.get('reset', False)) is not bool:

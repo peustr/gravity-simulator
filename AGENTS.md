@@ -65,6 +65,8 @@ Cloud headless checks use writable XDG cache/data directories when needed. Visua
 | `physics_server/dynamics.py`, `configuration.py` | Contact step guards and validated solver/approximation settings |
 | `physics_server/impacts.py` | Immutable pre-merge pair state and impact geometry/energy/angular-momentum measurements |
 | `physics_server/body_state.py` | Persistent intrinsic inventories and SI snapshots; unknown state after unaccounted heuristic transformations |
+| `physics_server/equilibrium_tides.py`, `tidal_integrator.py` | Full tidal-tensor response, material domain and conservative orbit/spin/heat stepping |
+| `physics_server/rotation.py` | Exact free spherical rotation; SI attitude epochs and quaternions, consistent with collision inertia |
 | `physics_server/disruption.py` | Head-on curves and solid-body classification, including rocky grazing impacts; limits in `docs/impact-scaling.md` |
 | `physics_server/collision_outcomes.py` | SI spherical inventories, isolated mergers and prescribed remnant allocations; contract in `docs/collision-budgets.md` |
 | `physics_server/collision_models.py` | Classified construction, shallow-contact correction and isolated remnant escape certificates |
@@ -89,6 +91,7 @@ Physical radii belong to Python. Keep `physical_radius`, rendered size and mouse
 |---|---|
 | Body type ids (ROCKY=0 … PLASMA=6), event codes (EV_MERGE=1 … EV_EROSION=12), `DEFAULT_MASS` | `world.py` ↔ `godot/scripts/palette.gd` |
 | Packet layout: header 11 floats, body 12, event 8; forecast reply header 9 (protocol 2, packet kinds 3/4) | `server.py` `pack_state`/`pack_prediction` ↔ `main.gd` `_on_state`/`_on_prediction` |
+| Additive solid poses: kind 5, header 5, record 10 | `server.py` `pack_rotation` ↔ `net_client.gd` validation / `main.gd` `_on_rotation` |
 | UDP port 47810 | `server.py` `DEFAULT_PORT` ↔ `net_client.gd` `SERVER_PORT` |
 | Camera distance minimum `1e-4`, playback minimum `1e-5` | `configuration.py`/`experiments.py` ↔ `camera_rig.gd`/`main.gd` |
 | Scenario names | `world.load_preset()` ↔ `hud.gd` `PRESETS` |

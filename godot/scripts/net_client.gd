@@ -8,12 +8,14 @@ extends Node
 
 signal state_received(packet: PackedFloat32Array)
 signal prediction_received(packet: PackedFloat32Array)
+signal rotation_received(packet: PackedFloat32Array)
 signal message_received(msg: Dictionary)
 signal connection_changed(is_connected: bool)
 
 const PROTOCOL_VERSION := 2
 const STATE_KIND := 3
 const PREDICTION_KIND := 4
+const ROTATION_KIND := 5
 
 const SERVER_HOST := "127.0.0.1"
 const SERVER_PORT := 47810
@@ -68,6 +70,8 @@ func _process(_delta: float) -> void:
 		_next_hello = now+HELLO_INTERVAL
 
 	var states: Array[PackedFloat32Array] = []
+	var rotations: Array[PackedFloat32Array] = []
+	var tides: Array[Dictionary] = []
 	while udp.get_available_packet_count() > 0:
 		var pkt := udp.get_packet()
 		if udp.get_packet_ip() != SERVER_HOST or udp.get_packet_port() != SERVER_PORT:
@@ -88,7 +92,10 @@ func _process(_delta: float) -> void:
 				elif msg.get("type", "") == "protocol_error":
 					launch_status = str(msg.get("text", "Physics protocol mismatch."))
 					_launch_tried = true
-				message_received.emit(msg)
+				if msg.get("type", "") == "tides":
+					tides.append(msg)
+				else:
+					message_received.emit(msg)
 			continue
 		if pkt.size() % 4 != 0:
 			continue
@@ -105,8 +112,14 @@ func _process(_delta: float) -> void:
 			states.append(f)
 		elif kind == PREDICTION_KIND:
 			prediction_received.emit(f)
+		elif kind == ROTATION_KIND:
+			rotations.append(f)
 	for state in states:
 		state_received.emit(state)
+	for pose in rotations:
+		rotation_received.emit(pose)
+	for report in tides:
+		message_received.emit(report)
 
 	# State callbacks may compile shaders or build hundreds of views. Their
 	# processing time must not consume the next poll's disconnect window.
@@ -211,4 +224,17 @@ static func valid_packet(f: PackedFloat32Array) -> bool:
 		if f.size() < 9 or f[2] < 0 or f[2] > 221 or f[2] != int(f[2]):
 			return false
 		return f.size() == 9 + int(f[2]) * 3 and f[8] > 0.0
+	if f[0] == ROTATION_KIND:
+		if f.size() < 5 or f[4] < 0 or f[4] > 1321 or f[4] != int(f[4]) or f.size() != 5+10*int(f[4]):
+			return false
+		if f[1] < 0 or f[1] >= 16000000 or f[1] != int(f[1]) or f[2]+f[3] < 0:
+			return false
+		for i in range(int(f[4])):
+			var o := 5+10*i
+			if f[o] <= 0 or f[o] > 16000000 or f[o] != int(f[o]) or f[o+1] not in [0.0,1.0,2.0] or f[o+9] < 0:
+				return false
+			var q := Quaternion(f[o+2],f[o+3],f[o+4],f[o+5])
+			if absf(q.length_squared()-1.0) > .00001:
+				return false
+		return true
 	return false

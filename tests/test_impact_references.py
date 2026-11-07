@@ -22,7 +22,7 @@ def test_exported_references_run_each_regime_and_preserve_material_across_capaci
     for record in records:
         data, w, camera = E.load(record["path"])
         assert w.paused and w.settings["collisions"] == "auto" and w.settings["gravity"] == "full"
-        assert data["version"] == 7 and camera == data["camera"]
+        assert data["version"] == 9 and camera == data["camera"]
         assert abs(record["relative_energy_change"]) < 1e-8
     for prefix in ("planet", "small-body"):
         full = next(r for r in records if r["name"] == prefix + "-supercatastrophic_disruption")

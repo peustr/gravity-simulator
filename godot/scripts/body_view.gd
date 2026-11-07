@@ -28,6 +28,12 @@ var physical_radius := 1.0
 var rendered_radius := 1.0
 var heat := 0.0
 var age := 0.0
+var spin_status := 0
+var spin_period_s := 0.0
+var spin_axis := Vector3.ZERO
+var _rotations: Array = []
+var tidal := {}
+var tidal_reference := {}
 var seed := 0.0
 var display_name := ""
 
@@ -117,6 +123,10 @@ func set_type(t: int) -> void:
 	if t == body_type:
 		return
 	body_type = t
+	_rotations.clear()
+	spin_status = 0
+	spin_period_s = 0.0
+	spin_axis = Vector3.ZERO
 	display_name = Palette.body_name(id, t)
 	if _visual_root != null:
 		_visual_root.queue_free()
@@ -170,7 +180,6 @@ func _build_rocky() -> void:
 	_surface_mat.set_shader_parameter("high_color", pal.high)
 	_surface_mat.set_shader_parameter("water_level", pal.water)
 	_surface_mat.set_shader_parameter("atmo_color", pal.atmo)
-	_surface_mat.set_shader_parameter("spin", 0.08 + 0.2 * Palette.hash01(id, 4))
 	_surface = _mesh_instance(_sphere_hi, _surface_mat)
 
 
@@ -268,7 +277,6 @@ func _build_asteroid() -> void:
 	var g := 0.35 + 0.25 * Palette.hash01(id, 9)
 	_surface_mat.set_shader_parameter("base_color", Color(g * 1.05, g, g * 0.92))
 	_surface = _mesh_instance(_sphere_lo, _surface_mat)
-	_surface.rotation = Vector3(Palette.hash01(id, 1), Palette.hash01(id, 2), Palette.hash01(id, 3)) * TAU
 
 
 func _build_plasma() -> void:
@@ -403,6 +411,42 @@ func pick_radius() -> float:
 		Palette.STAR: return rendered_radius * 1.3
 		Palette.PLASMA: return maxf(rendered_radius * 3.0, 0.5)
 	return rendered_radius
+
+
+func set_rotation_state(time: float, pose: Quaternion, omega: Vector3, period: float, status: int) -> void:
+	if not _rotations.is_empty():
+		if time < _rotations[-1].time:
+			return
+		if time == _rotations[-1].time:
+			_rotations.pop_back()
+	spin_status = status
+	spin_period_s = period
+	spin_axis = omega.normalized() if omega.length_squared() > 0 else Vector3.ZERO
+	_rotations.append({"time":time,"pose":pose.normalized(),"omega":omega})
+	while _rotations.size() > 32:
+		_rotations.pop_front()
+
+
+func present_rotation(time: float) -> void:
+	if body_type not in [Palette.ROCKY,Palette.ASTEROID] or _surface == null or _rotations.is_empty():
+		return
+	var sample = _rotations[0]
+	var end = sample
+	for next in _rotations:
+		end = next
+		if next.time >= time:
+			break
+		sample = next
+	var t := clampf(time,sample.time,end.time)
+	var pose: Quaternion = sample.pose
+	if sample.omega.is_equal_approx(end.omega):
+		# Resample the server's constant-spin segment, retaining whole turns.
+		var speed: float = sample.omega.length()
+		if speed > 0:
+			pose = Quaternion(sample.omega/speed,speed*(t-sample.time))*pose
+	elif end.time > sample.time:
+		pose = pose.slerp(end.pose,(t-sample.time)/(end.time-sample.time))
+	_surface.quaternion = pose.normalized()
 
 
 func add_flare(amount: float) -> void:

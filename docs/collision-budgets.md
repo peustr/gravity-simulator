@@ -32,6 +32,8 @@ spin/internal energy; version 5 also saves compact ejecta, ownership IDs, solver
 error history, explicit-loss ledger and comparison baseline. Version 6 preserves
 tidal volume-sample identities and inherited radii across restart. Version 7 adds
 the tidal discretisation energy reference and unresolved accretion inventories.
+Version 8 retains solid-body attitude and validates its rate against the saved
+spin and spherical inertia; earlier formats choose a reference pose at load.
 Its Newtonian energy convention excludes black-hole and ballistic-node self-binding.
 Older comparisons involving these objects reset; missing intrinsic data remain unknown.
 Legacy-unit bodies
@@ -67,7 +69,7 @@ external gravity uses only mass, radius and position.
 `isolated_mergers` accepts only classified merging/graze-and-merge;
 `isolated_impacts` also accepts separated outcomes. These saved/API modes use the
 same constructors and selected material as automatic mode, but require physical
-units, full gravity and `escape_distance: null`. Automatic tides, supernovae and
+units, full gravity and `escape_distance: null`. Automatic tidal breakup, supernovae and
 removal are disabled. For example:
 
 ```json
