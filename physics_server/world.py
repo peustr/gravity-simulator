@@ -46,6 +46,8 @@ from dataclasses import replace
 from encounters import DEMO_CASES, demo_initial_conditions
 from tidal_debris import source_samples
 from rotation import Rotation, angular_velocity
+from equilibrium_tides import Tide, MAX_TIDAL_BODIES, response as tidal_response, orbit as tidal_orbit
+from tidal_integrator import TidalIntegrator
 
 # REBOUND rebuilds its name lookup table on its own; the warning is just noise.
 warnings.filterwarnings("ignore", message=".*hash table.*")
@@ -216,6 +218,7 @@ class World:
         self.shells = ()
         self._next_shell_id = 1
         self._shell_integrator = None
+        self._tide_integrator = None
         self.shell_numerical_energy_error_j = 0.0
         self.tidal_potential_offset_j = 0.0
         self.accretion_flows = {}
@@ -263,6 +266,8 @@ class World:
             raise ValueError('Automatic collisions require physical units')
         if self.shells and (settings['gravity'] != 'full' or settings['collisions'] == 'heuristic'):
             raise ValueError('Unresolved ejecta require full gravity and calibrated collision handling')
+        if settings['gravity'] != 'full' and any(md.get('tide') for md in self.meta.values()):
+            raise ValueError('Equilibrium tides require full gravitational backreaction')
         self.settings = settings
         self._set_solver_tolerance()
         self._partition_dirty = True
@@ -278,7 +283,7 @@ class World:
             self.sim.integrator.epsilon = self.settings['epsilon']
 
     def solver_name(self):
-        return 'BS (ejecta)' if self.shells else str(self.sim.integrator).upper()
+        return 'IAS15 + CTL tides' if any(md.get('tide') for md in self.meta.values()) else 'BS (ejecta)' if self.shells else str(self.sim.integrator).upper()
 
     def gravity_summary(self):
         snap = self.snapshot()
@@ -287,6 +292,7 @@ class World:
         omitted = float(snap['m'][passive].sum())
         total = float(snap['m'].sum())+sum(s.mass_kg/units.MASS_KG for s in self.shells)
         return dict(settings=self.settings.copy(), tracers=sum(passive), tracer_mass=omitted,
+                    tidal_bodies=sum(bool(md.get('tide')) for md in self.meta.values()),
                     gas_capture_radius_rs=GAS_SINK_RADII if self.units == units.SYSTEM else 0.,
                     tracer_mass_fraction=omitted / total if total else 0.0, removed=self.removed.copy(),
                     reservoirs=len(self.shells),unresolved_fragments=sum(s.fragment_count for s in self.shells),
@@ -334,6 +340,65 @@ class World:
         q = (0.,0.,-math.sin(tilt/2),math.cos(tilt/2))
         self.meta[p.name]['rotation'] = Rotation(q,self.sim.t*units.TIME_S,
                                                tuple(2*math.pi*x/period_s for x in axis))
+
+    def set_tide(self, bid, k2, lag_s):
+        material = Tide(k2,lag_s)
+        p = self.particle(str(bid))
+        if p is not None and k2 == 0:
+            self.meta[p.name].pop('tide',None)
+            self._tide_integrator = None
+            self.version += 1
+            return
+        if (p is None or self.units != units.SYSTEM or self.settings['gravity'] != 'full'
+                or self.meta[p.name]['type'] not in (ROCKY,ASTEROID) or self.meta[p.name]['inventory'] is None or self.shells):
+            raise ValueError('Equilibrium tides require a known solid, full gravity and resolved bodies')
+        if k2 and not self.meta[p.name].get('tide') and sum(bool(md.get('tide')) for md in self.meta.values()) >= MAX_TIDAL_BODIES:
+            raise ValueError(f'At most {MAX_TIDAL_BODIES} deformable solids are supported')
+        previous = self.meta[p.name].get('tide')
+        if previous is not None:
+            material = replace(material,heat_j=previous.heat_j)
+        snap = self.snapshot()
+        index = snap['names'].index(p.name)
+        tidal_response(snap['m']*units.MASS_KG,snap['xyz']*units.LENGTH_M,snap['v']*units.VELOCITY_M_S,
+                       index,p.r*units.LENGTH_M,self.rotation(p)[0].omega_rad_s,material)
+        self.meta[p.name]['tide'] = material
+        self._tide_integrator = None
+        self.sim.did_modify_particles = 1
+        self.version += 1
+
+    def tidal_profiles(self):
+        profiles = []
+        for i,p in enumerate(self.sim.particles):
+            md = self.meta[p.name]
+            if md.get('tide'):
+                if md['type'] not in (ROCKY,ASTEROID) or md['inventory'] is None:
+                    raise ValueError('Equilibrium tides lost a supported solid inventory')
+                profiles.append((i,md['tide'],self.rotation(p)[0].omega_rad_s))
+        return profiles
+
+    def tidal_info(self):
+        snap = self.snapshot()
+        data = []
+        for i,p in enumerate(self.sim.particles):
+            material = self.meta[p.name].get('tide')
+            if material is None:
+                continue
+            row = dict(id=int(p.name),k2=material.k2,lag_s=material.lag_s,heat_j=material.heat_j)
+            try:
+                state,known = self.rotation(p)
+                if not known:
+                    raise ValueError('Unknown solid spin inventory')
+                omega = state.omega_rad_s
+                _,torque,power,_ = tidal_response(snap['m']*units.MASS_KG,snap['xyz']*units.LENGTH_M,snap['v']*units.VELOCITY_M_S,
+                                                i,snap['r'][i]*units.LENGTH_M,omega,material)
+            except (ValueError,ArithmeticError) as exc:
+                data.append(row | dict(error=str(exc)))
+                continue
+            orbit = tidal_orbit(snap['m']*units.MASS_KG,snap['xyz']*units.LENGTH_M,snap['v']*units.VELOCITY_M_S,i)
+            ratio = None if orbit is None else float(np.dot(omega,orbit['axis'])/orbit['mean_motion'])
+            data.append(row | dict(power_w=power,spin_ratio=ratio,eccentricity=None if orbit is None else orbit['eccentricity'],
+                                   torque_nm=float(np.linalg.norm(torque))))
+        return data
 
     def is_ballistic(self, name):
         md = self.meta.get(name,{})
@@ -419,6 +484,7 @@ class World:
         self._partition_dirty = False
         self._contact_guard.reset()
         self._shell_integrator = None
+        self._tide_integrator = None
         self._tidal_pairs = None
         sim = self.sim
         n = sim.N
@@ -531,7 +597,9 @@ class World:
                     # An adaptive step may span several display ticks. Stop at
                     # this tick's target instead of publishing a future state
                     # followed by repeated frozen states while time catches up.
-                    if self.shells:
+                    if any(md.get('tide') for md in self.meta.values()):
+                        self._advance_tides(self._target_t-sim.t,deadline)
+                    elif self.shells:
                         self._advance_shells(self._target_t-sim.t)
                     else:
                         step(sim, self._target_t - sim.t, self._contact_guard)
@@ -542,6 +610,7 @@ class World:
                     self.paused = True
                     self.notice(f'Physics paused: {exc}')
                     self._shell_integrator = None
+                    self._tide_integrator = None
                     break
                 except rebound.NoParticles:
                     sim.t = self._target_t
@@ -598,6 +667,33 @@ class World:
             max(s.omitted_impulse_m_s for s in self.shells))
         for i,j in approaching_contacts(self.sim):
             self._resolve_collision(ctypes.pointer(self.sim), type('Contact',(),dict(p1=i,p2=j))())
+
+    def _advance_tides(self,maximum,deadline=math.inf):
+        if self.shells:
+            raise ValueError('Equilibrium tides with unresolved ejecta are outside the supported model')
+        profiles = self.tidal_profiles()
+        key = tuple((i,t.k2,t.lag_s,self.sim.particles[i].m,self.sim.particles[i].r) for i,t,_ in profiles)
+        if self._tide_integrator is None or key != self._tide_integrator.key:
+            self._tide_integrator = TidalIntegrator(self.sim,profiles,self.settings['epsilon'],self.settings['tidal_phase'])
+            self._tide_integrator.key = key
+        solver = self._tide_integrator
+        poses = [self.rotation(self.sim.particles[i])[0].at(self.sim.t*units.TIME_S) for i,_,_ in profiles]
+        old_omega = np.array([omega for _,_,omega in profiles])
+        solver.omegas = old_omega.copy()
+        start = self.sim.t*units.TIME_S
+        solver.advance(self.sim,maximum,self._contact_guard,deadline)
+        for k,(i,material,_) in enumerate(profiles):
+            p = self.sim.particles[i]
+            md = self.meta[p.name]
+            inertia = .4*p.m*units.MASS_KG*(p.r*units.LENGTH_M)**2
+            inventory = md['inventory']
+            md['inventory'] = BodyInventory(tuple(inertia*solver.omegas[k]),inventory.internal_energy_j+solver.heating[k])
+            md['tide'] = replace(material,heat_j=material.heat_j+float(solver.heating[k]))
+            pose = Rotation(poses[k],start,tuple((old_omega[k]+solver.omegas[k])*.5)).at(self.sim.t*units.TIME_S)
+            md['rotation'] = Rotation(pose,self.sim.t*units.TIME_S,
+                                      angular_velocity(md['inventory'].spin_kg_m2_s,p.m*units.MASS_KG,p.r*units.LENGTH_M))
+        for i,j in approaching_contacts(self.sim):
+            self._resolve_collision(ctypes.pointer(self.sim),type('Contact',(),dict(p1=i,p2=j))())
 
     def _post_tick(self, dt_sim: float):
         cool = math.exp(-dt_sim / HEAT_COOLING_TIME)
@@ -1479,6 +1575,9 @@ class World:
         guard = ContactGuard(collisionless=gas, sinks=sinks)
         forecast_shells = self.shells
         shell_integrator = ShellIntegrator(mini,forecast_shells,self.settings['epsilon']) if forecast_shells else None
+        profiles = [(k,self.meta[snap['names'][i]]['tide'],self.rotation(self.particle(snap['names'][i]))[0].omega_rad_s)
+                    for k,i in enumerate(order) if i >= 0 and self.meta[snap['names'][i]].get('tide')]
+        tidal_integrator = TidalIntegrator(mini,profiles,self.settings['epsilon'],self.settings['tidal_phase']) if profiles else None
         failed = False
         try:
             for k in range(1, samples + 1):
@@ -1495,7 +1594,11 @@ class World:
                     # Sample at the requested time, never overshoot it and
                     # accidentally integrate backwards to the next sample.
                     previous = mini.t
-                    if shell_integrator is None:
+                    if tidal_integrator is not None:
+                        tidal_integrator.advance(mini,target-mini.t,guard,t0+wall_budget)
+                        for i,j in approaching_contacts(mini):
+                            on_collision(ctypes.pointer(mini),type('Contact',(),dict(p1=i,p2=j))())
+                    elif shell_integrator is None:
                         step(mini, target - mini.t, guard)
                     else:
                         forecast_shells = shell_integrator.advance(mini,forecast_shells,target-mini.t,guard)
@@ -1702,6 +1805,11 @@ class World:
         if self.sim.N > 1 and name != "galaxies":
             # Zero the total momentum so the scene stays where the camera is.
             self.sim.move_to_com()
+        if name == 'solar':
+            if earth is not None:
+                self.set_tide(earth,.299,638.)
+            if moon is not None:
+                self.set_tide(moon,.024,100.)
         if name == 'black_hole':
             # Frame the encounter after the COM translation, not the distant
             # companion system. R still exposes the complete system.
@@ -1728,4 +1836,29 @@ class World:
         conservation_report(self,reset=True)
         self.version += 1
         hint.update(camera=camera,speed=self.speed,collision_demo=info)
+        return hint
+
+    def load_tidal_demo(self):
+        if self.max_bodies < 6:
+            raise ValueError('The lunar experiment needs capacity for the Solar System seed bodies')
+        hint = self.load_preset('solar')
+        earth_id = next(p.name for p in self.sim.particles if p.m == .003)
+        moon_id = next(p.name for p in self.sim.particles if p.m == 3.7e-5)
+        for name in list(self.meta):
+            if name not in (earth_id,moon_id):
+                self.remove_body(int(name))
+        earth,moon = self.particle(earth_id),self.particle(moon_id)
+        self.set_tide(int(earth.name),0.,0.)
+        radius = 6*earth.r
+        position,velocity = self.orbit(earth.xyz,earth.vxyz,earth.m+moon.m,radius,1.,ecc=.05)
+        moon.xyz,moon.vxyz = position,velocity
+        a = radius/1.05
+        period = 2*math.pi*math.sqrt(a**3/(G*(earth.m+moon.m)))*units.TIME_S
+        self.seed_rotation(int(moon.name),period/1.2)
+        self.sim.move_to_com()
+        self._partition_dirty = True
+        self._tide_integrator = None
+        self.speed = .05
+        hint.update(camera=dict(focus=list(moon.xyz),distance=radius*3,pitch=.6,yaw=.5,
+                                display_scale=0.,follow=int(moon.name)),speed=self.speed,tidal_demo=True)
         return hint

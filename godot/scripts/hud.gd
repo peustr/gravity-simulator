@@ -7,6 +7,9 @@ signal pause_toggled
 signal speed_step(direction: int)
 signal preset_chosen(preset: String)
 signal collision_chosen(case: String, play: bool)
+signal tidal_demo_chosen
+signal tides_requested
+signal tide_changed(id: int, k2: float, lag: float)
 signal scene_action(action: String)
 signal physics_changed(settings: Dictionary)
 signal conservation_requested(reset: bool)
@@ -65,6 +68,11 @@ var insp_grid: GridContainer
 var insp_values := {}
 var nova_btn: Button
 var follow_btn: Button
+var tides_btn: Button
+var tidal_dialog: ConfirmationDialog
+var tidal_k2: SpinBox
+var tidal_lag: SpinBox
+var tidal_target := -1
 var feed: VBoxContainer
 var hint_label: Label
 var cursor_label: Label
@@ -313,7 +321,11 @@ func _build_top_bar() -> void:
 		else:
 			pm.add_item(PRESETS[i][1], i)
 		pm.set_item_tooltip(i, PRESETS[i][2])
-	pm.id_pressed.connect(func(i: int): preset_chosen.emit(PRESETS[i][0]))
+	pm.add_separator()
+	pm.add_item("Solar System · lunar tides",100)
+	pm.id_pressed.connect(func(i: int):
+		if i == 100: tidal_demo_chosen.emit()
+		else: preset_chosen.emit(PRESETS[i][0]))
 	h.add_child(scen)
 	var files := MenuButton.new()
 	files.text = "Experiment"
@@ -413,7 +425,7 @@ func show_conservation(report: Dictionary) -> void:
 			if current.get("loss_event_count",0) > 0:
 				text += "  After recorded changes: %s\n" % _budget_value(report.conservation_residual[row[1]],row[2])
 		text += "\nOrbital angular momentum: %s\nSpin angular momentum: %s\n" % [_budget_value(current.orbital_angular_momentum_kg_m2_s, "kg m²/s"), _budget_value(current.spin_angular_momentum_kg_m2_s, "kg m²/s")]
-		for row in [["Translational kinetic", "translational_energy_j"], ["Rotational kinetic", "rotational_energy_j"], ["Self-binding", "self_binding_j"], ["Mutual potential", "mutual_potential_j"], ["Internal", "internal_energy_j"], ["Unresolved accretion", "unresolved_accretion_energy_j"], ["Model potential offset", "model_potential_offset_j"]]:
+		for row in [["Translational kinetic", "translational_energy_j"], ["Rotational kinetic", "rotational_energy_j"], ["Self-binding", "self_binding_j"], ["Mutual potential", "mutual_potential_j"], ["Equilibrium tides", "equilibrium_tidal_potential_j"], ["Internal", "internal_energy_j"], ["Unresolved accretion", "unresolved_accretion_energy_j"], ["Model potential offset", "model_potential_offset_j"]]:
 			text += "%s energy: %s\n" % [row[0], _budget_value(current.get(row[1]), "J")]
 		text += "Energy change / component scale: %s\n\n" % _budget_value(report.relative_energy_change)
 		text += "Residual after recorded changes / scale: %s\n" % _budget_value(report.relative_conservation_residual)
@@ -431,6 +443,8 @@ func set_physics(info: Dictionary) -> void:
 	if physics_settings.is_empty():
 		return
 	physics_menu.set_item_checked(physics_menu.get_item_index(10), physics_settings.gravity == "full")
+	physics_menu.set_item_disabled(physics_menu.get_item_index(10),int(info.get("tidal_bodies",0)) > 0)
+	physics_menu.set_item_tooltip(physics_menu.get_item_index(10),"Equilibrium tides require full gravitational backreaction. Disable tidal materials to select tracers." if int(info.get("tidal_bodies",0)) > 0 else "Include the gravity of small bodies.")
 	physics_menu.set_item_checked(physics_menu.get_item_index(11), physics_settings.forecast_limit == 0)
 	physics_menu.set_item_checked(physics_menu.get_item_index(12), physics_settings.escape_distance != null)
 	var mode: String = physics_settings.get("collisions", "heuristic")
@@ -616,7 +630,7 @@ func _build_inspector() -> void:
 	insp_grid.add_theme_constant_override("h_separation", 14)
 	insp_grid.add_theme_constant_override("v_separation", 4)
 	v.add_child(insp_grid)
-	for key in ["Mass", "Physical radius", "Parcel volume radius", "Speed", "Orbiting", "Distance", "Spin", "Spin axis", "Appearance", "Age", "Display"]:
+	for key in ["Mass", "Physical radius", "Parcel volume radius", "Speed", "Orbiting", "Distance", "Spin", "Spin axis", "Tides", "Love k₂", "Time lag", "Spin/orbit", "Spin/orbit Δ", "Orbit e", "Tidal power", "Deposited heat", "Appearance", "Age", "Display"]:
 		insp_grid.add_child(_label(key, 13, C_DIM))
 		var val := _label("", 13, C_TEXT)
 		insp_grid.add_child(val)
@@ -631,6 +645,9 @@ func _build_inspector() -> void:
 	var del := _button("Delete", "Remove this body  (Delete)")
 	del.pressed.connect(func(): delete_requested.emit())
 	h.add_child(del)
+	tides_btn = _button("Tides…", "Edit this solid's equilibrium-tide material")
+	tides_btn.pressed.connect(func(): tides_requested.emit())
+	h.add_child(tides_btn)
 	nova_btn = _button("Supernova!", "Make this star explode  (N)")
 	nova_btn.add_theme_color_override("font_color", Color(1.0, 0.75, 0.5))
 	nova_btn.pressed.connect(func(): supernova_requested.emit())
@@ -652,7 +669,33 @@ func show_inspector(info: Dictionary) -> void:
 		var idx: int = insp_values[key].get_index()
 		insp_grid.get_child(idx - 1).visible = val != ""
 	nova_btn.visible = info.get("can_nova", false)
+	tides_btn.visible = info.get("can_tides", false)
 	follow_btn.set_pressed_no_signal(info.get("following", false))
+
+
+func edit_tides(id: int, material: Dictionary) -> void:
+	if tidal_dialog == null:
+		tidal_dialog = ConfirmationDialog.new()
+		tidal_dialog.title = "Equilibrium tides"
+		root.add_child(tidal_dialog)
+		var box := VBoxContainer.new()
+		tidal_dialog.add_child(box)
+		box.add_child(_label("Love number k₂ (0 disables deformation)",14,C_TEXT))
+		tidal_k2 = SpinBox.new()
+		tidal_k2.max_value = 1.5
+		tidal_k2.step = .001
+		box.add_child(tidal_k2)
+		box.add_child(_label("Constant time lag in seconds",14,C_TEXT))
+		tidal_lag = SpinBox.new()
+		tidal_lag.max_value = 1000000
+		tidal_lag.step = 1
+		box.add_child(tidal_lag)
+		box.add_child(_label("Weak deformation and small lag only.\nHeat is energy, not a predicted temperature.",13,C_DIM))
+		tidal_dialog.confirmed.connect(func(): tide_changed.emit(tidal_target,tidal_k2.value,tidal_lag.value))
+	tidal_target = id
+	tidal_k2.value = material.get("k2",0)
+	tidal_lag.value = material.get("lag_s",100)
+	tidal_dialog.popup_centered(Vector2i(390,240))
 
 
 # ------------------------------------------------------------------ feed / hint

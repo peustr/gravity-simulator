@@ -107,7 +107,7 @@ def test_old_saves_get_explicit_previous_approximation_settings(version):
     del data['physics'], data['removed']
     restored, _ = E.restore(data)
     assert restored.settings == C.LEGACY_DEFAULTS
-    assert E.capture(restored, E.DEFAULT_CAMERA)['version'] == 8
+    assert E.capture(restored, E.DEFAULT_CAMERA)['version'] == 9
 
 
 @pytest.mark.parametrize('change', [
@@ -215,6 +215,8 @@ def test_guard_allows_native_step_for_detached_circular_orbit():
 def test_cached_contact_geometry_matches_fresh_bounds_and_resets_after_edits():
     w = W.World(seed=42)
     w.load_preset('solar')
+    for i,_,_ in w.tidal_profiles():
+        w.set_tide(int(w.sim.particles[i].name),0,0)
     guard = D.ContactGuard()
     for gravity in ('full','tracers'):
         w.configure(dict(gravity=gravity))

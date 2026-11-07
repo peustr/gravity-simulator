@@ -71,6 +71,7 @@ func _process(_delta: float) -> void:
 
 	var states: Array[PackedFloat32Array] = []
 	var rotations: Array[PackedFloat32Array] = []
+	var tides: Array[Dictionary] = []
 	while udp.get_available_packet_count() > 0:
 		var pkt := udp.get_packet()
 		if udp.get_packet_ip() != SERVER_HOST or udp.get_packet_port() != SERVER_PORT:
@@ -91,7 +92,10 @@ func _process(_delta: float) -> void:
 				elif msg.get("type", "") == "protocol_error":
 					launch_status = str(msg.get("text", "Physics protocol mismatch."))
 					_launch_tried = true
-				message_received.emit(msg)
+				if msg.get("type", "") == "tides":
+					tides.append(msg)
+				else:
+					message_received.emit(msg)
 			continue
 		if pkt.size() % 4 != 0:
 			continue
@@ -114,6 +118,8 @@ func _process(_delta: float) -> void:
 		state_received.emit(state)
 	for pose in rotations:
 		rotation_received.emit(pose)
+	for report in tides:
+		message_received.emit(report)
 
 	# State callbacks may compile shaders or build hundreds of views. Their
 	# processing time must not consume the next poll's disconnect window.

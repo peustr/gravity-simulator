@@ -244,7 +244,7 @@ explicit. General deformable bodies and gas/stellar tides are outside this scope
   Solar System textures/axes and Planet smash remnants follow simulation time;
   inspector period/axis values, protocol migration and save/restart agree with
   the physical state.
-- [ ] **Coupled tidal evolution.** Apply equal/reaction forces and torques;
+- [x] **Coupled tidal evolution.** Apply equal/reaction forces and torques;
   transfer angular momentum between orbit and spin and record nonnegative tidal
   heating. Expose Love numbers and time lags. A supported Solar System satellite
   variant demonstrates synchronisation/circularisation through measured changes.
@@ -256,7 +256,8 @@ explicit. General deformable bodies and gas/stellar tides are outside this scope
 - [ ] **Rotating solid impacts.** Extend the supported input domain using the
   selected published law, initially a bounded aligned-spin case. Planet smash
   compares otherwise identical encounters with different spins and shows the
-  resulting remnant motion/rotation. Retain total angular momentum and energy;
+  resulting remnant motion/rotation. Retain total angular momentum and energy,
+  including stored tidal energy at transitions to contact models;
   revise ejecta partitions consistently. Unsupported compact allocations must
   resolve within capacity or refuse intact, preserving their inventories.
 - [ ] **Reference and live release checks.** Verify free rotation, analytic

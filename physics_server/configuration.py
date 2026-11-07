@@ -6,13 +6,13 @@ MIN_CAMERA_DISTANCE = 1e-4
 
 
 DEFAULTS = dict(gravity='full', epsilon=1e-9, forecast_limit=20, escape_distance=15000.0,
-                collisions='auto',impact_material='fluid_planets')
+                collisions='auto',impact_material='fluid_planets',tidal_phase=.2)
 LEGACY_DEFAULTS = DEFAULTS | dict(gravity='tracers', collisions='heuristic')
 
 
 def settings(value, partial=False):
     # Earlier version-3/4 files have no collision-mode field.
-    required = DEFAULTS.keys() - {'collisions','impact_material'}
+    required = DEFAULTS.keys() - {'collisions','impact_material','tidal_phase'}
     if not isinstance(value, dict) or set(value) - DEFAULTS.keys() or (not partial and not required <= value.keys()):
         raise ValueError('Invalid physics settings')
     result = DEFAULTS | value
@@ -31,6 +31,9 @@ def settings(value, partial=False):
     if type(limit) is not int or not 0 <= limit <= 1321:
         raise ValueError('Forecast limit must be 0 (all bodies) or 1–1321')
     radius = result['escape_distance']
+    phase = result['tidal_phase']
+    if type(phase) not in (int,float) or not math.isfinite(phase) or not .01 <= phase <= .2:
+        raise ValueError('Tidal phase limit must be between 0.01 and 0.2')
     if radius is not None and (type(radius) not in (int, float) or not math.isfinite(radius) or not 0 < radius <= 1e9):
         raise ValueError('Removal distance must be positive and finite, or null to disable removal')
     return result

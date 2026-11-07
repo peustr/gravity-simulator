@@ -132,6 +132,10 @@ func _ready() -> void:
 	hud.pause_toggled.connect(_toggle_pause)
 	hud.speed_step.connect(_speed_step)
 	hud.preset_chosen.connect(_load_preset)
+	hud.tidal_demo_chosen.connect(func(): scene_files.replace_scene({"cmd":"tidal_demo"}))
+	hud.tides_requested.connect(func():
+		if views.has(selected_id): hud.edit_tides(selected_id,views[selected_id].tidal))
+	hud.tide_changed.connect(func(id: int, k2: float, lag: float): net.send({"cmd":"tide","id":id,"k2":k2,"lag_s":lag}))
 	hud.collision_chosen.connect(func(case: String, play: bool):
 		scene_files.replace_scene({"cmd": "collision_demo", "case": case, "play": play}))
 	hud.clear_requested.connect(func():
@@ -255,6 +259,21 @@ func _on_message(msg: Dictionary) -> void:
 			hud.toast("Physics settings updated. Save or set a restart point to keep them.")
 		"conservation":
 			hud.show_conservation(msg)
+		"tides":
+			if int(msg.get("version",-1)) != sim_version or not msg.get("bodies") is Array:
+				return
+			var seen := {}
+			for row in msg.bodies:
+				if row is Dictionary and views.has(int(row.get("id",-1))):
+					var view = views[int(row.id)]
+					if view.tidal_reference.is_empty() or view.tidal.get("k2") != row.get("k2") or view.tidal.get("lag_s") != row.get("lag_s"):
+						view.tidal_reference = row.duplicate()
+					view.tidal = row
+					seen[int(row.id)] = true
+			for id in views:
+				if not seen.has(id):
+					views[id].tidal = {}
+					views[id].tidal_reference = {}
 		"preset":
 			var version := int(msg.get("version", sim_version + 1))
 			if version <= _state_floor:
@@ -262,6 +281,8 @@ func _on_message(msg: Dictionary) -> void:
 			restore_scene_view(msg.get("camera", {}), version)
 			apply_physics_info(msg.get("physics", {}))
 			hud.show_scenario(str(msg.get("name", "")))
+			if msg.get("tidal_demo",false):
+				hud.scenario_label.text = "Lunar tides · Isolated Earth–Moon pair; close eccentric orbit. Inspect spin/orbit, heating and tidal drift."
 			hud.impact_panel.set_state(msg.get("collision_demo"), null)
 		"notice":
 			hud.push_event(str(msg.get("text", "")), Color(1.0, 0.85, 0.5))
@@ -1011,6 +1032,22 @@ func _update_inspector() -> void:
 		info["Appearance"] = "Molten (%d%%)" % int(v.heat * 100)
 	info["Age"] = _physical_value(v.age, "time_s", "days", 1.0 / 86400.0)
 	if v.body_type in [Palette.ROCKY,Palette.ASTEROID]:
+		info["can_tides"] = not legacy_units
+		info["Tides"] = "Not configured" if v.tidal.is_empty() else "CTL equilibrium tide"
+		if not v.tidal.is_empty():
+			var t: Dictionary = v.tidal
+			info["Love k₂"] = Palette._sig(float(t.k2))
+			info["Time lag"] = Palette._sig(float(t.lag_s))+" s"
+			info["Deposited heat"] = Palette._sig(float(t.heat_j))+" J"
+			if t.has("error"):
+				info["Tides"] = "Outside model domain"
+			elif t.get("spin_ratio") != null:
+				info["Spin/orbit"] = "%.8f" % float(t.spin_ratio)
+				info["Orbit e"] = "%.8f" % float(t.eccentricity)
+				info["Tidal power"] = Palette._sig(float(t.power_w))+" W"
+				if v.tidal_reference.get("spin_ratio") != null:
+					var change := float(t.spin_ratio)-float(v.tidal_reference.spin_ratio)
+					info["Spin/orbit Δ"] = ("+" if change >= 0 else "−")+Palette._sig(absf(change))
 		info["Spin"] = "Unknown" if v.spin_status == 0 else "Outside display range" if v.spin_status == 2 else "Not rotating" if v.spin_period_s == 0 else Palette._sig(v.spin_period_s/3600.0)+" hours"
 		if v.spin_status == 1 and v.spin_period_s > 0:
 			info["Spin axis"] = "(%.3f, %.3f, %.3f)" % [v.spin_axis.x,v.spin_axis.y,v.spin_axis.z]

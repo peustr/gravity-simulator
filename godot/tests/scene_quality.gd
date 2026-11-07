@@ -175,11 +175,13 @@ func _run() -> void:
 		controls = accretion_snapshot != null and accretion_snapshot.save_png(output.path_join("formation-accretion.png")) == OK
 	if controls:
 		controls = spin_snapshot != null and spin_snapshot.save_png(output.path_join("solar-spin.png")) == OK
+	if controls:
+		controls = tidal_snapshot != null and tidal_snapshot.save_png(output.path_join("lunar-tides.png")) == OK
 	var version_info := Engine.get_version_info()
 	var report := {"format": "scene-render-quality", "version": 2, "scenes": records,
 		"seed": seed_value,
 		"controls_passed": controls, "godot": Engine.get_version_info().string,
-		"control_evidence": {"formation_accretion": "formation-accretion.png", "solar_spin":"solar-spin.png", "manual_body_addition": true},
+		"control_evidence": {"formation_accretion": "formation-accretion.png", "solar_spin":"solar-spin.png", "lunar_tides":"lunar-tides.png", "manual_body_addition": true},
 		"engine_version": {"major": version_info.major, "minor": version_info.minor, "patch": version_info.patch},
 		"renderer": RenderingServer.get_current_rendering_method(),
 		"resolution": [capture_resolution.x,capture_resolution.y],

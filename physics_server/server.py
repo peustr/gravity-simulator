@@ -139,6 +139,7 @@ def pack_prediction(req_id: int, result: dict) -> bytes:
 class Server:
     def __init__(self, host: str, port: int, world: W.World, verbose=False, exit_when_idle=0.0):
         self.world = world
+        self._had_tides = False
         self.verbose = verbose
         self.exit_when_idle = exit_when_idle
         self.client = None
@@ -216,7 +217,7 @@ class Server:
         validate(msg)
         cmd = msg.get("cmd")
         w = self.world
-        edited = cmd in ('add','belt','remove','supernova')
+        edited = cmd in ('add','belt','remove','supernova','tide')
         before_edit = w.physical_loss_ledger.capture(w) if edited else None
         if self.verbose and cmd not in ("hello", "predict"):
             log(f"command: {msg}")
@@ -259,6 +260,13 @@ class Server:
         elif cmd == "physics":
             w.configure(msg['settings'])
             self.send_json(dict(type='physics', **w.gravity_summary()), addr)
+        elif cmd == 'tide':
+            try:
+                w.set_tide(msg['id'],msg['k2'],msg['lag_s'])
+            except ValueError as exc:
+                self.send_json(dict(type='notice',text=str(exc)),addr)
+                return
+            self.send_json(dict(type='notice',text='Tidal material updated. Love number 0 disables deformation.'),addr)
         elif cmd == "conservation":
             try:
                 report = dict(ok=True, **conservation_report(w, reset=msg.get('reset', False)))
@@ -275,6 +283,11 @@ class Server:
             self.checkpoint = experiments.capture(w,hint['camera'])
             w.paused = not msg.get('play',False)
             self.send_json(dict(hint, version=w.version % 16_000_000, physics=w.gravity_summary()), addr)
+        elif cmd == 'tidal_demo':
+            hint = w.load_tidal_demo()
+            w.paused = True
+            self.checkpoint = experiments.capture(w,hint['camera'])
+            self.send_json(dict(hint,version=w.version%16_000_000,physics=w.gravity_summary()),addr)
         else:  # validate() guarantees the remaining command is preset.
             hint = w.load_preset(str(msg.get("name", "empty")))
             self.checkpoint = experiments.capture(w, hint["camera"])
@@ -334,6 +347,10 @@ class Server:
                 if self.client is not None:
                     self.send(pack_state(self.world))
                     self.send(pack_rotation(self.world))
+                    tides = self.world.tidal_info()
+                    if tides or self._had_tides:
+                        self.send_json(dict(type='tides',version=self.world.version%16_000_000,bodies=tides))
+                    self._had_tides = bool(tides)
                     while self.world.notices:
                         self.send_json(self.world.notices.pop(0))
                 else:

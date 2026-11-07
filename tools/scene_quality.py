@@ -620,7 +620,7 @@ def assess_rendered(data, *, engine_error=False, evidence_root=None):
             )
         found = problems[first_problem:]
         assessed.append(dict(scene, status=status(found), issues=[p["code"] for p in found]))
-    for key in ("formation_accretion", "solar_spin"):
+    for key in ("formation_accretion", "solar_spin", "lunar_tides"):
         control = data.get("control_evidence", {}).get(key)
         if evidence_root is not None and not _png_exists(evidence_root, control, resolution):
             problems.append(

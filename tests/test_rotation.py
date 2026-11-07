@@ -84,7 +84,7 @@ def test_pause_rates_and_restart_preserve_physical_attitude_and_spin():
     pose = w.rotation(w.particle("1"))[0].at(w.sim.t * U.TIME_S)
     np.testing.assert_allclose(pose, initial.at(0.025 * U.TIME_S), atol=1e-13)
     data = E.capture(w, E.DEFAULT_CAMERA)
-    assert data["version"] == 8
+    assert data["version"] == 9
     restored, _ = E.restore(data)
     assert restored.meta == w.meta
     restored.paused = True

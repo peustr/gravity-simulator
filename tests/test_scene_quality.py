@@ -95,7 +95,7 @@ def complete_recording():
         renderer="forward_plus",
         engine_version=dict(major=4, minor=7, patch=2),
         controls_passed=True,
-        control_evidence=dict(formation_accretion="formation-accretion.png", solar_spin="solar-spin.png"),
+        control_evidence=dict(formation_accretion="formation-accretion.png", solar_spin="solar-spin.png", lunar_tides="lunar-tides.png"),
         scenes=[
             dict(
                 scene=name,
@@ -250,6 +250,7 @@ def test_missing_empty_or_external_png_evidence_is_blocked(tmp_path):
             file.write_bytes(png)
     (tmp_path / "formation-accretion.png").write_bytes(png)
     (tmp_path / "solar-spin.png").write_bytes(png)
+    (tmp_path / "lunar-tides.png").write_bytes(png)
     assert assess_rendered(data, evidence_root=tmp_path)["status"] == "PASS"
     data["resolution"] = [1024, 576]  # Logical viewport size can differ from the framebuffer.
     assert assess_rendered(data, evidence_root=tmp_path)["status"] == "BLOCKED"
@@ -264,5 +265,8 @@ def test_missing_empty_or_external_png_evidence_is_blocked(tmp_path):
     (tmp_path / "solar-spin.png").unlink()
     assert assess_rendered(data, evidence_root=tmp_path)["status"] == "BLOCKED"
     (tmp_path / "solar-spin.png").write_bytes(png)
+    (tmp_path / "lunar-tides.png").unlink()
+    assert assess_rendered(data, evidence_root=tmp_path)["status"] == "BLOCKED"
+    (tmp_path / "lunar-tides.png").write_bytes(png)
     data["scenes"][0]["frames"][0]["path"] = "../outside.png"
     assert assess_rendered(data, evidence_root=tmp_path)["status"] == "BLOCKED"

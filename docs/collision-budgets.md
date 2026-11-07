@@ -69,7 +69,7 @@ external gravity uses only mass, radius and position.
 `isolated_mergers` accepts only classified merging/graze-and-merge;
 `isolated_impacts` also accepts separated outcomes. These saved/API modes use the
 same constructors and selected material as automatic mode, but require physical
-units, full gravity and `escape_distance: null`. Automatic tides, supernovae and
+units, full gravity and `escape_distance: null`. Automatic tidal breakup, supernovae and
 removal are disabled. For example:
 
 ```json

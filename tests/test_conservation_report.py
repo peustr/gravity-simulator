@@ -40,6 +40,9 @@ def test_report_has_independent_si_values_including_spin_and_heat():
 def test_report_agrees_with_sphere_budget_and_leaves_dynamics_untouched(gravity):
     w = W.World(seed=42)
     w.load_preset('solar')
+    # This reference compares spherical budgets without deformational energy.
+    for i,_,_ in w.tidal_profiles():
+        w.set_tide(int(w.sim.particles[i].name),0,0)
     w.configure(dict(gravity=gravity))
     saved = E.capture(w,E.DEFAULT_CAMERA)
     result = physical_totals(w)

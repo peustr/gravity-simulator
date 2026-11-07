@@ -115,7 +115,12 @@ def test_scene_camera_ack_identifies_its_first_valid_state(server, command):
     assert old_version < hint['version'] == state_version
 
 
-def test_run_sends_state_and_exits_when_idle(server):
+@pytest.mark.parametrize('tidal',['off','active','cleared'])
+def test_run_sends_state_and_exits_when_idle(server,tidal):
+    if tidal == 'active':
+        bid = server.world.add_body(W.ROCKY,.003,(0,0,0),(0,0,0))
+        server.world.set_tide(bid,.3,100)
+    server._had_tides = tidal == 'cleared'
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.bind(('127.0.0.1', 0))
         client.settimeout(2)
@@ -124,8 +129,12 @@ def test_run_sends_state_and_exits_when_idle(server):
         server.exit_when_idle = .04
         server.run()
         assert json.loads(client.recv(4096))['type'] == 'info'
-        assert struct.unpack('<11f', client.recv(65535))[0] == 3
+        assert np.frombuffer(client.recv(65535),dtype='<f4')[0] == 3
         assert np.frombuffer(client.recv(65535),dtype='<f4')[0] == S.ROTATION_KIND
+        if tidal != 'off':
+            report = json.loads(client.recv(4096))
+            assert report['type'] == 'tides'
+            assert len(report['bodies']) == int(tidal == 'active')
         assert json.loads(client.recv(4096))['text'] == 'queued'
         assert server.sock.fileno() == -1
 

@@ -7,6 +7,7 @@ var result := {}
 var path: String
 var accretion_snapshot: Image
 var spin_snapshot: Image
+var tidal_snapshot: Image
 
 
 func _initialize() -> void:
@@ -135,6 +136,54 @@ func _check_solar_spin() -> bool:
 		await RenderingServer.frame_post_draw
 		spin_snapshot = root.get_texture().get_image()
 	print("Live Solar System physical spin and pause PASSED")
+	return await _check_lunar_tides()
+
+
+func _check_lunar_tides() -> bool:
+	var version: int = main.sim_version
+	main.hud.tidal_demo_chosen.emit()
+	main.scene_files.confirm.get_ok_button().pressed.emit()
+	if not await _until(func(): return main.sim_version > version and main.views.size() == 2 and main.paused):
+		return false
+	var moon := -1
+	for id in main.views:
+		if main.views[id].mass < .001: moon = id
+	if moon < 0 or not await _until(func(): return not main.views[moon].tidal.is_empty()):
+		return false
+	main._select(moon)
+	main.hud.tides_requested.emit()
+	if main.hud.tidal_k2.value != .024 or main.hud.tidal_lag.value != 100:
+		return false
+	main.hud.tidal_k2.value = .025
+	main.hud.tidal_dialog.confirmed.emit()
+	main.hud.tidal_dialog.hide()
+	if not await _until(func(): return main.views[moon].tidal.get("k2") == .025):
+		return false
+	main.hud.tides_requested.emit()
+	main.hud.tidal_k2.value = .024
+	main.hud.tidal_dialog.confirmed.emit()
+	main.hud.tidal_dialog.hide()
+	if not await _until(func(): return main.views[moon].tidal.get("k2") == .024):
+		return false
+	var initial: float = main.views[moon].tidal.spin_ratio
+	main.hud.pause_btn.pressed.emit()
+	if not await _until(func(): return main.packet_time >= .15 and not main.paused,10.,"lunar tidal evolution"):
+		return false
+	main.hud.pause_btn.pressed.emit()
+	if not await _until(func(): return main.paused):
+		return false
+	var report: Dictionary = main.views[moon].tidal
+	if report.heat_j <= 0 or report.spin_ratio >= initial or main.hud.insp_values["Tidal power"].text.is_empty():
+		push_error("Lunar demo did not expose physical spin/orbit exchange and heating")
+		return false
+	if DisplayServer.get_name() != "headless":
+		await RenderingServer.frame_post_draw
+		tidal_snapshot = root.get_texture().get_image()
+	main.net.send({"cmd":"tide","id":moon,"k2":0,"lag_s":100})
+	if not await _until(func(): return main.views[moon].tidal.is_empty()):
+		push_error("Disabling the last tidal material retained stale inspector data")
+		return false
+	print("Live lunar tides, material controls and measured synchronisation PASSED")
 	return true
 
 
@@ -469,7 +518,7 @@ func _run() -> void:
 		_fail("Physical inspector fields did not reach the HUD")
 		return
 	# Preserve integer tokens; Godot parses JSON numbers as floats.
-	var legacy := FileAccess.get_file_as_string(path).replace('"version":8', '"version":1')
+	var legacy := FileAccess.get_file_as_string(path).replace('"version":9', '"version":1')
 	var migration_file := FileAccess.open(path, FileAccess.WRITE)
 	migration_file.store_string(legacy)
 	migration_file.close()

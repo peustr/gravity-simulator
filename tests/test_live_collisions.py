@@ -336,6 +336,9 @@ def test_successive_mergers_with_external_gravity_preserve_inventories_and_sourc
 def test_calibrated_merger_in_existing_solar_system_keeps_all_surrounding_bodies():
     w = W.World(seed=42)
     w.load_preset('solar')
+    # Spherical calibrated impacts; weak equilibrium tides have a separate domain.
+    for i,_,_ in w.tidal_profiles():
+        w.set_tide(int(w.sim.particles[i].name),0,0)
     assert w.settings['collisions'] == 'auto'
     target = next(p for p in w.sim.particles if p.m == .003)
     name, mass, radius = target.name, target.m, target.r

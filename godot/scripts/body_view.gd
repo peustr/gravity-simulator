@@ -32,6 +32,8 @@ var spin_status := 0
 var spin_period_s := 0.0
 var spin_axis := Vector3.ZERO
 var _rotations: Array = []
+var tidal := {}
+var tidal_reference := {}
 var seed := 0.0
 var display_name := ""
 

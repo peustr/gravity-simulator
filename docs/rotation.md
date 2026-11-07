@@ -31,7 +31,7 @@ pattern remain artistic, without predicted composition or temperature.
 
 ## Persistence and transport
 
-Version-8 saves retain the quaternion, epoch and rate. Loading validates their
+Version-8 and newer saves retain the quaternion, epoch and rate. Loading validates their
 consistency with the physical inventory and radius before replacing the live
 world. Versions 1–7 remain readable: their existing spin is retained, with an
 identity reference pose at load time because no prior attitude was stored.
@@ -50,7 +50,7 @@ formula over 100 turns, with the roadmap's `1e-6` rad numerical error limit.
 Pause/resume, inertia edits, restart, whole-turn resampling and live scene
 controls are part of acceptance.
 
-Tidal torques/heating, J2, flattening and general rotating-impact mass laws are
-not implemented here. Existing collision applicability limits and conditional
+[Equilibrium tides](equilibrium-tides.md) supply supported torques and heating.
+J2, flattening and general rotating-impact mass laws are not implemented. Existing collision applicability limits and conditional
 sticking assumptions remain in force. A spherical rotor does not establish
 material strength or stability at arbitrary spin.

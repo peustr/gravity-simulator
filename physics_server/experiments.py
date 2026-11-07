@@ -8,6 +8,7 @@ from dataclasses import asdict, fields
 from commands import integer, number, vector
 from body_state import BodyInventory
 from rotation import Rotation
+from equilibrium_tides import Tide, MAX_TIDAL_BODIES
 import world as W
 import units
 from configuration import MIN_SPEED, MIN_CAMERA_DISTANCE
@@ -75,8 +76,9 @@ def capture(world, camera):
                            pos=[p.x, p.y, p.z], vel=[p.vx, p.vy, p.vz],
                            heat=md['heat'], born=md['born'], inventory=None if inventory is None else
                            dict(spin_kg_m2_s=list(inventory.spin_kg_m2_s), internal_energy_j=inventory.internal_energy_j),
-                           rotation=rotation, **({'tidal_sample': True} if md.get('tidal_sample', False) else {})))
-    return dict(format='gravity-simulator', version=8, units=world.units, bodies=bodies,
+                           rotation=rotation, tide=asdict(md['tide']) if md.get('tide') else None,
+                           **({'tidal_sample': True} if md.get('tidal_sample', False) else {})))
+    return dict(format='gravity-simulator', version=9, units=world.units, bodies=bodies,
                 physics=world.settings.copy(), removed=json.loads(json.dumps(world.removed)),
                 time=world.sim.t, speed=world.speed, paused=world.paused,
                 max_bodies=world.max_bodies, next_id=world._next_id,
@@ -96,7 +98,7 @@ def capture(world, camera):
 
 def restore(data):
     """Build a separate world; callers swap it in only after all validation succeeds."""
-    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2, 3, 4, 5, 6, 7, 8):
+    if not isinstance(data, dict) or data.get('format') != 'gravity-simulator' or type(data.get('version')) is not int or data['version'] not in (1, 2, 3, 4, 5, 6, 7, 8, 9):
         raise ValueError('Unsupported scene format or version')
     camera = camera_state(data.get('camera'))
     world = W.World(max_bodies=data['max_bodies'])
@@ -235,6 +237,16 @@ def restore(data):
                 world.meta[str(bid)]['rotation'] = state
             elif raw_rotation is not None:
                 raise ValueError('Only resolved solid spheres support orientation')
+        if data['version'] >= 9 and body['tide'] is not None:
+            raw = body['tide']
+            if (not isinstance(raw,dict) or raw.keys() != {'k2','lag_s','heat_j'} or body['type'] not in (W.ROCKY,W.ASTEROID)
+                    or inventory is None or world.units != units.SYSTEM or world.settings['gravity'] != 'full' or world.shells):
+                raise ValueError('Invalid equilibrium tide storage')
+            world.meta[str(bid)]['tide'] = Tide(**raw)
+            if raw['k2'] == 0:
+                raise ValueError('Disabled tides must be null')
+            if len(world.tidal_profiles()) > MAX_TIDAL_BODIES:
+                raise ValueError('Too many deformable solids')
     integer(data['next_id'], max(ids, default=0) + 1)
     world._next_id = data['next_id']
     if data['version'] >= 7:
@@ -279,6 +291,8 @@ def restore(data):
         # incompatible energy comparison reference.
         world.conservation_baseline = None
     world._repartition()
+    if any('error' in row for row in world.tidal_info()):
+        raise ValueError('Saved equilibrium tides are outside the supported domain')
     if world.shells:
         masses = [p.m*units.MASS_KG for p in world.sim.particles]
         locations = [tuple(v*units.LENGTH_M for v in p.xyz) for p in world.sim.particles]
